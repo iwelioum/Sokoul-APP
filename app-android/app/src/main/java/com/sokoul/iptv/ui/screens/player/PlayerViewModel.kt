@@ -60,6 +60,9 @@ data class PlayerUi(
     val resumedFromMs: Long = 0,
     val error: String? = null,
     val videoInfo: String = "",
+    /** Contenu d'un groupe verrouillé : le code parental est demandé avant la lecture. */
+    val needsPin: Boolean = false,
+    val pinError: String? = null,
 )
 
 @HiltViewModel
@@ -120,7 +123,40 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /** Action mise en attente du code parental. */
+    private var pendingAfterPin: (suspend () -> Unit)? = null
+
+    /**
+     * Contrôle parental appliqué à la lecture elle-même : couvre les favoris, l'historique, la recherche,
+     * l'accueil, le zapping et les notifications, pas seulement la liste des groupes.
+     */
+    private suspend fun allowed(type: ContentType, categoryId: String?, then: suspend () -> Unit): Boolean {
+        if (categoryId == null || !catalog.isCategoryLocked(route.playlistId, type, categoryId) || actions.parental.canAccessLocked()) return true
+        pendingAfterPin = then
+        _ui.update { it.copy(needsPin = true, pinError = null) }
+        return false
+    }
+
+    fun submitPin(pin: String) {
+        viewModelScope.launch {
+            val r = actions.parental.tryUnlock(pin)
+            if (!r.ok) { _ui.update { it.copy(pinError = r.message) }; return@launch }
+            _ui.update { it.copy(needsPin = false, pinError = null) }
+            val action = pendingAfterPin
+            pendingAfterPin = null
+            try { action?.invoke() } catch (e: Exception) { _ui.update { it.copy(error = e.userMessage()) } }
+        }
+    }
+
     private suspend fun start() {
+        if (route.kind == PlayKind.RECORDING) {
+            // Un enregistrement reste lisible même si sa playlist a été supprimée.
+            val r = db.recordings().get(route.id.toLongOrNull() ?: -1) ?: throw IllegalStateException("Enregistrement introuvable")
+            val path = r.filePath?.takeIf { File(it).isFile } ?: throw IllegalStateException("Fichier d'enregistrement introuvable")
+            _ui.update { it.copy(title = r.title, subtitle = "${r.channelName} · ${formatRange(r.startAt, r.endAt)}", isLive = false) }
+            play(ResolvedStream(listOf(Uri.fromFile(File(path)).toString()), settingsStore.current().userAgent, null, false), r.title, 0)
+            return
+        }
         val p = playlist ?: throw IllegalStateException("Playlist introuvable")
         when (route.kind) {
             PlayKind.LIVE -> {
@@ -130,10 +166,11 @@ class PlayerViewModel @Inject constructor(
             }
             PlayKind.CATCHUP -> {
                 val c = catalog.channel(p.id, route.id) ?: throw IllegalStateException("Chaîne introuvable")
-                playCatchup(c, route.start, route.end)
+                if (allowed(ContentType.LIVE, c.categoryId) { playCatchup(c, route.start, route.end) }) playCatchup(c, route.start, route.end)
             }
             PlayKind.MOVIE -> {
                 val m = catalog.movie(p.id, route.id) ?: throw IllegalStateException("Film introuvable")
+                if (!allowed(ContentType.MOVIE, m.categoryId) { start() }) return
                 val resume = resumePosition(ContentType.MOVIE, m.id)
                 _ui.update { it.copy(title = m.title, subtitle = listOfNotNull(m.year?.toString(), m.quality).joinToString(" · ").ifEmpty { null }, image = m.poster, isLive = false, resumedFromMs = resume) }
                 play(resolver.movie(p, m), m.title, resume)
@@ -144,21 +181,16 @@ class PlayerViewModel @Inject constructor(
                 catalog.ensureEpisodes(p, sid)
                 episodes = catalog.episodeList(p.id, sid)
                 val e = episodes.firstOrNull { it.id == route.id } ?: catalog.episode(p.id, sid, route.id) ?: throw IllegalStateException("Épisode introuvable")
+                val seriesCat = catalog.seriesItem(p.id, sid)?.categoryId
+                if (!allowed(ContentType.SERIES, seriesCat) { playEpisode(e) }) return
                 playEpisode(e)
             }
-            PlayKind.RECORDING -> {
-                val r = db.recordings().get(route.id.toLong()) ?: throw IllegalStateException("Enregistrement introuvable")
-                val path = r.filePath ?: throw IllegalStateException("Fichier manquant")
-                _ui.update { it.copy(title = r.title, subtitle = "${r.channelName} · ${formatRange(r.startAt, r.endAt)}", isLive = false) }
-                play(ResolvedStream(listOf(Uri.fromFile(File(path)).toString()), settingsStore.current().userAgent, null, false), r.title, 0)
-            }
+            PlayKind.RECORDING -> Unit
         }
     }
 
-    private suspend fun resumePosition(type: ContentType, id: String): Long {
-        val pr = library.progress(route.playlistId, type, id) ?: return 0
-        return if (!pr.finished && pr.positionMs > 30_000) pr.positionMs - 5_000 else 0
-    }
+    private suspend fun resumePosition(type: ContentType, id: String): Long =
+        LibraryRepository.resumeFrom(library.progress(route.playlistId, type, id))
 
     private fun play(stream: ResolvedStream, title: String, startMs: Long) {
         _ui.update { it.copy(error = null) }
@@ -174,6 +206,11 @@ class PlayerViewModel @Inject constructor(
         if (current != null && current.id != c.id) previousChannel = current
         progressJob?.cancel()
         viewModelScope.launch {
+            if (!allowed(ContentType.LIVE, c.categoryId) { playChannel(c) }) {
+                _player.value?.stop()
+                _ui.update { it.copy(title = c.name, subtitle = null, image = c.logo, isLive = true, channel = c, nowNext = null) }
+                return@launch
+            }
             val stream = try { resolver.live(p, c) } catch (e: Exception) { _ui.update { it.copy(error = e.userMessage()) }; return@launch }
             _ui.update {
                 it.copy(
@@ -232,19 +269,21 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun record(minutes: Int) {
+    fun record(minutes: Int, done: (String) -> Unit) {
         val c = _ui.value.channel ?: return
         viewModelScope.launch {
             val nn = _ui.value.nowNext
             val now = nn?.now
-            if (minutes <= 0 && now != null) actions.recordProgram(route.playlistId, c, now)
-            else actions.recordNow(route.playlistId, c, minutes.coerceAtLeast(30), now?.title)
+            done(
+                if (minutes <= 0 && now != null) actions.recordProgram(route.playlistId, c, now)
+                else actions.recordNow(route.playlistId, c, minutes.coerceAtLeast(30), now?.title)
+            )
         }
     }
 
-    fun addToMultiview() {
-        val c = _ui.value.channel ?: return
-        actions.multiview.add(route.playlistId, c.id)
+    fun addToMultiview(): String? {
+        val c = _ui.value.channel ?: return null
+        return actions.addToMultiview(route.playlistId, c)
     }
 
     /** Replay du programme en cours depuis son début. */
@@ -373,8 +412,8 @@ class PlayerViewModel @Inject constructor(
             val pos = p.currentPosition
             val dur = p.duration
             if (dur > 0 && pos > 5_000) {
-                // sauvegarde finale hors du viewModelScope (déjà annulé)
-                kotlinx.coroutines.runBlocking { runCatching { save(pos, dur) } }
+                // sauvegarde finale hors du viewModelScope (déjà annulé), sans bloquer le thread principal
+                com.sokoul.iptv.data.AppScope.launch { runCatching { save(pos, dur) } }
             }
         }
         sp?.player?.removeListener(listener)

@@ -92,6 +92,15 @@ class SyncWorker @AssistedInject constructor(
             WorkManager.getInstance(context).enqueueUniqueWork("sync-$playlistId", ExistingWorkPolicy.KEEP, req)
         }
 
+        /** Annule les synchronisations en attente ou en cours d'une playlist (suppression). */
+        fun cancelFor(context: Context, playlistId: Long) {
+            runCatching {
+                val wm = WorkManager.getInstance(context)
+                wm.cancelUniqueWork("sync-$playlistId")
+                wm.cancelUniqueWork("epg-$playlistId")
+            }
+        }
+
         fun epgNow(context: Context, playlistId: Long) {
             val req = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setInputData(workDataOf(KEY_MODE to MODE_EPG, KEY_PLAYLIST to playlistId))

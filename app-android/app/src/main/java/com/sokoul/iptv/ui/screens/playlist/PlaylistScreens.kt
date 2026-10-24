@@ -68,6 +68,7 @@ import com.sokoul.iptv.ui.nav.HomeRoute
 import com.sokoul.iptv.ui.nav.PlaylistEditRoute
 import com.sokoul.iptv.ui.nav.SyncRoute
 import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.util.hasDocumentPicker
 import com.sokoul.iptv.work.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -199,7 +200,10 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                 if (ServerUrl.extractXtream(m3u) != null) {
                     Text("✓ Lien Xtream détecté : le compte sera ajouté en mode Xtream (guide, replay et fiches complètes).", color = SokoulColors.Success, style = MaterialTheme.typography.bodyMedium)
                 }
-                AppButton("Choisir un fichier sur l'appareil", { filePicker.launch(arrayOf("*/*")) }, icon = Icons.Default.FolderOpen)
+                // Masqué sur Android TV : le sélecteur de fichiers y est factice (rien ne s'ouvrirait)
+                if (remember { context.hasDocumentPicker() }) {
+                    AppButton("Choisir un fichier sur l'appareil", { filePicker.launch(arrayOf("*/*")) }, icon = Icons.Default.FolderOpen)
+                }
             }
             FormField("Guide TV XMLTV (facultatif)", epg, { epg = it }, placeholder = "Fourni par le serveur si vide", keyboardType = KeyboardType.Uri)
             FormField("User-Agent (facultatif)", ua, { ua = it }, placeholder = "Seulement si votre fournisseur l'exige", imeAction = ImeAction.Done)

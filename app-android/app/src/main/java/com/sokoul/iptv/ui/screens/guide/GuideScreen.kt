@@ -142,6 +142,7 @@ class GuideViewModel @Inject constructor(
         viewModelScope.launch {
             val p = playlist.filterNotNull().first()
             settings.lastGroup("live", p.id)?.takeIf { it != SpecialCategory.RECENT }?.let { selected.value = it }
+            launch { actions.guardSelection(p.id, ContentType.LIVE, selected) }
             selected.drop(1).collect { settings.setLastGroup("live", p.id, it) }
         }
     }
@@ -201,12 +202,12 @@ class GuideViewModel @Inject constructor(
     fun supportsCatchup(c: ChannelEntity) = playlist.value?.let { resolver.supportsCatchup(it, c) } == true
     fun refreshEpg() = playlist.value?.let { SyncWorker.epgNow(context, it.id) }
 
-    fun remind(c: ChannelEntity, p: ProgramEntity) = launch { actions.remind(it, c, p) }
+    fun remind(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.remind(it, c, p)) }
     fun removeReminder(c: ChannelEntity, p: ProgramEntity) = launch { recordings.removeReminder(it, c.id, p.start) }
-    fun record(c: ChannelEntity, p: ProgramEntity) = launch { actions.recordProgram(it, c, p) }
+    fun record(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.recordProgram(it, c, p)) }
     fun toggleFavorite(c: ChannelEntity) = launch { actions.toggleFavorite(it, c) }
     suspend fun unlock(pin: String) = actions.parental.tryUnlock(pin)
-    fun isUnlocked() = actions.parental.unlocked.value
+    fun isUnlocked() = actions.parental.isOpen()
 
     private fun launch(block: suspend (Long) -> Unit) {
         val pid = playlist.value?.id ?: return
@@ -288,8 +289,10 @@ fun GuideScreen(nav: NavHostController) {
                     when {
                         p == null || (p.start <= t && p.end > t) ->
                             nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
-                        p.end <= t && vm.supportsCatchup(c) ->
+                        p.end <= t && vm.supportsCatchup(c) && StreamResolver.inCatchupWindow(c, p.start, t) ->
                             nav.navigate(PlayerRoute(PlayKind.CATCHUP, pid, c.id, categoryId = selected, start = p.start, end = p.end))
+                        p.end <= t && vm.supportsCatchup(c) ->
+                            Toast.makeText(context, "Replay disponible sur ${c.catchupDays} jour(s) seulement pour cette chaîne", Toast.LENGTH_LONG).show()
                         else -> menu = c to p
                     }
                 }
@@ -404,17 +407,17 @@ fun GuideScreen(nav: NavHostController) {
             if (p == null || (p.start <= t && p.end > t)) add(MenuOption("Regarder en direct", Icons.Default.PlayArrow) {
                 nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
             })
-            if (p != null && p.end <= t && vm.supportsCatchup(c)) add(MenuOption("Revoir (replay)", Icons.Default.History) {
+            if (p != null && p.end <= t && vm.supportsCatchup(c) && StreamResolver.inCatchupWindow(c, p.start, t)) add(MenuOption("Revoir (replay)", Icons.Default.History) {
                 nav.navigate(PlayerRoute(PlayKind.CATCHUP, pid, c.id, categoryId = selected, start = p.start, end = p.end))
             })
             if (p != null && p.start > t) {
                 if (reminderKey in reminders) add(MenuOption("Annuler le rappel", Icons.Default.NotificationsActive) { vm.removeReminder(c, p) })
                 else add(MenuOption("Me rappeler", Icons.Default.NotificationsActive) {
-                    vm.remind(c, p); Toast.makeText(context, "Rappel programmé", Toast.LENGTH_SHORT).show()
+                    vm.remind(c, p) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
                 })
             }
             if (p != null && p.end > t) add(MenuOption(if (p.start > t) "Programmer l'enregistrement" else "Enregistrer jusqu'à la fin", Icons.Default.FiberManualRecord) {
-                vm.record(c, p); Toast.makeText(context, "Enregistrement programmé", Toast.LENGTH_SHORT).show()
+                vm.record(c, p) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             })
             add(MenuOption("Favori (ajouter / retirer)", Icons.Default.Star) { vm.toggleFavorite(c) })
             add(MenuOption("Mettre à jour le guide", Icons.Default.Schedule) { vm.refreshEpg() })
@@ -429,7 +432,8 @@ fun GuideScreen(nav: NavHostController) {
     pinFor?.let { cat ->
         PinDialog("Code parental", onResult = { pin ->
             scope.launch {
-                if (vm.unlock(pin)) { vm.selected.value = cat.id; row = 0; vm.reset(); pinFor = null; pinError = null } else pinError = "Code incorrect"
+                val r = vm.unlock(pin)
+                if (r.ok) { vm.selected.value = cat.id; row = 0; vm.reset(); pinFor = null; pinError = null } else pinError = r.message
             }
         }, onDismiss = { pinFor = null; pinError = null }, error = pinError)
     }

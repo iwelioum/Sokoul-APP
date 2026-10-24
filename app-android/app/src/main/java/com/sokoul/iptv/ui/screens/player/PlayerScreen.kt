@@ -253,7 +253,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> { exo?.let { if (it.isPlaying) it.pause() else it.play() }; showInfo(); true }
                     KeyEvent.KEYCODE_MEDIA_PLAY -> { exo?.play(); true }
                     KeyEvent.KEYCODE_MEDIA_PAUSE -> { exo?.pause(); showInfo(); true }
-                    KeyEvent.KEYCODE_PROG_RED -> { if (ui.isLive) { vm.record(0); Toast.makeText(context, "Enregistrement démarré", Toast.LENGTH_SHORT).show() }; true }
+                    KeyEvent.KEYCODE_PROG_RED -> { if (ui.isLive) vm.record(0) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }; true }
                     KeyEvent.KEYCODE_LAST_CHANNEL -> { vm.previous(); true }
                     else -> if (ui.isLive) {
                         when (code) {
@@ -345,7 +345,15 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         }
 
         if (!inPip) {
-            StatusOverlay(streamState, ui.error, onRetry = { vm.retry() }, onBack = { nav.popBackStack() })
+            if (!ui.needsPin) StatusOverlay(streamState, ui.error, onRetry = { vm.retry() }, onBack = { nav.popBackStack() })
+            if (ui.needsPin) {
+                com.sokoul.iptv.ui.components.PinDialog(
+                    "Contenu verrouillé — code parental",
+                    onResult = vm::submitPin,
+                    onDismiss = { nav.popBackStack() },
+                    error = ui.pinError,
+                )
+            }
 
             AnimatedVisibility(infoVisible && !listVisible, Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
                 if (ui.isLive) LiveInfoBar(ui) else VodControls(
@@ -393,7 +401,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     if (ui.canCatchup && ui.nowNext?.now != null) add(MenuOption("Revoir depuis le début du programme", Icons.Default.History) { vm.restartCurrentProgram() })
                     add(MenuOption("Enregistrer", Icons.Default.FiberManualRecord) { scope.launch { delay(50); menu = Menu.RECORD } })
                     add(MenuOption("Chaîne précédente", Icons.Default.SwapVert) { vm.previous() })
-                    add(MenuOption("Ajouter au multi-écran", Icons.Default.GridView) { vm.addToMultiview(); nav.navigate(MultiviewRoute) })
+                    add(MenuOption("Ajouter au multi-écran", Icons.Default.GridView) { vm.addToMultiview()?.let { toast(context, it) }; nav.navigate(MultiviewRoute) })
                 } else {
                     add(MenuOption("Depuis le début", Icons.Default.Replay) { vm.restartFromBeginning() })
                     if (ui.nextEpisode != null) add(MenuOption("Épisode suivant", Icons.Default.SkipNext) { vm.playNextEpisode() })
@@ -427,9 +435,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             "Enregistrer ${ui.channel?.name ?: ""}",
             buildList {
                 ui.nowNext?.now?.let { now ->
-                    add(MenuOption("Jusqu'à la fin de « ${now.title} »", Icons.Default.FiberManualRecord) { vm.record(0); toast(context, "Enregistrement démarré") })
+                    add(MenuOption("Jusqu'à la fin de « ${now.title} »", Icons.Default.FiberManualRecord) { vm.record(0) { toast(context, it) } })
                 }
-                listOf(30, 60, 120, 180).forEach { m -> add(MenuOption("$m minutes", Icons.Default.FiberManualRecord) { vm.record(m); toast(context, "Enregistrement démarré") }) }
+                listOf(30, 60, 120, 180).forEach { m -> add(MenuOption("$m minutes", Icons.Default.FiberManualRecord) { vm.record(m) { toast(context, it) } }) }
             },
             onDismiss = { menu = null },
         )

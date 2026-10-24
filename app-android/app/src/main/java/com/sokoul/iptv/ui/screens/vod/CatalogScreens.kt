@@ -126,10 +126,25 @@ abstract class CatalogViewModel(
     var listKey: Pair<String, SortMode>? = null
 
     fun hide(cat: String) = playlist.value?.let { p -> viewModelScope.launch { catalog.setCategoryPref(p.id, type, cat, hidden = true) } }
-    fun lock(cat: String, locked: Boolean) = playlist.value?.let { p -> viewModelScope.launch { catalog.setCategoryPref(p.id, type, cat, locked = locked) } }
+    fun lock(cat: String, locked: Boolean) = playlist.value?.let { p ->
+        viewModelScope.launch {
+            catalog.setCategoryPref(p.id, type, cat, locked = locked)
+            // le groupe affiché vient d'être verrouillé alors que le code n'a pas été saisi → on le quitte
+            if (locked && selected.value == cat && !parental.canAccessLocked()) selected.value = SpecialCategory.RECENT
+        }
+    }
     suspend fun unlock(pin: String) = parental.tryUnlock(pin)
     suspend fun hasPin() = parental.hasPin()
-    fun isUnlocked() = parental.unlocked.value
+    fun isUnlocked() = parental.isOpen()
+
+    init {
+        // Re-verrouillage pendant l'affichage d'un groupe verrouillé → retour sur « Récemment ajoutés »
+        viewModelScope.launch {
+            combine(playlist.filterNotNull(), selected, parental.unlocked) { p, cat, _ -> p.id to cat }.collect { (pid, cat) ->
+                if (catalog.isCategoryLocked(pid, type, cat) && !parental.canAccessLocked()) selected.value = SpecialCategory.RECENT
+            }
+        }
+    }
 }
 
 @HiltViewModel
@@ -265,10 +280,11 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
     pinFor?.let { c ->
         PinDialog("Code parental", onResult = { pin ->
             scope.launch {
-                if (vm.unlock(pin)) {
+                val r = vm.unlock(pin)
+                if (r.ok) {
                     if (c.name.startsWith("unlock:")) vm.lock(c.id, false) else vm.selected.value = c.id
                     pinFor = null; pinError = null
-                } else pinError = "Code incorrect"
+                } else pinError = r.message
             }
         }, onDismiss = { pinFor = null; pinError = null }, error = pinError)
     }

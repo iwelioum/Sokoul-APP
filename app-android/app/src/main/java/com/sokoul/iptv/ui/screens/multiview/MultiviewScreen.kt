@@ -49,6 +49,7 @@ import com.sokoul.iptv.data.repo.CatalogRepository
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SpecialCategory
 import com.sokoul.iptv.data.repo.StreamResolver
+import com.sokoul.iptv.data.repo.userMessage
 import com.sokoul.iptv.player.PlayerFactory
 import com.sokoul.iptv.player.StreamPlayer
 import com.sokoul.iptv.player.StreamState
@@ -77,6 +78,7 @@ class MultiviewViewModel @Inject constructor(
     private val playlists: PlaylistRepository,
     private val catalog: CatalogRepository,
     private val resolver: StreamResolver,
+    private val parental: com.sokoul.iptv.ui.ParentalGate,
 ) : ViewModel() {
     private val _slots = MutableStateFlow(List(4) { SlotState(null, null) })
     val slots: StateFlow<List<SlotState>> = _slots.asStateFlow()
@@ -110,13 +112,21 @@ class MultiviewViewModel @Inject constructor(
             notice.value = "Votre abonnement n'autorise que $max connexion${if (max > 1) "s" else ""} simultanée${if (max > 1) "s" else ""} : videz une case avant d'en lancer une autre."
             return@launch
         }
+        if (catalog.isCategoryLocked(c.playlistId, com.sokoul.iptv.data.db.ContentType.LIVE, c.categoryId) && !parental.canAccessLocked()) {
+            notice.value = "« ${c.name} » appartient à un groupe verrouillé : déverrouillez-le depuis l'écran Direct."
+            return@launch
+        }
+        val stream = try { resolver.live(p, c) } catch (e: Exception) {
+            notice.value = e.userMessage()
+            return@launch
+        }
         notice.value = null
         val current = _slots.value[index]
         val sp = current.player ?: StreamPlayer(factory.create(settings.current(), forMultiview = true), factory, viewModelScope)
         sp.player.volume = if (index == audioSlot) 1f else 0f
         _slots.value = _slots.value.toMutableList().also { it[index] = SlotState(c, sp) }
         session.set(index, MultiviewSession.Slot(c.playlistId, c.id))
-        sp.play(resolver.live(p, c), c.name)
+        sp.play(stream, c.name)
     }
 
     fun clear(index: Int) {

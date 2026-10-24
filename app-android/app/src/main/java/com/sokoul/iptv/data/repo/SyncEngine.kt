@@ -88,6 +88,12 @@ class SyncEngine @Inject constructor(
                     PlaylistType.M3U -> syncM3u(p)
                 }
             }
+            if (playlists.get(id) == null) {
+                // Playlist supprimée pendant la synchronisation : on ne laisse pas de données orphelines.
+                playlists.purgeData(id)
+                setStatus(_playlistStatus, id, SyncStatus(error = "Playlist supprimée"))
+                return@withLock
+            }
             db.channels().resetEpgKeys(id)
             db.channels().matchEpgByName(id)
             val counts = Triple(db.channels().count(id), db.movies().count(id), db.series().count(id))
@@ -106,11 +112,16 @@ class SyncEngine @Inject constructor(
     // --- Xtream -----------------------------------------------------------------------------
 
     private suspend fun syncXtream(p: PlaylistEntity): List<String> {
-        val auth = playlists.auth(p) ?: throw IOException("Mot de passe illisible : modifiez la playlist")
+        val auth = playlists.auth(p) ?: throw IOException("Mot de passe manquant ou illisible : modifiez la playlist pour le saisir")
         val account = xtream.account(auth)
         if (!account.auth) throw IOException("Identifiants refusés par le serveur")
         db.playlists().update(
             p.copy(expiresAt = account.expiresAt, maxConnections = account.maxConnections, serverTimezone = account.serverTimezone ?: p.serverTimezone)
+        )
+        // Compte expiré : on garde le catalogue existant et on explique pourquoi rien ne se met à jour.
+        if (!account.isActive) throw IOException(
+            "Abonnement inactif ou expiré (statut : ${account.status ?: "inconnu"})" +
+                (account.expiresAt?.let { " — échéance ${java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE).format(java.util.Date(it))}" } ?: "")
         )
         val warnings = ArrayList<String>()
         val gen = System.currentTimeMillis()
@@ -158,6 +169,7 @@ class SyncEngine @Inject constructor(
         }
         if (batch.isNotEmpty()) db.channels().upsert(batch)
         if (usedUnknown) db.categories().upsert(listOf(CategoryEntity(pid, ContentType.LIVE, UNCATEGORIZED, "Non classées", cats.size, gen)))
+        keepIfEmpty(position, db.channels().count(pid), "aucune chaîne")
         db.channels().deleteStale(pid, gen)
         db.categories().deleteStale(pid, ContentType.LIVE, gen)
     }
@@ -186,6 +198,7 @@ class SyncEngine @Inject constructor(
         }
         if (batch.isNotEmpty()) db.movies().upsert(batch)
         if (usedUnknown) db.categories().upsert(listOf(CategoryEntity(pid, ContentType.MOVIE, UNCATEGORIZED, "Non classés", cats.size, gen)))
+        keepIfEmpty(position, db.movies().count(pid), "aucun film")
         db.movies().deleteStale(pid, gen)
         db.categories().deleteStale(pid, ContentType.MOVIE, gen)
     }
@@ -214,6 +227,7 @@ class SyncEngine @Inject constructor(
         }
         if (batch.isNotEmpty()) db.series().upsert(batch)
         if (usedUnknown) db.categories().upsert(listOf(CategoryEntity(pid, ContentType.SERIES, UNCATEGORIZED, "Non classées", cats.size, gen)))
+        keepIfEmpty(position, db.series().count(pid), "aucune série")
         db.series().deleteStale(pid, gen)
         db.series().deleteOrphanEpisodes(pid)
         db.categories().deleteStale(pid, ContentType.SERIES, gen)
@@ -336,7 +350,7 @@ class SyncEngine @Inject constructor(
     // --- EPG --------------------------------------------------------------------------------
 
     fun epgSources(p: PlaylistEntity): List<String> {
-        val custom = p.epgUrl?.split(',', '\n', ' ')?.map { it.trim() }?.filter { it.startsWith("http") || it.startsWith("content") || it.startsWith("file") }
+        val custom = p.epgUrl?.split(',', '\n', ' ')?.map { it.trim() }?.filter { PlaylistSource.of(it) != PlaylistSource.INVALID }
         if (!custom.isNullOrEmpty()) return custom
         return when (p.type) {
             PlaylistType.XTREAM -> playlists.auth(p)?.let { listOf(XtreamUrls.xmltv(it.server, it.username, it.password)) } ?: emptyList()
@@ -354,6 +368,7 @@ class SyncEngine @Inject constructor(
         setStatus(_epgStatus, id, SyncStatus(running = true, step = "Téléchargement du guide…"))
         try {
             val total = withContext(Dispatchers.IO) { importEpg(p, sources) }
+            if (playlists.get(id) == null) { playlists.purgeData(id); return@withLock }
             setStatus(_epgStatus, id, SyncStatus(step = "Terminé", count = total, finishedAt = System.currentTimeMillis()))
         } catch (e: kotlinx.coroutines.CancellationException) {
             setStatus(_epgStatus, id, SyncStatus(error = "Mise à jour du guide annulée"))
@@ -451,6 +466,14 @@ class SyncEngine @Inject constructor(
         return total
     }
 
+    /**
+     * Réponse vide alors que la base contient déjà des éléments : souvent un incident passager du serveur.
+     * On n'efface rien et on le signale.
+     */
+    private fun keepIfEmpty(received: Int, stored: Int, what: String) {
+        if (shouldKeepExisting(received, stored)) throw IOException("Le serveur n'a renvoyé $what : liste actuelle conservée")
+    }
+
     private fun status(pid: Long, step: String, count: Int = 0) =
         setStatus(_playlistStatus, pid, SyncStatus(running = true, step = step, count = count))
 
@@ -462,6 +485,9 @@ class SyncEngine @Inject constructor(
         private const val DAY = 24 * 3600_000L
 
         /** Identifiant EPG comparable : minuscules, sans suffixe de flux iptv-org (TF1.fr@HD → tf1.fr). */
+        /** [stored] inclut les lignes de la génération en cours : vide côté serveur = 0 reçu. */
+        fun shouldKeepExisting(received: Int, stored: Int) = received == 0 && stored > 0
+
         fun epgId(raw: String?): String? = raw?.trim()?.substringBefore('@')?.lowercase()?.takeIf { it.isNotEmpty() }
 
         fun searchable(s: String): String =
@@ -474,12 +500,15 @@ class SyncEngine @Inject constructor(
     }
 }
 
-fun Throwable.userMessage(): String = when (this) {
-    is java.net.UnknownHostException -> "Serveur introuvable : vérifiez l'adresse et la connexion Internet"
-    is java.net.SocketTimeoutException -> "Le serveur met trop de temps à répondre"
-    is java.net.ConnectException -> "Connexion refusée par le serveur"
-    is javax.net.ssl.SSLException -> "Erreur de sécurité SSL : essayez l'adresse en http://"
-    is IllegalArgumentException -> message ?: "Valeur invalide"
-    is IOException -> message ?: "Erreur réseau"
-    else -> message ?: javaClass.simpleName
-}
+/** Message d'erreur affichable. Toujours expurgé : une URL Xtream contient l'identifiant et le mot de passe. */
+fun Throwable.userMessage(): String = com.sokoul.iptv.data.net.HttpModule.redact(
+    when (this) {
+        is java.net.UnknownHostException -> "Serveur introuvable : vérifiez l'adresse et la connexion Internet"
+        is java.net.SocketTimeoutException -> "Le serveur met trop de temps à répondre"
+        is java.net.ConnectException -> "Connexion refusée par le serveur"
+        is javax.net.ssl.SSLException -> "Erreur de sécurité SSL : essayez l'adresse en http://"
+        is IllegalArgumentException -> message ?: "Valeur invalide"
+        is IOException -> message ?: "Erreur réseau"
+        else -> message ?: javaClass.simpleName
+    }
+)

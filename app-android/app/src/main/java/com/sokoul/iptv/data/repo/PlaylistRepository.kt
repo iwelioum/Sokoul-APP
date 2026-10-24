@@ -12,6 +12,9 @@ import com.sokoul.iptv.data.net.XtreamAuth
 import com.sokoul.iptv.data.net.XtreamClient
 import com.sokoul.iptv.data.net.openStream
 import com.sokoul.iptv.parser.ServerUrl
+import com.sokoul.iptv.recording.RecordingScheduler
+import com.sokoul.iptv.ui.MultiviewSession
+import com.sokoul.iptv.work.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +28,23 @@ import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Sources de playlist M3U acceptées. */
+enum class PlaylistSource {
+    HTTP, CONTENT, INVALID;
+
+    companion object {
+        fun of(url: String): PlaylistSource {
+            val u = url.trim()
+            val scheme = u.substringBefore("://", "").lowercase()
+            return when {
+                scheme == "content" && u.length > "content://".length -> CONTENT
+                BackupRules.isHttpUrl(u) -> HTTP
+                else -> INVALID
+            }
+        }
+    }
+}
+
 @Singleton
 class PlaylistRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -33,6 +53,8 @@ class PlaylistRepository @Inject constructor(
     private val settings: SettingsStore,
     private val xtream: XtreamClient,
     private val http: OkHttpClient,
+    private val recordings: RecordingScheduler,
+    private val multiview: MultiviewSession,
 ) {
     val playlists: Flow<List<PlaylistEntity>> = db.playlists().observeAll()
 
@@ -61,7 +83,14 @@ class PlaylistRepository @Inject constructor(
     /** Vérifie les identifiants, enregistre la playlist et la rend active. */
     suspend fun addXtream(name: String, server: String, username: String, password: String, epgUrl: String?, userAgent: String?): Long {
         val url = ServerUrl.normalize(server)
-        val auth = XtreamAuth(url, username.trim(), password, userAgent?.takeIf { it.isNotBlank() })
+        require(BackupRules.hasValidHost(url)) { "Adresse du serveur invalide" }
+        require(username.isNotBlank() && password.isNotEmpty()) { "Identifiant et mot de passe obligatoires" }
+        epgUrl?.trim()?.takeIf { it.isNotEmpty() }?.let { e ->
+            require(e.split(',', '\n', ' ').filter { it.isNotBlank() }.all { PlaylistSource.of(it) != PlaylistSource.INVALID }) { "Adresse du guide TV invalide (http/https attendu)" }
+        }
+        val existing = db.playlists().getAll().firstOrNull { it.type == PlaylistType.XTREAM && it.url == url && it.username == username.trim() }
+        require(existing == null) { "Cette playlist est déjà ajoutée (« ${existing?.name} »)" }
+        val auth = XtreamAuth(url, username.trim(), password, userAgent?.trim()?.take(256)?.takeIf { it.isNotBlank() })
         val account = xtream.account(auth)
         if (!account.auth) throw IOException(account.message ?: "Identifiants refusés par le serveur")
         if (!account.isActive) throw IOException("Abonnement inactif (statut : ${account.status})")
@@ -86,6 +115,10 @@ class PlaylistRepository @Inject constructor(
     suspend fun addM3u(name: String, url: String, epgUrl: String?, userAgent: String?): Long {
         val clean = url.trim()
         require(clean.isNotEmpty()) { "L'URL de la playlist est vide" }
+        require(PlaylistSource.of(clean) != PlaylistSource.INVALID) { "Adresse invalide : utilisez un lien http(s) ou choisissez un fichier" }
+        epgUrl?.trim()?.takeIf { it.isNotEmpty() }?.let { e ->
+            require(e.split(',', '\n', ' ').filter { it.isNotBlank() }.all { PlaylistSource.of(it) != PlaylistSource.INVALID }) { "Adresse du guide TV invalide (http/https attendu)" }
+        }
         withContext(Dispatchers.IO) { checkM3u(clean, userAgent) }
         val id = db.playlists().insert(
             PlaylistEntity(
@@ -101,6 +134,9 @@ class PlaylistRepository @Inject constructor(
     }
 
     suspend fun updateDetails(p: PlaylistEntity, name: String, epgUrl: String?, userAgent: String?, newPassword: String?) {
+        epgUrl?.trim()?.takeIf { it.isNotEmpty() }?.let { e ->
+            require(e.split(',', '\n', ' ').filter { it.isNotBlank() }.all { PlaylistSource.of(it) != PlaylistSource.INVALID }) { "Adresse du guide TV invalide (http/https attendu)" }
+        }
         db.playlists().update(
             p.copy(
                 name = name.ifBlank { p.name },
@@ -111,25 +147,48 @@ class PlaylistRepository @Inject constructor(
         )
     }
 
+    /**
+     * Supprime une playlist et tout ce qui en dépend : synchronisations en cours, enregistrements programmés
+     * ou en cours, rappels, multi-écran, catalogue, guide, favoris et reprises.
+     * Les enregistrements terminés (fichiers vidéo) sont conservés et restent lisibles.
+     */
     suspend fun delete(id: Long) {
+        SyncWorker.cancelFor(context, id)
+        recordings.cancelForPlaylist(id)
+        multiview.removePlaylist(id)
         db.withTransaction {
-            db.openHelper.writableDatabase.apply {
-                for (table in listOf(
-                    "categories", "category_prefs", "channels", "movies", "series", "episodes", "series_details",
-                    "programs", "epg_channels", "favorites", "progress", "reminders",
-                )) execSQL("DELETE FROM $table WHERE playlistId = ?", arrayOf(id))
-            }
+            purgeData(id)
             db.playlists().delete(id)
         }
         val remaining = db.playlists().getAll()
         if (settings.current().activePlaylistId == id) settings.update { it.copy(activePlaylistId = remaining.firstOrNull()?.id ?: 0) }
     }
 
-    /** Ouvre une playlist distante, un fichier local (content://) ou un chemin file://. */
+    /** Efface les données d'une playlist (aussi appelé si une synchronisation se termine après sa suppression). */
+    fun purgeData(id: Long) {
+        db.openHelper.writableDatabase.apply {
+            for (table in PLAYLIST_TABLES) execSQL("DELETE FROM $table WHERE playlistId = ?", arrayOf(id))
+        }
+    }
+
+    companion object {
+        val PLAYLIST_TABLES = listOf(
+            "categories", "category_prefs", "channels", "movies", "series", "episodes", "series_details",
+            "programs", "epg_channels", "favorites", "progress", "reminders",
+        )
+    }
+
+    /**
+     * Ouvre une playlist distante (http/https) ou un fichier choisi avec le sélecteur système (content://).
+     * Les chemins file:// et autres schémas sont refusés : ils permettraient de lire les fichiers privés de l'app.
+     */
     fun openPlaylistStream(url: String, userAgent: String?): Pair<AutoCloseable, InputStream> {
-        val uri = Uri.parse(url)
-        return when (uri.scheme?.lowercase()) {
-            "content", "file" -> {
+        val uri = Uri.parse(url.trim())
+        return when (PlaylistSource.of(url)) {
+            PlaylistSource.CONTENT -> {
+                if (uri.authority == context.packageName || uri.authority?.startsWith(context.packageName + ".") == true) {
+                    throw IOException("Source de playlist non autorisée")
+                }
                 val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Fichier illisible")
                 val buffered = input.buffered(64 * 1024)
                 buffered.mark(2)
@@ -138,10 +197,11 @@ class PlaylistRepository @Inject constructor(
                 val stream = if (gz) java.util.zip.GZIPInputStream(buffered).buffered() else buffered
                 stream to stream
             }
-            else -> {
-                val (resp, stream) = http.openStream(url, userAgent)
+            PlaylistSource.HTTP -> {
+                val (resp, stream) = http.openStream(url.trim(), userAgent)
                 resp to stream
             }
+            PlaylistSource.INVALID -> throw IOException("Adresse de playlist invalide : utilisez un lien http(s) ou choisissez un fichier")
         }
     }
 
@@ -152,7 +212,7 @@ class PlaylistRepository @Inject constructor(
             var lines = 0
             while (lines < 50) {
                 val line = reader.readLine() ?: break
-                val t = line.trim().removePrefix("﻿")
+                val t = line.trim().removePrefix("\uFEFF")
                 if (t.isEmpty()) continue
                 if (t.startsWith("#EXTM3U", true) || t.startsWith("#EXTINF", true)) return
                 lines++

@@ -40,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -124,6 +125,9 @@ class LiveViewModel @Inject constructor(
         viewModelScope.launch {
             val p = playlist.filterNotNull().first()
             settings.lastGroup("live", p.id)?.let { selected.value = it }
+            launch { actions.guardSelection(p.id, ContentType.LIVE, selected) }
+            // changement de groupe (y compris re-verrouillage) : le panneau ne montre plus l'ancienne chaîne
+            launch { selected.drop(1).collect { focused.value = null; lastPlayed = null } }
             selected.drop(1).collect { settings.setLastGroup("live", p.id, it) }
         }
     }
@@ -153,16 +157,19 @@ class LiveViewModel @Inject constructor(
 
     fun focus(c: ChannelEntity) { focused.value = c }
 
+    /** Chaîne lancée depuis la liste : reprend le focus au retour du lecteur (même si la liste a été réordonnée). */
+    var lastPlayed: String? = null
+
     fun supportsCatchup(c: ChannelEntity) = playlist.value?.let { resolver.supportsCatchup(it, c) } == true
 
     fun toggleFavorite(c: ChannelEntity) = launch { actions.toggleFavorite(it, c) }
-    fun record(c: ChannelEntity, minutes: Int) = launch { actions.recordNow(it, c, minutes) }
-    fun addToMultiview(c: ChannelEntity) = playlist.value?.let { actions.multiview.add(it.id, c.id) }
+    fun record(c: ChannelEntity, minutes: Int, done: (String) -> Unit) = launch { done(actions.recordNow(it, c, minutes)) }
+    fun addToMultiview(c: ChannelEntity): String? = playlist.value?.let { actions.addToMultiview(it.id, c) }
     fun hideCategory(id: String) = launch { actions.setCategoryHidden(it, id, true) }
     fun setLocked(id: String, locked: Boolean) = launch { actions.setCategoryLocked(it, ContentType.LIVE, id, locked) }
     suspend fun hasPin() = actions.parental.hasPin()
     suspend fun unlock(pin: String) = actions.parental.tryUnlock(pin)
-    fun isUnlocked() = actions.parental.unlocked.value
+    fun isUnlocked() = actions.parental.isOpen()
 
     private fun launch(block: suspend (Long) -> Unit) {
         val pid = playlist.value?.id ?: return
@@ -195,21 +202,24 @@ fun LiveScreen(nav: NavHostController) {
     val selectCategory: (CategoryItem) -> Unit = { c ->
         if (c.locked && !vm.isUnlocked()) pinFor = c else vm.selected.value = c.id
     }
-    val play: (ChannelEntity) -> Unit = { c -> nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected)) }
+    val play: (ChannelEntity) -> Unit = { c ->
+        vm.lastPlayed = c.id
+        nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
+    }
     val openCategoryMenu: (CategoryItem) -> Unit = { if (!it.id.startsWith("__")) categoryMenu = it }
 
     if (wide) {
         Row(Modifier.fillMaxSize()) {
             CategoryColumn(categories, selected, selectCategory, Modifier.width(210.dp).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f)), onLongClick = openCategoryMenu)
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it })
+                ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it }, vm.lastPlayed) { vm.lastPlayed = null }
             }
             DetailsPanel(details, Modifier.width(300.dp).fillMaxHeight(), vm::supportsCatchup)
         }
     } else {
         Column(Modifier.fillMaxSize()) {
             CategoryChips(categories, selected, selectCategory, onLongClick = openCategoryMenu)
-            ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it })
+            ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it }, vm.lastPlayed) { vm.lastPlayed = null }
         }
     }
 
@@ -220,12 +230,15 @@ fun LiveScreen(nav: NavHostController) {
             listOf(
                 MenuOption(if (fav) "Retirer des favoris" else "Ajouter aux favoris", if (fav) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite(c) },
                 MenuOption("Enregistrer 1 h", Icons.Default.FiberManualRecord) {
-                    vm.record(c, 60); Toast.makeText(context, "Enregistrement démarré", Toast.LENGTH_SHORT).show()
+                    vm.record(c, 60) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 },
                 MenuOption("Enregistrer 2 h", Icons.Default.FiberManualRecord) {
-                    vm.record(c, 120); Toast.makeText(context, "Enregistrement démarré", Toast.LENGTH_SHORT).show()
+                    vm.record(c, 120) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 },
-                MenuOption("Ajouter au multi-écran", Icons.Default.GridView) { vm.addToMultiview(c); nav.navigate(MultiviewRoute) },
+                MenuOption("Ajouter au multi-écran", Icons.Default.GridView) {
+                    vm.addToMultiview(c)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                    nav.navigate(MultiviewRoute)
+                },
             ),
             onDismiss = { channelMenu = null },
         )
@@ -253,10 +266,11 @@ fun LiveScreen(nav: NavHostController) {
             "Code parental",
             onResult = { pin ->
                 scope.launch {
-                    if (vm.unlock(pin)) {
+                    val r = vm.unlock(pin)
+                    if (r.ok) {
                         if (cat.name.startsWith("unlock:")) vm.setLocked(cat.id, false) else vm.selected.value = cat.id
                         pinFor = null; pinError = null
-                    } else pinError = "Code incorrect"
+                    } else pinError = r.message
                 }
             },
             onDismiss = { pinFor = null; pinError = null },
@@ -273,6 +287,8 @@ private fun ChannelList(
     onFocus: (ChannelEntity) -> Unit,
     onClick: (ChannelEntity) -> Unit,
     onLongClick: (ChannelEntity) -> Unit,
+    restoreId: String? = null,
+    onRestored: () -> Unit = {},
 ) {
     when {
         channels == null -> LoadingBox()
@@ -280,7 +296,19 @@ private fun ChannelList(
         else -> {
             val now = rememberNow()
             val state = rememberLazyListState()
-            LaunchedEffect(channels.firstOrNull()?.id) { state.scrollToItem(0) }
+            val restore = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(channels.firstOrNull()?.id) {
+                if (restoreId == null) state.scrollToItem(0)
+            }
+            LaunchedEffect(channels) {
+                val index = restoreId?.let { id -> channels.indexOfFirst { it.id == id } } ?: -1
+                if (index >= 0) {
+                    state.scrollToItem(index)
+                    androidx.compose.runtime.withFrameNanos { }
+                    runCatching { restore.requestFocus() }
+                    onRestored()
+                }
+            }
             LazyColumn(
                 Modifier.fillMaxSize().focusRestorer(),
                 state = state,
@@ -288,7 +316,10 @@ private fun ChannelList(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 itemsIndexed(channels, key = { _, c -> c.id }) { _, c ->
-                    ChannelRow(c, nowPlaying[c.id], c.id in favorites, now, { onFocus(c) }, { onClick(c) }, { onLongClick(c) })
+                    ChannelRow(
+                        c, nowPlaying[c.id], c.id in favorites, now, { onFocus(c) }, { onClick(c) }, { onLongClick(c) },
+                        if (c.id == restoreId) Modifier.focusRequester(restore) else Modifier,
+                    )
                 }
             }
         }
@@ -304,10 +335,11 @@ private fun ChannelRow(
     onFocus: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     FocusSurface(
         onClick = onClick, onLongClick = onLongClick, onFocus = onFocus,
-        modifier = Modifier.fillMaxWidth(), color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigher,
+        modifier = modifier.fillMaxWidth(), color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigher,
         shape = RoundedCornerShape(10.dp), focusScale = 1.015f, borderWidth = 2.dp,
     ) { focused ->
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {

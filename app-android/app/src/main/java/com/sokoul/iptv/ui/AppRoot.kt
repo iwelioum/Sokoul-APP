@@ -58,10 +58,16 @@ import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 @HiltViewModel
-class RootViewModel @Inject constructor(playlists: PlaylistRepository) : ViewModel() {
+class RootViewModel @Inject constructor(
+    playlists: PlaylistRepository,
+    private val catalog: com.sokoul.iptv.data.repo.CatalogRepository,
+) : ViewModel() {
     /** null = chargement ; false = aucune playlist (premier lancement). */
     val hasPlaylist: StateFlow<Boolean?> = playlists.playlists.map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Demande externe : ignorée si la chaîne n'existe pas (le lecteur applique ensuite le contrôle parental). */
+    suspend fun isPlayable(p: PlayIntent): Boolean = catalog.channel(p.playlistId, p.channelId) != null
 }
 
 @Composable
@@ -79,7 +85,7 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                 val play by pendingPlay.collectAsStateWithLifecycle()
                 LaunchedEffect(play) {
                     play?.let {
-                        nav.navigate(PlayerRoute(PlayKind.LIVE, it.playlistId, it.channelId))
+                        if (vm.isPlayable(it)) nav.navigate(PlayerRoute(PlayKind.LIVE, it.playlistId, it.channelId))
                         onPlayConsumed()
                     }
                 }

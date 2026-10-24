@@ -18,6 +18,8 @@ import com.sokoul.iptv.data.net.TmdbInfo
 import com.sokoul.iptv.data.net.XtreamClient
 import com.sokoul.iptv.parser.XtVodInfo
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -47,21 +49,33 @@ class CatalogRepository @Inject constructor(
     private val xtream: XtreamClient,
     private val tmdb: TmdbClient,
     private val settings: SettingsStore,
+    private val parental: com.sokoul.iptv.ui.ParentalGate,
 ) {
     private val vodInfoCache = ConcurrentHashMap<String, XtVodInfo>()
 
     fun categories(pid: Long, type: ContentType): Flow<List<CategoryWithPrefs>> = db.categories().observe(pid, type)
 
     fun channels(pid: Long, categoryId: String): Flow<List<ChannelEntity>> = when (categoryId) {
-        SpecialCategory.FAVORITES -> db.channels().observeFavorites(pid)
-        SpecialCategory.RECENT -> db.channels().observeRecent(pid)
-        SpecialCategory.ALL -> db.channels().observeAllVisible(pid)
+        SpecialCategory.FAVORITES -> hideLocked(pid, ContentType.LIVE, db.channels().observeFavorites(pid)) { it.categoryId }
+        SpecialCategory.RECENT -> hideLocked(pid, ContentType.LIVE, db.channels().observeRecent(pid)) { it.categoryId }
+        SpecialCategory.ALL -> hideLocked(pid, ContentType.LIVE, db.channels().observeAllVisible(pid)) { it.categoryId }
         else -> db.channels().observeByCategory(pid, categoryId)
     }
 
+    /**
+     * Listes transverses (Tout, Favoris, Récents, Accueil) : le contenu des groupes verrouillés
+     * n'y apparaît pas tant que le code parental n'a pas été saisi.
+     */
+    private fun <T> hideLocked(pid: Long, type: ContentType, source: Flow<List<T>>, category: (T) -> String?): Flow<List<T>> =
+        combine(source, db.categories().observeLocked(pid, type), parental.unlocked) { list, locked, _ ->
+            if (locked.isEmpty() || parental.canAccessLocked()) list
+            else locked.toSet().let { set -> list.filter { category(it) !in set } }
+        }
+
     suspend fun channelList(pid: Long, categoryId: String?): List<ChannelEntity> = when (categoryId) {
         null, SpecialCategory.ALL, SpecialCategory.RECENT -> db.channels().listAllVisible(pid)
-        SpecialCategory.FAVORITES -> db.channels().listFavorites(pid).ifEmpty { db.channels().listAllVisible(pid) }
+        // Pas de repli sur toutes les chaînes : zapper dans « Favoris » vide ne doit pas parcourir 28 000 chaînes
+        SpecialCategory.FAVORITES -> db.channels().listFavorites(pid)
         else -> db.channels().listByCategory(pid, categoryId)
     }
 
@@ -69,22 +83,22 @@ class CatalogRepository @Inject constructor(
     suspend fun channelByNumber(pid: Long, n: Int) = db.channels().getByNumber(pid, n)
 
     fun movies(pid: Long, categoryId: String): Flow<List<MovieEntity>> = when (categoryId) {
-        SpecialCategory.FAVORITES -> db.movies().observeFavorites(pid)
-        SpecialCategory.RECENT, SpecialCategory.ALL -> db.movies().observeRecent(pid, 300)
+        SpecialCategory.FAVORITES -> favoriteMovies(pid)
+        SpecialCategory.RECENT, SpecialCategory.ALL -> hideLocked(pid, ContentType.MOVIE, db.movies().observeRecent(pid, 300)) { it.categoryId }
         else -> db.movies().observeByCategory(pid, categoryId)
     }
 
-    fun recentMovies(pid: Long) = db.movies().observeRecent(pid)
-    fun favoriteMovies(pid: Long) = db.movies().observeFavorites(pid)
+    fun recentMovies(pid: Long) = hideLocked(pid, ContentType.MOVIE, db.movies().observeRecent(pid)) { it.categoryId }
+    fun favoriteMovies(pid: Long) = hideLocked(pid, ContentType.MOVIE, db.movies().observeFavorites(pid)) { it.categoryId }
 
     fun series(pid: Long, categoryId: String): Flow<List<SeriesEntity>> = when (categoryId) {
-        SpecialCategory.FAVORITES -> db.series().observeFavorites(pid)
-        SpecialCategory.RECENT, SpecialCategory.ALL -> db.series().observeRecent(pid, 300)
+        SpecialCategory.FAVORITES -> favoriteSeries(pid)
+        SpecialCategory.RECENT, SpecialCategory.ALL -> hideLocked(pid, ContentType.SERIES, db.series().observeRecent(pid, 300)) { it.categoryId }
         else -> db.series().observeByCategory(pid, categoryId)
     }
 
-    fun recentSeries(pid: Long) = db.series().observeRecent(pid)
-    fun favoriteSeries(pid: Long) = db.series().observeFavorites(pid)
+    fun recentSeries(pid: Long) = hideLocked(pid, ContentType.SERIES, db.series().observeRecent(pid)) { it.categoryId }
+    fun favoriteSeries(pid: Long) = hideLocked(pid, ContentType.SERIES, db.series().observeFavorites(pid)) { it.categoryId }
 
     suspend fun movie(pid: Long, id: String) = db.movies().get(pid, id)
     suspend fun seriesItem(pid: Long, id: String) = db.series().get(pid, id)
@@ -93,6 +107,9 @@ class CatalogRepository @Inject constructor(
     fun seriesDetails(pid: Long, sid: String): Flow<SeriesDetailsEntity?> = db.series().observeDetails(pid, sid)
     suspend fun episode(pid: Long, sid: String, eid: String) = db.series().episode(pid, sid, eid)
     suspend fun episodeList(pid: Long, sid: String) = db.series().episodes(pid, sid)
+
+    suspend fun isCategoryLocked(pid: Long, type: ContentType, cat: String): Boolean =
+        !cat.startsWith("__") && db.categories().getPref(pid, type, cat)?.locked == true
 
     suspend fun setCategoryPref(pid: Long, type: ContentType, cat: String, hidden: Boolean? = null, locked: Boolean? = null) {
         val current = db.categories().getPref(pid, type, cat) ?: CategoryPrefEntity(pid, type, cat)
@@ -139,19 +156,33 @@ class CatalogRepository @Inject constructor(
         tmdb.tv(settings.current().tmdbApiKey, series.title, series.year, series.tmdbId)
 
     suspend fun search(pid: Long, query: String): SearchResults {
-        val q = SyncEngine.searchable(query.trim())
-        if (q.length < 2) return SearchResults()
+        val trimmed = query.trim().take(MAX_QUERY)
+        val q = likeEscape(SyncEngine.searchable(trimmed))
+        if (trimmed.length < 2) return SearchResults()
         val now = System.currentTimeMillis()
-        val programs = db.programs().search(pid, query.trim(), now, 30)
+        val programs = db.programs().search(pid, likeEscape(trimmed), now, 30)
         val channelsByKey = HashMap<String, ChannelEntity?>()
+        // Groupes verrouillés : invisibles dans la recherche tant que le code n'a pas été saisi
+        val open = parental.isOpen()
+        suspend fun locked(type: ContentType) = if (open) emptySet() else db.categories().observeLocked(pid, type).first().toSet()
+        val lockedLive = locked(ContentType.LIVE)
+        val lockedMovies = locked(ContentType.MOVIE)
+        val lockedSeries = locked(ContentType.SERIES)
         return SearchResults(
-            channels = db.channels().search(pid, q),
-            movies = db.movies().search(pid, q),
-            series = db.series().search(pid, q),
+            channels = db.channels().search(pid, q).filter { it.categoryId !in lockedLive },
+            movies = db.movies().search(pid, q).filter { it.categoryId !in lockedMovies },
+            series = db.series().search(pid, q).filter { it.categoryId !in lockedSeries },
             programs = programs.map { pr ->
                 pr to channelsByKey.getOrPut(pr.channelKey) { findChannelForKey(pid, pr.channelKey) }
-            },
+            }.filter { (_, c) -> c == null || c.categoryId !in lockedLive },
         )
+    }
+
+    companion object {
+        const val MAX_QUERY = 100
+
+        /** Échappe les jokers SQL LIKE (`%`, `_`) : « 100% » ne doit pas tout renvoyer. */
+        fun likeEscape(s: String): String = s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     }
 
     private suspend fun findChannelForKey(pid: Long, key: String): ChannelEntity? =

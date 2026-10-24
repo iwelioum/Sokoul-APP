@@ -23,6 +23,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var okHttp: OkHttpClient
     @Inject lateinit var recordingScheduler: RecordingScheduler
+    @Inject lateinit var parentalGate: com.sokoul.iptv.ui.ParentalGate
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -33,6 +34,10 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
         createChannels()
         SyncWorker.schedulePeriodic(this)
         recordingScheduler.restoreAll()
+        // Contrôle parental : l'app passée en arrière-plan (touche Accueil, veille) se reverrouille.
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) = parentalGate.lock()
+        })
     }
 
     /** Coil partage le client OkHttp (et son pool de connexions) ; cache disque pour les logos. */

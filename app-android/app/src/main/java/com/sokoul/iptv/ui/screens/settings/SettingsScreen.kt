@@ -68,7 +68,9 @@ import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SyncEngine
 import com.sokoul.iptv.data.repo.SyncStatus
 import com.sokoul.iptv.data.repo.userMessage
+import com.sokoul.iptv.data.repo.BackupPassphraseException
 import com.sokoul.iptv.ui.ParentalGate
+import com.sokoul.iptv.ui.PinCheck
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.ConfirmDialog
 import com.sokoul.iptv.ui.components.FocusSurface
@@ -80,6 +82,7 @@ import com.sokoul.iptv.ui.nav.PlaylistEditRoute
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.util.formatDate
 import com.sokoul.iptv.ui.util.formatDateTime
+import com.sokoul.iptv.ui.util.hasDocumentPicker
 import com.sokoul.iptv.work.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -102,6 +105,7 @@ class SettingsViewModel @Inject constructor(
     private val parental: ParentalGate,
     sync: SyncEngine,
     db: AppDatabase,
+    private val http: okhttp3.OkHttpClient,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings> = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
@@ -117,15 +121,64 @@ class SettingsViewModel @Inject constructor(
     fun sync(p: PlaylistEntity) = SyncWorker.syncNow(context, p.id, withEpg = true)
     fun syncEpg(p: PlaylistEntity) = SyncWorker.epgNow(context, p.id)
     fun delete(p: PlaylistEntity) = viewModelScope.launch { playlists.delete(p.id) }
-    fun unflag(g: CategoryWithPrefs) = viewModelScope.launch { catalog.setCategoryPref(g.playlistId, g.type, g.categoryId, hidden = false, locked = false) }
+    /** Rétablit un groupe ; un groupe verrouillé ne se déverrouille qu'avec le code (sinon `needsPin`). */
+    fun unflag(g: CategoryWithPrefs, done: (needsPin: Boolean) -> Unit) = viewModelScope.launch {
+        if (g.locked && !parental.canAccessLocked()) { done(true); return@launch }
+        catalog.setCategoryPref(g.playlistId, g.type, g.categoryId, hidden = false, locked = false)
+        done(false)
+    }
     fun lockNow() = parental.lock()
+    fun checkPin(pin: String, done: (PinCheck) -> Unit) = viewModelScope.launch { done(parental.tryUnlock(pin)) }
+    fun setPin(pin: String) = viewModelScope.launch { parental.setPin(pin) }
+    fun removePin() = viewModelScope.launch { parental.removePin() }
 
-    fun export(uri: Uri, done: (String) -> Unit) = viewModelScope.launch {
-        done(runCatching { backup.export(uri) }.fold({ "Sauvegarde exportée" }, { it.userMessage() }))
+    fun export(uri: Uri, passphrase: String?, done: (String) -> Unit) = viewModelScope.launch {
+        done(runCatching { backup.export(uri, passphrase) }.fold({ r ->
+            buildString {
+                append(if (passphrase != null) "Sauvegarde chiffrée exportée" else "Sauvegarde exportée (sans mots de passe)")
+                if (r.skippedWithCredentials > 0) append(" — ${r.skippedWithCredentials} playlist(s) M3U avec identifiants non incluse(s) : utilisez l'export chiffré")
+            }
+        }, { it.userMessage() }))
     }
 
-    fun import(uri: Uri, done: (String) -> Unit) = viewModelScope.launch {
-        done(runCatching { backup.import(uri) }.fold({ ids -> ids.forEach { SyncWorker.syncNow(context, it) }; "${ids.size} playlist(s) restaurée(s)" }, { it.userMessage() }))
+    /** Sans sélecteur de fichiers (TV) : export dans le dossier de l'app. */
+    fun exportToFolder(passphrase: String?, done: (String) -> Unit) = viewModelScope.launch {
+        done(runCatching { backup.exportToFolder(passphrase) }.fold({ (f, r) ->
+            "Sauvegarde enregistrée : ${f.absolutePath}" +
+                (if (r.skippedWithCredentials > 0) " — ${r.skippedWithCredentials} playlist(s) M3U avec identifiants non incluse(s)" else "")
+        }, { it.userMessage() }))
+    }
+
+    fun localBackups(): List<java.io.File> = backup.localBackups()
+    fun backupFolder(): String = backup.backupDir().absolutePath
+
+    fun import(uri: Uri, passphrase: String?, needPassphrase: (String?) -> Unit, done: (String) -> Unit) =
+        runImport(passphrase, needPassphrase, done) { backup.import(uri, it) }
+
+    fun importFile(file: java.io.File, passphrase: String?, needPassphrase: (String?) -> Unit, done: (String) -> Unit) =
+        runImport(passphrase, needPassphrase, done) { backup.importFile(file, it) }
+
+    fun importUrl(url: String, passphrase: String?, needPassphrase: (String?) -> Unit, done: (String) -> Unit) =
+        runImport(passphrase, needPassphrase, done) { backup.importUrl(url, it, http) }
+
+    /** [needPassphrase] est appelé quand le fichier est chiffré et qu'aucune phrase (ou une mauvaise) n'a été fournie. */
+    private fun runImport(
+        passphrase: String?, needPassphrase: (String?) -> Unit, done: (String) -> Unit,
+        block: suspend (String?) -> com.sokoul.iptv.data.repo.ImportResult,
+    ) = viewModelScope.launch {
+        try {
+            val r = block(passphrase)
+            r.toSync.forEach { SyncWorker.syncNow(context, it) }
+            done(buildString {
+                append("${r.added.size} playlist(s) restaurée(s)")
+                if (r.skipped > 0) append(", ${r.skipped} ignorée(s)")
+                if (r.withoutPassword > 0) append(" — ${r.withoutPassword} sans mot de passe : à saisir via « Modifier »")
+            })
+        } catch (e: BackupPassphraseException) {
+            needPassphrase(if (passphrase != null) "Phrase de passe incorrecte" else null)
+        } catch (e: Exception) {
+            done(e.userMessage())
+        }
     }
 }
 
@@ -148,11 +201,30 @@ fun SettingsScreen(nav: NavHostController) {
     var pinError by remember { mutableStateOf<String?>(null) }
     val firstFocus = remember { FocusRequester() }
 
+    var exportPass by remember { mutableStateOf<String?>(null) }
+    var exportMenu by remember { mutableStateOf(false) }
+    val toast: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) vm.export(uri) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+        if (uri != null) vm.export(uri, exportPass, toast)
+        exportPass = null
+    }
+    // Lance un import ; redemande la phrase de passe si la sauvegarde est chiffrée.
+    fun runImport(start: (String?, (String?) -> Unit) -> Unit) {
+        lateinit var attempt: (String?) -> Unit
+        attempt = { pass ->
+            start(pass) { err -> textEdit = TextEdit("Phrase de passe de la sauvegarde", "", password = true, message = err) { p -> attempt(p) } }
+        }
+        attempt(null)
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.import(uri) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+        if (uri != null) runImport { pass, need -> vm.import(uri, pass, need, toast) }
+    }
+    // Android TV : pas de sélecteur de fichiers → dossier de l'app ou adresse web
+    val hasPicker = remember { context.hasDocumentPicker() }
+    var restoreMenu by remember { mutableStateOf(false) }
+    val doExport: (String?) -> Unit = { pass ->
+        if (hasPicker) { exportPass = pass; exportLauncher.launch(if (pass != null) "sokoul-sauvegarde-chiffree.json" else "sokoul-sauvegarde.json") }
+        else vm.exportToFolder(pass, toast)
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -225,7 +297,12 @@ fun SettingsScreen(nav: NavHostController) {
                 g.name,
                 listOfNotNull(typeLabel(g.type), if (g.hidden) "masqué" else null, if (g.locked) "verrouillé" else null).joinToString(" · "),
                 icon = if (g.locked) Icons.Default.Lock else Icons.Default.Visibility,
-            ) { vm.unflag(g); Toast.makeText(context, "« ${g.name} » rétabli", Toast.LENGTH_SHORT).show() }
+            ) {
+                vm.unflag(g) { needsPin ->
+                    if (needsPin) pinStep = PinStep.UNFLAG(g)
+                    else Toast.makeText(context, "« ${g.name} » rétabli", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
 
         section("Contrôle parental")
@@ -247,8 +324,12 @@ fun SettingsScreen(nav: NavHostController) {
         }
 
         section("Sauvegarde")
-        item { SettingRow("Exporter la configuration", "Playlists, favoris, groupes et réglages (contient vos mots de passe)") { exportLauncher.launch("sokoul-sauvegarde.json") } }
-        item { SettingRow("Restaurer une sauvegarde", null) { importLauncher.launch(arrayOf("application/json", "*/*")) } }
+        item { SettingRow("Exporter la configuration", "Playlists, favoris, groupes et réglages") { exportMenu = true } }
+        item {
+            SettingRow("Restaurer une sauvegarde", null) {
+                if (hasPicker) importLauncher.launch(arrayOf("application/json", "*/*")) else restoreMenu = true
+            }
+        }
 
         section("À propos")
         item { SettingRow("Sokoul TV ${BuildConfig.VERSION_NAME}", "Lecteur IPTV pour Android TV, Fire TV et mobiles", icon = Icons.Default.CheckCircle) {} }
@@ -256,7 +337,39 @@ fun SettingsScreen(nav: NavHostController) {
     LaunchedEffect(playlists.isNotEmpty()) { if (playlists.isNotEmpty()) runCatching { firstFocus.requestFocus() } }
 
     choice?.let { (title, options) -> OptionsDialog(title, options, onDismiss = { choice = null }) }
-    textEdit?.let { t -> TextEditDialog(t) { textEdit = null } }
+    if (exportMenu) {
+        OptionsDialog(
+            "Exporter la configuration",
+            listOf(
+                MenuOption("Sans mots de passe") { doExport(null) },
+                MenuOption("Avec les identifiants (chiffrée)", Icons.Default.Lock) {
+                    textEdit = TextEdit(
+                        "Choisissez une phrase de passe (8 caractères minimum)", "", password = true,
+                        validate = { if (it.length < 8) "8 caractères minimum" else null },
+                    ) { p -> doExport(p) }
+                },
+            ),
+            subtitle = "Sans mots de passe, il faudra les ressaisir après la restauration. La version chiffrée demande la phrase de passe pour être restaurée.",
+            onDismiss = { exportMenu = false },
+        )
+    }
+    if (restoreMenu) {
+        val files = remember { vm.localBackups() }
+        OptionsDialog(
+            "Restaurer une sauvegarde",
+            files.take(20).map { f ->
+                MenuOption(f.name) { runImport { pass, need -> vm.importFile(f, pass, need, toast) } }
+            } + MenuOption("Depuis une adresse web…") {
+                textEdit = TextEdit("Adresse de la sauvegarde (http/https)", "http://",
+                    validate = { if (com.sokoul.iptv.data.repo.BackupRules.isHttpUrl(it)) null else "Adresse invalide" }) { url ->
+                    runImport { pass, need -> vm.importUrl(url, pass, need, toast) }
+                }
+            },
+            subtitle = if (files.isEmpty()) "Aucune sauvegarde dans ${vm.backupFolder()}" else "Sauvegardes de ${vm.backupFolder()}",
+            onDismiss = { restoreMenu = false },
+        )
+    }
+    textEdit?.let { t -> androidx.compose.runtime.key(t) { TextEditDialog(t) { if (textEdit === t) textEdit = null } } }
     playlistMenu?.let { p ->
         OptionsDialog(
             p.name,
@@ -273,16 +386,29 @@ fun SettingsScreen(nav: NavHostController) {
     confirmDelete?.let { p ->
         ConfirmDialog("Supprimer « ${p.name} » ?", "Chaînes, favoris, reprises et guide de cette playlist seront supprimés.", "Supprimer", { vm.delete(p) }, { confirmDelete = null })
     }
-    pinStep?.let { step ->
+    // key(step) : chaque étape repart d'une saisie vide (sinon « Confirmez » affichait déjà 4 chiffres)
+    pinStep?.let { step -> androidx.compose.runtime.key(step) {
         PinDialog(
-            when (step) { PinStep.CURRENT, PinStep.REMOVE -> "Code actuel"; PinStep.NEW -> "Nouveau code"; is PinStep.CONFIRM -> "Confirmez le code" },
+            when (step) {
+                PinStep.CURRENT, PinStep.REMOVE -> "Code actuel"; PinStep.NEW -> "Nouveau code"
+                is PinStep.CONFIRM -> "Confirmez le code"; is PinStep.UNFLAG -> "Code parental"
+            },
             onResult = { pin ->
                 when (step) {
-                    PinStep.CURRENT -> if (pin == s.parentalPin) { pinStep = PinStep.NEW; pinError = null } else pinError = "Code incorrect"
-                    PinStep.REMOVE -> if (pin == s.parentalPin) { vm.update { it.copy(parentalPin = "") }; pinStep = null; pinError = null } else pinError = "Code incorrect"
+                    is PinStep.UNFLAG -> vm.checkPin(pin) { r ->
+                        if (r.ok) {
+                            pinStep = null; pinError = null
+                            vm.unflag(step.group) { Toast.makeText(context, "« ${step.group.name} » rétabli", Toast.LENGTH_SHORT).show() }
+                        } else pinError = r.message
+                    }
+                    PinStep.CURRENT -> vm.checkPin(pin) { r -> if (r.ok) { pinStep = PinStep.NEW; pinError = null } else pinError = r.message }
+                    PinStep.REMOVE -> vm.checkPin(pin) { r ->
+                        if (r.ok) { vm.removePin(); pinStep = null; pinError = null; Toast.makeText(context, "Code parental supprimé", Toast.LENGTH_SHORT).show() }
+                        else pinError = r.message
+                    }
                     PinStep.NEW -> { pinStep = PinStep.CONFIRM(pin); pinError = null }
                     is PinStep.CONFIRM -> if (pin == step.first) {
-                        vm.update { it.copy(parentalPin = pin) }; pinStep = null; pinError = null
+                        vm.setPin(pin); pinStep = null; pinError = null
                         Toast.makeText(context, "Code parental enregistré", Toast.LENGTH_SHORT).show()
                     } else { pinStep = PinStep.NEW; pinError = "Les codes ne correspondent pas" }
                 }
@@ -290,7 +416,7 @@ fun SettingsScreen(nav: NavHostController) {
             onDismiss = { pinStep = null; pinError = null },
             error = pinError,
         )
-    }
+    } }
 }
 
 private sealed interface PinStep {
@@ -298,9 +424,18 @@ private sealed interface PinStep {
     data object NEW : PinStep
     data object REMOVE : PinStep
     data class CONFIRM(val first: String) : PinStep
+    data class UNFLAG(val group: CategoryWithPrefs) : PinStep
 }
 
-private data class TextEdit(val title: String, val value: String, val onSave: (String) -> Unit)
+private data class TextEdit(
+    val title: String,
+    val value: String,
+    val password: Boolean = false,
+    val message: String? = null,
+    /** Renvoie un message d'erreur pour refuser la valeur. */
+    val validate: (String) -> String? = { null },
+    val onSave: (String) -> Unit,
+)
 
 private fun androidx.compose.foundation.lazy.LazyListScope.section(title: String) = item(key = "section-$title") {
     Text(title.uppercase(), Modifier.padding(top = 22.dp, bottom = 4.dp, start = 4.dp), color = SokoulColors.Accent, style = MaterialTheme.typography.labelLarge)
@@ -364,14 +499,20 @@ private fun statusLine(label: String, s: SyncStatus?): String? = when {
 @Composable
 private fun TextEditDialog(t: TextEdit, onDismiss: () -> Unit) {
     var value by remember { mutableStateOf(t.value) }
+    var error by remember { mutableStateOf(t.message) }
     val focus = remember { FocusRequester() }
+    val save = {
+        val e = t.validate(value)
+        if (e != null) error = e else { t.onSave(value); onDismiss() }
+    }
     Dialog(onDismissRequest = onDismiss) {
         Column(Modifier.widthIn(min = 360.dp, max = 560.dp).background(SokoulColors.SurfaceHigh, RoundedCornerShape(18.dp)).padding(24.dp)) {
             Text(t.title, style = MaterialTheme.typography.titleLarge)
-            FormField("Valeur", value, { value = it }, Modifier.padding(top = 14.dp).focusRequester(focus), autoEdit = true, onDone = { t.onSave(value); onDismiss() })
+            FormField("Valeur", value, { value = it; error = null }, Modifier.padding(top = 14.dp).focusRequester(focus), password = t.password, autoEdit = true, onDone = save)
+            error?.let { Text(it, Modifier.padding(top = 8.dp), color = SokoulColors.Live, style = MaterialTheme.typography.bodyMedium) }
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 AppButton("Annuler", onDismiss)
-                AppButton("Enregistrer", { t.onSave(value); onDismiss() }, primary = true)
+                AppButton("Valider", save, primary = true)
             }
         }
         LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }

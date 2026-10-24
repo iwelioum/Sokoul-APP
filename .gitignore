@@ -19,3 +19,8 @@ Thumbs.db
 
 # Sauvegardes de l'app (contiennent des mots de passe)
 sokoul-sauvegarde*.json
+
+# Signature release (secrets)
+app-android/keystore.properties
+*.jks
+*.keystore

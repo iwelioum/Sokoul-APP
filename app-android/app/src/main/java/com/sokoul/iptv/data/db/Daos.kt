@@ -135,7 +135,7 @@ interface ChannelDao {
     @Query("SELECT * FROM channels WHERE playlistId = :pid AND number = :number LIMIT 1")
     suspend fun getByNumber(pid: Long, number: Int): ChannelEntity?
 
-    @Query("SELECT * FROM channels WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ORDER BY position LIMIT :limit")
+    @Query("SELECT * FROM channels WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ESCAPE '\\' ORDER BY position LIMIT :limit")
     suspend fun search(pid: Long, q: String, limit: Int = 60): List<ChannelEntity>
 
     @Query("SELECT * FROM channels WHERE playlistId = :pid AND categoryId = :cat ORDER BY position")
@@ -219,7 +219,7 @@ interface MovieDao {
     @Query("SELECT * FROM movies WHERE playlistId = :pid AND id = :id")
     suspend fun get(pid: Long, id: String): MovieEntity?
 
-    @Query("SELECT * FROM movies WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ORDER BY added DESC LIMIT :limit")
+    @Query("SELECT * FROM movies WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ESCAPE '\\' ORDER BY added DESC LIMIT :limit")
     suspend fun search(pid: Long, q: String, limit: Int = 60): List<MovieEntity>
 
     @Upsert
@@ -264,7 +264,7 @@ interface SeriesDao {
     @Query("SELECT * FROM series WHERE playlistId = :pid AND id = :id")
     fun observe(pid: Long, id: String): Flow<SeriesEntity?>
 
-    @Query("SELECT * FROM series WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ORDER BY lastModified DESC LIMIT :limit")
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ESCAPE '\\' ORDER BY lastModified DESC LIMIT :limit")
     suspend fun search(pid: Long, q: String, limit: Int = 60): List<SeriesEntity>
 
     @Upsert
@@ -324,7 +324,7 @@ interface ProgramDao {
     @Query("SELECT * FROM programs WHERE playlistId = :pid AND channelKey = :key AND `end` > :now ORDER BY start LIMIT :limit")
     suspend fun upcoming(pid: Long, key: String, now: Long, limit: Int = 2): List<ProgramEntity>
 
-    @Query("SELECT * FROM programs WHERE playlistId = :pid AND title LIKE '%' || :q || '%' AND `end` > :now ORDER BY start LIMIT :limit")
+    @Query("SELECT * FROM programs WHERE playlistId = :pid AND title LIKE '%' || :q || '%' ESCAPE '\\' AND `end` > :now ORDER BY start LIMIT :limit")
     suspend fun search(pid: Long, q: String, now: Long, limit: Int = 60): List<ProgramEntity>
 
     @Upsert
@@ -409,6 +409,12 @@ interface RecordingDao {
 
     @Query("SELECT * FROM recordings WHERE status = 'RECORDING'")
     suspend fun active(): List<RecordingEntity>
+
+    @Query("SELECT * FROM recordings WHERE playlistId = :pid")
+    suspend fun forPlaylist(pid: Long): List<RecordingEntity>
+
+    @Query("SELECT * FROM reminders WHERE playlistId = :pid")
+    suspend fun remindersFor(pid: Long): List<ReminderEntity>
 
     @Insert
     suspend fun insert(r: RecordingEntity): Long

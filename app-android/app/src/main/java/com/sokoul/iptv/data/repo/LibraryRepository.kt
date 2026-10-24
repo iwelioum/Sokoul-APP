@@ -31,8 +31,8 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
         pid: Long, type: ContentType, id: String, parentId: String?, title: String, subtitle: String?, image: String?,
         positionMs: Long, durationMs: Long,
     ) {
-        // « vu » au-delà de 92 % ou à moins de 3 minutes de la fin (génériques)
-        val finished = durationMs > 0 && (positionMs >= durationMs * 0.92 || durationMs - positionMs < 180_000)
+        if (durationMs <= 0 || positionMs < 0) return
+        val finished = isFinished(positionMs, durationMs)
         db.library().saveProgress(
             ProgressEntity(pid, type, id, parentId, title, subtitle, image, positionMs, durationMs, System.currentTimeMillis(), finished)
         )
@@ -48,5 +48,23 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
         if (watched) {
             db.library().saveProgress(ProgressEntity(pid, type, id, parentId, title, null, null, 1, 1, System.currentTimeMillis(), true))
         } else db.library().deleteProgress(pid, type, id)
+    }
+
+    companion object {
+        /** En dessous, on ne propose pas de reprendre (début de film). */
+        const val RESUME_MIN_MS = 30_000L
+        /** Recul appliqué à la reprise pour retrouver le contexte. */
+        const val RESUME_REWIND_MS = 5_000L
+
+        /** « Vu » : au-delà de 92 %, ou à moins de 3 min de la fin (génériques) pour un contenu de plus de 20 min. */
+        fun isFinished(positionMs: Long, durationMs: Long): Boolean {
+            if (durationMs <= 0) return false
+            val remaining = durationMs - positionMs
+            return positionMs >= durationMs * 0.92 || (durationMs > 20 * 60_000L && remaining < 180_000L)
+        }
+
+        /** Position de reprise (0 = depuis le début). */
+        fun resumeFrom(p: ProgressEntity?): Long =
+            if (p == null || p.finished || p.positionMs <= RESUME_MIN_MS) 0 else p.positionMs - RESUME_REWIND_MS
     }
 }

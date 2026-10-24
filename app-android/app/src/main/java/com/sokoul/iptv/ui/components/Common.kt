@@ -365,10 +365,28 @@ fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: ()
 @Composable
 fun PinDialog(title: String, onResult: (String) -> Unit, onDismiss: () -> Unit, error: String? = null) {
     var pin by remember { mutableStateOf("") }
+    // Code refusé : on vide la saisie pour permettre un nouvel essai sans effacer chiffre par chiffre
+    LaunchedEffect(error) { if (error != null) pin = "" }
     Dialog(onDismissRequest = onDismiss) {
         val first = remember { FocusRequester() }
         Column(
-            Modifier.clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(24.dp),
+            Modifier.clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(24.dp)
+                // touches numériques de la télécommande (0-9) et retour arrière
+                .onPreviewKeyEvent { e ->
+                    if (e.nativeKeyEvent.action != android.view.KeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
+                    val code = e.nativeKeyEvent.keyCode
+                    when (code) {
+                        in android.view.KeyEvent.KEYCODE_0..android.view.KeyEvent.KEYCODE_9 -> {
+                            if (pin.length < 4) {
+                                pin += (code - android.view.KeyEvent.KEYCODE_0).toString()
+                                if (pin.length == 4) onResult(pin)
+                            }
+                            true
+                        }
+                        android.view.KeyEvent.KEYCODE_DEL -> { pin = pin.dropLast(1); true }
+                        else -> false
+                    }
+                },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(Icons.Default.Lock, null, tint = SokoulColors.Accent)

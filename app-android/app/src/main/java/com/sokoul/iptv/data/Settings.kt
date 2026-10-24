@@ -38,8 +38,22 @@ data class AppSettings(
     val showClock: Boolean = true,
     val channelNumbers: Boolean = true,
 ) {
+    /** Bornes appliquées à chaque écriture : une valeur aberrante (import, bug d'UI) ne doit pas casser l'app. */
+    fun sanitized(): AppSettings = copy(
+        userAgent = userAgent.trim().take(MAX_USER_AGENT).filter { it >= ' ' }.ifBlank { DEFAULT_USER_AGENT },
+        audioLanguage = audioLanguage.trim().take(8),
+        subtitleLanguage = subtitleLanguage.trim().take(8),
+        epgOffsetMinutes = epgOffsetMinutes.coerceIn(-12 * 60, 12 * 60),
+        playlistRefreshHours = playlistRefreshHours.coerceIn(1, 168),
+        epgRefreshHours = epgRefreshHours.coerceIn(1, 168),
+        parentalPin = parentalPin.takeIf { PinHasher.isValidStored(it) } ?: "",
+        tmdbApiKey = tmdbApiKey.trim().take(256).filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' },
+        lastChannelId = lastChannelId.take(64),
+    )
+
     companion object {
         const val DEFAULT_USER_AGENT = "SokoulTV/2.0 (Linux; Android) ExoPlayer"
+        const val MAX_USER_AGENT = 256
     }
 }
 
@@ -103,9 +117,22 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         context.dataStore.edit { it[stringPreferencesKey("last_group_${screen}_$playlistId")] = categoryId }
     }
 
+    /** Échecs consécutifs de saisie du code parental et fin du blocage en cours. */
+    suspend fun pinAttempts(): Pair<Int, Long> {
+        val p = context.dataStore.data.first()
+        return (p[pinFailures] ?: 0) to (p[pinLockedUntil] ?: 0L)
+    }
+
+    suspend fun setPinAttempts(failures: Int, lockedUntil: Long) {
+        context.dataStore.edit { it[pinFailures] = failures; it[pinLockedUntil] = lockedUntil }
+    }
+
+    private val pinFailures = intPreferencesKey("pin_failures")
+    private val pinLockedUntil = longPreferencesKey("pin_locked_until")
+
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         context.dataStore.edit { prefs ->
-            val s = transform(prefs.toSettings())
+            val s = transform(prefs.toSettings()).sanitized()
             prefs[K.activePlaylist] = s.activePlaylistId
             prefs[K.buffer] = s.bufferProfile.name
             prefs[K.liveFormat] = s.liveFormat.name

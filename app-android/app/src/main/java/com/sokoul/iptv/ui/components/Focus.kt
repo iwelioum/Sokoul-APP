@@ -62,7 +62,8 @@ fun Modifier.dpadClickable(
                 KeyEventType.KeyDown -> {
                     if (e.nativeKeyEvent.repeatCount == 0) {
                         press.longFired = false; press.down = true
-                    } else if (!press.longFired && long != null && e.nativeKeyEvent.repeatCount >= 8) {
+                    } else if (!press.longFired && long != null &&
+                        (e.nativeKeyEvent.repeatCount >= 8 || e.nativeKeyEvent.isLongPress)) {
                         press.longFired = true
                         long()
                     }

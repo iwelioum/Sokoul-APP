@@ -16,8 +16,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Résultat d'une demande d'enregistrement, avec le message à afficher. */
+data class ScheduleOutcome(val id: Long?, val message: String) {
+    val ok get() = id != null
+}
 
 @Singleton
 class RecordingScheduler @Inject constructor(
@@ -26,25 +33,36 @@ class RecordingScheduler @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val alarms get() = context.getSystemService(AlarmManager::class.java)
+    /** Évite que deux demandes simultanées passent toutes les deux le contrôle de conflit. */
+    private val mutex = Mutex()
 
     fun recordings() = db.recordings().observeAll()
     fun reminders(pid: Long) = db.recordings().observeRemindersFor(pid)
 
-    /** Enregistrement immédiat (durée en minutes) ou programmé (début dans le futur). */
-    suspend fun schedule(pid: Long, channel: ChannelEntity, title: String, start: Long, end: Long): Long {
-        val id = db.recordings().insert(
-            RecordingEntity(
-                playlistId = pid, channelId = channel.id, channelName = channel.name, title = title,
-                startAt = start, endAt = end, status = RecordingStatus.SCHEDULED,
-            )
-        )
-        arm(id, start)
-        return id
+    /** Enregistrement immédiat ou programmé, refusé s'il est incohérent ou en conflit. */
+    suspend fun schedule(pid: Long, channel: ChannelEntity, title: String, start: Long, end: Long): ScheduleOutcome = mutex.withLock {
+        val now = System.currentTimeMillis()
+        val playlist = db.playlists().get(pid) ?: return@withLock ScheduleOutcome(null, "Playlist introuvable")
+        val effectiveStart = maxOf(start, now)
+        when (val v = RecordingRules.check(channel.id, effectiveStart, end, db.recordings().forPlaylist(pid), playlist.maxConnections, now)) {
+            is RecordingRules.Verdict.Refused -> ScheduleOutcome(null, v.reason)
+            is RecordingRules.Verdict.Ok -> {
+                val id = db.recordings().insert(
+                    RecordingEntity(
+                        playlistId = pid, channelId = channel.id, channelName = channel.name, title = title.take(200),
+                        startAt = effectiveStart, endAt = end, status = RecordingStatus.SCHEDULED,
+                    )
+                )
+                arm(id, effectiveStart)
+                val base = if (effectiveStart <= now + 2_000) "Enregistrement démarré" else "Enregistrement programmé"
+                ScheduleOutcome(id, listOfNotNull(base, v.warning).joinToString(" — "))
+            }
+        }
     }
 
     suspend fun cancel(id: Long) {
         val r = db.recordings().get(id) ?: return
-        alarms.cancel(pending(ACTION_RECORD, id.toInt(), id))
+        alarms.cancel(pending(id))
         if (r.status == RecordingStatus.RECORDING) {
             context.startService(Intent(context, RecordingService::class.java).setAction(RecordingService.ACTION_STOP).putExtra(RecordingService.EXTRA_ID, id))
         } else if (r.status == RecordingStatus.SCHEDULED) {
@@ -59,9 +77,25 @@ class RecordingScheduler @Inject constructor(
         db.recordings().delete(r)
     }
 
-    suspend fun addReminder(pid: Long, channel: ChannelEntity, start: Long, title: String) {
-        db.recordings().upsertReminder(ReminderEntity(pid, channel.id, channel.name, start, title))
+    /**
+     * Suppression d'une playlist : annule les enregistrements à venir ou en cours et les rappels.
+     * Les enregistrements terminés (fichiers) sont conservés.
+     */
+    suspend fun cancelForPlaylist(pid: Long) {
+        for (r in db.recordings().forPlaylist(pid)) {
+            if (r.status == RecordingStatus.SCHEDULED || r.status == RecordingStatus.RECORDING) cancel(r.id)
+        }
+        for (rem in db.recordings().remindersFor(pid)) {
+            alarms.cancel(reminderPending(rem.playlistId, rem.channelId, rem.start))
+            db.recordings().deleteReminder(rem.playlistId, rem.channelId, rem.start)
+        }
+    }
+
+    suspend fun addReminder(pid: Long, channel: ChannelEntity, start: Long, title: String): String {
+        if (start - 60_000 <= System.currentTimeMillis()) return "Ce programme commence dans moins d'une minute"
+        db.recordings().upsertReminder(ReminderEntity(pid, channel.id, channel.name, start, title.take(200)))
         armReminder(pid, channel.id, start)
+        return "Rappel programmé"
     }
 
     suspend fun removeReminder(pid: Long, channelId: String, start: Long) {
@@ -75,7 +109,7 @@ class RecordingScheduler @Inject constructor(
                 context, Intent(context, RecordingService::class.java).setAction(RecordingService.ACTION_START).putExtra(RecordingService.EXTRA_ID, id)
             )
         } else {
-            setExact(start, pending(ACTION_RECORD, id.toInt(), id))
+            setExact(start, pending(id))
         }
     }
 
@@ -90,14 +124,14 @@ class RecordingScheduler @Inject constructor(
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
     }
 
-    private fun pending(action: String, requestCode: Int, id: Long): PendingIntent = PendingIntent.getBroadcast(
-        context, requestCode,
-        Intent(context, AlarmReceiver::class.java).setAction(action).putExtra(RecordingService.EXTRA_ID, id),
+    private fun pending(id: Long): PendingIntent = PendingIntent.getBroadcast(
+        context, RecordingRules.recordRequestCode(id),
+        Intent(context, AlarmReceiver::class.java).setAction(ACTION_RECORD).putExtra(RecordingService.EXTRA_ID, id),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
     private fun reminderPending(pid: Long, channelId: String, start: Long): PendingIntent = PendingIntent.getBroadcast(
-        context, ("$pid|$channelId|$start").hashCode(),
+        context, RecordingRules.reminderRequestCode(pid, channelId, start),
         Intent(context, AlarmReceiver::class.java).setAction(ACTION_REMINDER)
             .putExtra(EXTRA_PLAYLIST, pid).putExtra(EXTRA_CHANNEL, channelId).putExtra(EXTRA_START, start),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -109,7 +143,8 @@ class RecordingScheduler @Inject constructor(
             val now = System.currentTimeMillis()
             for (r in db.recordings().active()) {
                 // le processus a été tué pendant l'enregistrement : on reprend si c'est encore l'heure
-                if (r.endAt > now) arm(r.id, now) else db.recordings().update(r.copy(status = RecordingStatus.COMPLETED))
+                if (r.endAt > now) arm(r.id, now)
+                else db.recordings().update(r.copy(status = if (r.sizeBytes > 0) RecordingStatus.COMPLETED else RecordingStatus.FAILED, error = r.error ?: "Interrompu (appareil ou application arrêtés)"))
             }
             for (r in db.recordings().scheduled()) {
                 if (r.endAt <= now) db.recordings().update(r.copy(status = RecordingStatus.FAILED, error = "Appareil éteint à l'heure prévue"))

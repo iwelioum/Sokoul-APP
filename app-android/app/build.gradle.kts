@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -21,6 +23,20 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    // Signature release : keystore.properties (non versionné) à la racine d'app-android :
+    // storeFile=…, storePassword=…, keyAlias=…, keyPassword=…
+    val keystoreProps = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { f ->
+        Properties().also { p -> f.inputStream().use { p.load(it) } }
+    }
+    signingConfigs {
+        if (keystoreProps != null) create("release") {
+            storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+            storePassword = keystoreProps.getProperty("storePassword")
+            keyAlias = keystoreProps.getProperty("keyAlias")
+            keyPassword = keystoreProps.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -30,9 +46,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signature debug pour pouvoir installer l'APK release sans keystore dédié.
-            // Remplacer par une vraie configuration de signature avant toute diffusion.
-            signingConfig = signingConfigs.getByName("debug")
+            // Sans keystore.properties : signature debug (installation locale uniquement, à ne pas diffuser).
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -55,6 +70,10 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.maxHeapSize = "2g" }
     }
     lint {
         abortOnError = false
@@ -116,4 +135,9 @@ dependencies {
     implementation(libs.timber)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.room.testing)
+    testImplementation(libs.okhttp.mockwebserver)
 }

@@ -69,7 +69,14 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         val pid = intent?.getLongExtra(EXTRA_PLAY_PLAYLIST, 0) ?: 0
         val cid = intent?.getStringExtra(EXTRA_PLAY_CHANNEL)
-        if (pid > 0 && cid != null) pendingPlay.value = PlayIntent(pid, cid)
+        // L'activité est exportée (lanceur) : n'importe quelle app peut envoyer ces extras.
+        // On ne garde qu'un identifiant plausible ; le lecteur vérifie ensuite l'existence de la chaîne
+        // et applique le contrôle parental.
+        if (pid > 0 && cid != null && cid.length in 1..64 && cid.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
+            pendingPlay.value = PlayIntent(pid, cid)
+        }
+        intent?.removeExtra(EXTRA_PLAY_PLAYLIST)
+        intent?.removeExtra(EXTRA_PLAY_CHANNEL)
     }
 
     private fun isTelevision(): Boolean {

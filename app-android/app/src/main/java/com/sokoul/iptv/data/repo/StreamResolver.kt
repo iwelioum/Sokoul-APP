@@ -15,6 +15,8 @@ import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private fun ChannelEntity.streamId(): Long = id.toLongOrNull() ?: throw IOException("Identifiant de chaîne invalide")
+
 /** Flux prêt à lire : URL principale, solutions de repli et en-têtes HTTP. */
 data class ResolvedStream(
     val urls: List<String>,
@@ -39,8 +41,8 @@ class StreamResolver @Inject constructor(
                 val preferred = settings.current().liveFormat
                 val other = if (preferred == LiveFormat.TS) LiveFormat.HLS else LiveFormat.TS
                 listOf(
-                    XtreamUrls.live(a.server, a.username, a.password, c.id.toLong(), preferred.ext),
-                    XtreamUrls.live(a.server, a.username, a.password, c.id.toLong(), other.ext),
+                    XtreamUrls.live(a.server, a.username, a.password, c.streamId(), preferred.ext),
+                    XtreamUrls.live(a.server, a.username, a.password, c.streamId(), other.ext),
                 )
             }
             PlaylistType.M3U -> listOfNotNull(c.streamUrl)
@@ -55,12 +57,15 @@ class StreamResolver @Inject constructor(
     }
 
     suspend fun catchup(p: PlaylistEntity, c: ChannelEntity, start: Long, end: Long): ResolvedStream {
+        if (!supportsCatchup(p, c)) throw IOException("Le replay n'est pas disponible pour cette chaîne")
+        if (end <= start) throw IOException("Plage de replay invalide")
+        if (!inCatchupWindow(c, start)) throw IOException("Ce programme n'est plus disponible en replay (${c.catchupDays} jour(s) d'archive)")
         val url = when {
             c.catchupType == SyncEngine.CATCHUP_XTREAM -> {
                 val a = playlists.auth(p) ?: throw IOException("Identifiants indisponibles")
                 val tz = p.serverTimezone?.let { TimeZone.getTimeZone(it) } ?: TimeZone.getDefault()
                 val minutes = ((end - start) / 60_000L).toInt().coerceAtLeast(1) + 1
-                XtreamUrls.timeshift(a.server, a.username, a.password, c.id.toLong(), start, minutes, tz)
+                XtreamUrls.timeshift(a.server, a.username, a.password, c.streamId(), start, minutes, tz)
             }
             else -> Catchup.build(c.catchupType, c.catchupSource, c.streamUrl ?: "", start, end)
                 ?: throw IOException("Le replay n'est pas disponible pour cette chaîne")
@@ -72,7 +77,7 @@ class StreamResolver @Inject constructor(
         val url = when (p.type) {
             PlaylistType.XTREAM -> {
                 val a = playlists.auth(p) ?: throw IOException("Identifiants indisponibles")
-                XtreamUrls.movie(a.server, a.username, a.password, m.id.toLong(), m.extension)
+                XtreamUrls.movie(a.server, a.username, a.password, m.id.toLongOrNull() ?: throw IOException("Identifiant de film invalide"), m.extension)
             }
             PlaylistType.M3U -> m.streamUrl ?: throw IOException("URL du film manquante")
         }
@@ -90,12 +95,18 @@ class StreamResolver @Inject constructor(
         return ResolvedStream(listOf(url), ua(p), null, isLive = false)
     }
 
+    companion object {
+        /** Le début du programme est-il encore dans la fenêtre d'archive de la chaîne ? (0 jour = inconnu : on tente) */
+        fun inCatchupWindow(c: ChannelEntity, start: Long, now: Long = System.currentTimeMillis()): Boolean =
+            c.catchupDays <= 0 || start >= now - c.catchupDays * 86_400_000L - 3600_000L
+    }
+
     /** URL brute d'enregistrement : toujours en MPEG-TS quand c'est possible (copie directe). */
     suspend fun recordingUrl(p: PlaylistEntity, c: ChannelEntity): ResolvedStream {
         val urls = when (p.type) {
             PlaylistType.XTREAM -> {
                 val a = playlists.auth(p) ?: throw IOException("Identifiants indisponibles")
-                listOf(XtreamUrls.live(a.server, a.username, a.password, c.id.toLong(), "ts"))
+                listOf(XtreamUrls.live(a.server, a.username, a.password, c.streamId(), "ts"))
             }
             PlaylistType.M3U -> listOfNotNull(c.streamUrl)
         }
