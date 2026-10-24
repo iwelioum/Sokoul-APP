@@ -112,7 +112,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-private enum class Menu { MAIN, AUDIO, SUBS, ASPECT, RECORD, INFO }
+private enum class Menu { MAIN, AUDIO, SUBS, ASPECT, RECORD, INFO, VERSION }
 
 private val resizeModes = listOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT to "Adapter",
@@ -393,6 +393,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         Menu.MAIN -> OptionsDialog(
             ui.title,
             buildList {
+                if (ui.versionLabel != null) add(MenuOption("Version : ${ui.versionLabel}", Icons.Default.Info) { scope.launch { delay(50); menu = Menu.VERSION } })
                 add(MenuOption("Audio", Icons.Default.Audiotrack) { scope.launch { delay(50); menu = Menu.AUDIO } })
                 add(MenuOption("Sous-titres", Icons.Default.ClosedCaption) { scope.launch { delay(50); menu = Menu.SUBS } })
                 add(MenuOption("Format d'image : ${resizeModes[resizeIndex].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
@@ -451,8 +452,14 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             },
             onDismiss = { menu = null },
         )
+        Menu.VERSION -> OptionsDialog(
+            "Version",
+            vm.movieVersionOptions().map { (id, label) -> MenuOption(label, Icons.Default.Info, id == vm.currentMovieId()) { vm.switchVersion(id) } },
+            onDismiss = { menu = null },
+        )
         null -> Unit
     }
+    LaunchedEffect(ui.notice) { ui.notice?.let { toast(context, it) } }
     LaunchedEffect(menu) { if (menu == null) runCatching { focus.requestFocus() } }
 }
 

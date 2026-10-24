@@ -50,6 +50,7 @@ import com.sokoul.iptv.data.db.SeriesEntity
 import com.sokoul.iptv.data.repo.CatalogRepository
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SpecialCategory
+import com.sokoul.iptv.data.repo.VodRepository
 import com.sokoul.iptv.ui.ParentalGate
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.CategoryChips
@@ -148,19 +149,31 @@ abstract class CatalogViewModel(
 }
 
 @HiltViewModel
-class MoviesViewModel @Inject constructor(playlists: PlaylistRepository, catalog: CatalogRepository, parental: ParentalGate) :
+class MoviesViewModel @Inject constructor(playlists: PlaylistRepository, catalog: CatalogRepository, parental: ParentalGate, private val vod: VodRepository) :
     CatalogViewModel(playlists, catalog, parental, ContentType.MOVIE) {
-    override fun source(pid: Long, cat: String) = catalog.movies(pid, cat).map { list -> list.map(MovieEntity::toGrid) }
+    override fun source(pid: Long, cat: String) = vod.movieCards(pid, catalog.movies(pid, cat)).map { list -> list.map { it.item.toGrid(it.versions) } }
 }
 
 @HiltViewModel
-class SeriesViewModel @Inject constructor(playlists: PlaylistRepository, catalog: CatalogRepository, parental: ParentalGate) :
+class SeriesViewModel @Inject constructor(playlists: PlaylistRepository, catalog: CatalogRepository, parental: ParentalGate, private val vod: VodRepository) :
     CatalogViewModel(playlists, catalog, parental, ContentType.SERIES) {
-    override fun source(pid: Long, cat: String) = catalog.series(pid, cat).map { list -> list.map(SeriesEntity::toGrid) }
+    override fun source(pid: Long, cat: String) = vod.seriesCards(pid, catalog.series(pid, cat)).map { list -> list.map { it.item.toGrid(it.versions) } }
 }
 
-fun MovieEntity.toGrid() = GridItem(id, title, poster, quality, listOfNotNull(year?.toString(), language).joinToString(" · ").ifEmpty { null }, rating, year, added)
-fun SeriesEntity.toGrid() = GridItem(id, title, poster, null, listOfNotNull(year?.toString(), genre?.substringBefore(',')).joinToString(" · ").ifEmpty { null }, rating, year, lastModified)
+/** Plusieurs versions : on n'affiche plus la langue/qualité d'une seule d'entre elles, mais le nombre de versions. */
+fun versionsLabel(n: Int) = if (n > 1) "$n versions" else null
+
+/** Œuvre en plusieurs versions : titre sans le code pays de la version mise en avant (« ALB Passenger » → « Passenger »). */
+fun workTitle(title: String, versions: Int) = if (versions > 1) com.sokoul.iptv.data.repo.VodGrouping.stripCountry(title) else title
+
+fun MovieEntity.toGrid(versions: Int = 1) = GridItem(
+    id, workTitle(title, versions), poster, if (versions > 1) null else quality,
+    listOfNotNull(year?.toString(), versionsLabel(versions) ?: language).joinToString(" · ").ifEmpty { null }, rating, year, added,
+)
+fun SeriesEntity.toGrid(versions: Int = 1) = GridItem(
+    id, workTitle(title, versions), poster, null,
+    listOfNotNull(year?.toString(), versionsLabel(versions) ?: genre?.substringBefore(',')).joinToString(" · ").ifEmpty { null }, rating, year, lastModified,
+)
 
 @Composable
 fun MoviesScreen(nav: NavHostController) {

@@ -107,6 +107,7 @@ class SettingsViewModel @Inject constructor(
     db: AppDatabase,
     private val http: okhttp3.OkHttpClient,
     @ApplicationContext private val context: Context,
+    private val vod: com.sokoul.iptv.data.repo.VodRepository,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings> = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
     val playlistList: StateFlow<List<PlaylistEntity>> = playlists.playlists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -128,6 +129,9 @@ class SettingsViewModel @Inject constructor(
         done(false)
     }
     fun lockNow() = parental.lock()
+    fun stats(done: (com.sokoul.iptv.data.repo.CatalogStats?) -> Unit) = viewModelScope.launch {
+        done(active.value?.let { p -> runCatching { vod.stats(p.id) }.getOrNull() })
+    }
     fun checkPin(pin: String, done: (PinCheck) -> Unit) = viewModelScope.launch { done(parental.tryUnlock(pin)) }
     fun setPin(pin: String) = viewModelScope.launch { parental.setPin(pin) }
     fun removePin() = viewModelScope.launch { parental.removePin() }
@@ -320,6 +324,34 @@ fun SettingsScreen(nav: NavHostController) {
         item {
             SettingRow("Clé API TMDB", if (s.tmdbApiKey.isBlank()) "Non configurée — affiches HD, résumés, casting et bandes-annonces" else "Configurée") {
                 textEdit = TextEdit("Clé API TMDB (gratuite sur themoviedb.org)", s.tmdbApiKey) { v -> vm.update { it.copy(tmdbApiKey = v.trim()) } }
+            }
+        }
+
+        item {
+            ToggleRow("Regrouper les doublons (une fiche par film/série)", s.groupDuplicates) { v -> vm.update { it.copy(groupDuplicates = v) } }
+        }
+        item {
+            val order = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(s.vodLanguages)
+            val presetName = com.sokoul.iptv.data.repo.VersionPicker.PRESETS.firstOrNull { it.second == order }?.first ?: order.joinToString(" › ")
+            SettingRow("Version lancée en premier", "$presetName (${order.joinToString(" › ")}), puis la meilleure qualité lisible") {
+                choice = "Version lancée en premier" to com.sokoul.iptv.data.repo.VersionPicker.PRESETS.map { (name, langs) ->
+                    MenuOption("$name — ${langs.joinToString(" › ")}", selected = langs == order) { vm.update { it.copy(vodLanguages = langs.joinToString(",")) } }
+                }
+            }
+        }
+        item {
+            SettingRow("Statistiques du catalogue", "Doublons regroupés, versions par œuvre, plus gros regroupements") {
+                vm.stats { st ->
+                    if (st == null) { Toast.makeText(context, "Aucune playlist active", Toast.LENGTH_SHORT).show(); return@stats }
+                    fun pct(a: Int, b: Int) = if (b == 0) 0 else a * 100 / b
+                    choice = "Statistiques du catalogue" to buildList {
+                        add(MenuOption("Films : ${st.movies} versions → ${st.movieWorks} œuvres (TMDB fourni : ${pct(st.moviesWithTmdb, st.movies)} %)") {})
+                        add(MenuOption("Séries : ${st.series} versions → ${st.seriesWorks} œuvres (TMDB fourni : ${pct(st.seriesWithTmdb, st.series)} %)") {})
+                        if (st.pending > 0) add(MenuOption("Calcul en cours : ${st.pending} titres pas encore regroupés") {})
+                        st.biggestMovies.forEach { g -> add(MenuOption("Film · ${com.sokoul.iptv.data.repo.VodGrouping.stripCountry(g.title)} — ${g.c} versions") {}) }
+                        st.biggestSeries.forEach { g -> add(MenuOption("Série · ${com.sokoul.iptv.data.repo.VodGrouping.stripCountry(g.title)} — ${g.c} versions") {}) }
+                    }
+                }
             }
         }
 

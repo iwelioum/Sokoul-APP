@@ -93,7 +93,7 @@ data class ChannelEntity(
 @Entity(
     tableName = "movies",
     primaryKeys = ["playlistId", "id"],
-    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "added")],
+    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "added"), Index("playlistId", "groupKey")],
 )
 data class MovieEntity(
     val playlistId: Long,
@@ -113,12 +113,14 @@ data class MovieEntity(
     val tmdbId: String?,
     val position: Int,
     val gen: Long,
+    /** Clé de regroupement des doublons (même œuvre) ; null = pas encore calculée. */
+    val groupKey: String? = null,
 )
 
 @Entity(
     tableName = "series",
     primaryKeys = ["playlistId", "id"],
-    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "lastModified")],
+    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "lastModified"), Index("playlistId", "groupKey")],
 )
 data class SeriesEntity(
     val playlistId: Long,
@@ -138,6 +140,8 @@ data class SeriesEntity(
     val tmdbId: String?,
     val position: Int,
     val gen: Long,
+    /** Clé de regroupement des doublons (même œuvre) ; null = pas encore calculée. */
+    val groupKey: String? = null,
 )
 
 @Entity(
@@ -262,4 +266,25 @@ data class TmdbCacheEntity(
     @PrimaryKey val key: String,
     val json: String,
     val fetchedAt: Long,
+)
+
+/**
+ * Identifiant TMDB trouvé par l'app (ouverture d'une fiche) pour un titre que le fournisseur n'a pas identifié.
+ * Conservé à part : les lignes du fournisseur ne sont jamais réécrites, et le lien survit aux synchros.
+ */
+@Entity(tableName = "tmdb_links", primaryKeys = ["playlistId", "type", "itemId"])
+data class TmdbLinkEntity(
+    val playlistId: Long,
+    val type: ContentType,
+    val itemId: String,
+    val tmdbId: String,
+)
+
+/** Version choisie manuellement pour une œuvre (lancée en premier la fois suivante). */
+@Entity(tableName = "vod_choice", primaryKeys = ["playlistId", "type", "groupKey"])
+data class VodChoiceEntity(
+    val playlistId: Long,
+    val type: ContentType,
+    val groupKey: String,
+    val itemId: String,
 )

@@ -75,6 +75,8 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.all { it.maxHeapSize = "2g" }
     }
+    // schémas Room exportés, lus par le test de migration (Robolectric lit les assets de la variante debug ; absents du release)
+    sourceSets["debug"].assets.srcDir("$projectDir/schemas")
     lint {
         abortOnError = false
         // l'opt-in Media3 est déclaré globalement au compilateur (freeCompilerArgs), lint ne le voit pas

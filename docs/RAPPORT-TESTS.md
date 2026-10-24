@@ -99,3 +99,44 @@ S8 (migrations Room) : le schéma reste en version 1. La prochaine évolution du
   - Pas d'image pour un épisode dans « Reprendre la lecture » (utiliser l'affiche de la série).
   - Le nom de fichier d'un enregistrement répète la chaîne quand le titre est identique (« FR TF1 1 FHD_FR TF1 1 FHD »).
 - « Reprendre la lecture » peut afficher un film d'une catégorie verrouillée (le lecteur demande quand même le code).
+
+## 6. Phase 4 — Regroupement des doublons films/séries
+
+Une seule fiche par œuvre ; les doublons (VF, MULTI, VOSTFR, 4K, autres pays, plusieurs catégories) deviennent des **versions**. Aucune ligne du fournisseur n'est modifiée ni supprimée : seule une clé calculée (`groupKey`) est ajoutée.
+
+**Règles** (`VodGrouping`, version 3) :
+- même identifiant TMDB, sinon même titre normalisé **et** même année ;
+- jamais de regroupement sans année ni TMDB ;
+- titres génériques ou trop courts : TMDB uniquement ;
+- homonymes TMDB distincts jamais fusionnés ;
+- codes pays collés au titre ignorés (« HU Chernobyl ») : liste fermée, en majuscules seulement.
+
+**Lecture** :
+- ordre de lancement : choix manuel → langue (VF › MULTI › VOSTFR › VO, réglable) → meilleure qualité décodable → ordre du fournisseur ;
+- repli automatique vers la version suivante si une source échoue (pause de 4 s, une tentative par version) ;
+- reprise partagée entre versions, progression stockée par version ;
+- menu « Version » dans le lecteur.
+
+**Base** :
+- migration v1 → v2 explicite, sans migration destructive ;
+- tables `tmdb_links` (identifiant TMDB trouvé à l'ouverture d'une fiche, année identique exigée) et `vod_choice` ;
+- les clés sont recalculées au lancement quand les règles changent.
+
+| Test | Résultat |
+|---|---|
+| 83 tests automatisés (+21 : `GroupingTest`, invariants « rien ne se perd » dans `DataTest`, `MigrationTest` 1 → 2) | OK |
+| Lint release | 0 erreur |
+| Mise à jour par-dessus l'install existante (migration réelle, 159 256 films / 64 311 séries) | OK, pas de plantage |
+| Statistiques : films 159 256 → ~156 200 œuvres, séries 64 311 → ~41 100 œuvres ; les plus gros groupes vérifiés à la main | OK |
+| Films › Récemment ajoutés : 300 → 289 cartes ; Séries : 300 → 221 | OK |
+| Fiche Nightborn (4 versions) : « Lecture · VF », liste VF / VOSTFR / AR / EN avec catégorie et nom brut | OK |
+| Lecteur : VF lancée, bascule VOSTFR depuis le menu à la même position | OK |
+| Reprise partagée : vue en VOSTFR, la fiche propose « Reprendre à 01:19 · VF » ; une seule carte dans « Reprendre la lecture » | OK |
+| Série Chernobyl 2019 : 16 versions réunies (VF, EN · 4K, GE, IN, HU…), épisodes de la VF | OK |
+| Interrupteur désactivé : affichage d'origine (300 cartes) ; réactivé : regroupé | OK |
+
+**Limites** :
+- Le repli automatique n'a pas pu être testé sur la box : aucun film cassé connu n'a plusieurs versions (le film 1507785 n'en a qu'une). La logique est relue, mais pas couverte par un test automatisé.
+- Le fournisseur ne transmet pas d'identifiant TMDB (0 %) : les films sans année restent séparés, par prudence. Le rattachement TMDB à l'ouverture d'une fiche exige aussi une année concordante, pour éviter un homonyme.
+- Le nombre « N versions » d'une carte compte aussi les versions verrouillées ; la fiche, elle, ne les liste pas sans le code.
+- La 1ʳᵉ ouverture d'une série en plusieurs versions charge les épisodes de 5 versions au plus (appels API, pas de flux).

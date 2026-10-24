@@ -247,6 +247,121 @@ class DataTest {
         catch (e: IllegalArgumentException) { /* refusé avant toute lecture */ }
     }
 
+    // --- Doublons regroupés : rien ne se perd ------------------------------------------------
+
+    private fun vmovie(pid: Long, id: String, name: String, cat: String = "c", tmdb: String? = null, pos: Int = 0): MovieEntity {
+        val info = com.sokoul.iptv.parser.TitleTagger.parse(name)
+        return MovieEntity(pid, id, name, info.clean, info.clean.lowercase(), info.year, info.language, info.quality, null, null, cat, "mkv", null, pos.toLong(), tmdb, pos, 1)
+    }
+
+    private fun seedDuplicates(pid: Long) = runBlocking {
+        db.movies().upsert(
+            listOf(
+                vmovie(pid, "1", "Clayface (2025) VF", "top", pos = 0),
+                vmovie(pid, "2", "Clayface (2025) MULTI", "netflix", pos = 1),
+                vmovie(pid, "3", "Clayface (2025) 4K", "adult", pos = 2),
+                vmovie(pid, "4", "Dune (1984)", "top", pos = 3),
+                vmovie(pid, "5", "Dune (2021)", "top", pos = 4),
+                vmovie(pid, "6", "Sans Annee", "top", pos = 5),
+                vmovie(pid, "7", "Sans Annee", "netflix", pos = 6),
+                vmovie(pid, "8", "Autre titre (2019)", "netflix", tmdb = "42", pos = 7),
+                vmovie(pid, "9", "Autre Titre (2019) VOSTFR", "top", pos = 8),
+            )
+        )
+    }
+
+    private fun vodRepo() = com.sokoul.iptv.data.repo.VodRepository(db, settings, gate)
+
+    @Test fun `invariant chaque version dans exactement une oeuvre`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        seedDuplicates(pid)
+        val vod = vodRepo()
+        vod.regroup(pid, ContentType.MOVIE)
+        val rows = db.vod().movieRows(pid)
+        assertTrue(rows.all { it.groupKey != null })
+        val byKey = rows.groupBy { it.groupKey!! }
+        // la somme des versions de toutes les œuvres = le nombre de lignes du fournisseur
+        assertEquals(9, byKey.values.sumOf { it.size })
+        assertEquals(9, db.movies().count(pid))
+        assertEquals(6, byKey.size) // Clayface ×3, Dune 1984, Dune 2021, Sans Année ×2 séparés, Autre titre ×2
+        assertEquals(setOf("1", "2", "3"), byKey.values.first { g -> g.any { it.id == "1" } }.map { it.id }.toSet())
+        assertEquals("tmdb:42", rows.first { it.id == "9" }.groupKey) // pont TMDB ↔ titre
+        // un second passage ne réécrit rien
+        assertEquals(0, vod.regroup(pid, ContentType.MOVIE))
+        // chaque version reste accessible depuis la fiche de son œuvre
+        for (r in rows) {
+            val m = db.movies().get(pid, r.id)!!
+            assertTrue(vod.movieVersions(pid, m).any { it.id == r.id })
+        }
+    }
+
+    @Test fun `grilles une carte par oeuvre et presentes dans chaque categorie`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        seedDuplicates(pid)
+        val vod = vodRepo()
+        vod.regroup(pid, ContentType.MOVIE)
+        val all = db.movies().observeRecent(pid, 300).first()
+        val cards = vod.groupMovies(pid, all)
+        assertEquals(6, cards.size)
+        assertEquals(9, cards.sumOf { it.versions })
+        // l'œuvre apparaît dans « netflix » même si sa version « top » est celle mise en avant ailleurs
+        val netflix = vod.movieCards(pid, db.movies().observeByCategory(pid, "netflix")).first()
+        assertEquals(setOf("2", "7", "8"), netflix.map { it.item.id }.toSet())
+        // regroupement désactivé : listes identiques à l'affichage d'origine
+        settings.update { it.copy(groupDuplicates = false) }
+        assertEquals(all.map { it.id }, vod.groupMovies(pid, all).map { it.item.id })
+        assertEquals(all.size, vod.movieCards(pid, db.movies().observeRecent(pid, 300)).first().size)
+        settings.update { it.copy(groupDuplicates = true) }
+    }
+
+    @Test fun `versions verrouillees cachees sans cacher l'oeuvre`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        seedDuplicates(pid)
+        val vod = vodRepo()
+        vod.regroup(pid, ContentType.MOVIE)
+        db.categories().upsertPref(CategoryPrefEntity(pid, ContentType.MOVIE, "adult", locked = true))
+        gate.setPin("2580")
+        gate.lock()
+        val m = db.movies().get(pid, "1")!!
+        assertEquals(setOf("1", "2"), vod.movieVersions(pid, m).map { it.id }.toSet())
+        gate.tryUnlock("2580")
+        assertEquals(setOf("1", "2", "3"), vod.movieVersions(pid, m).map { it.id }.toSet())
+    }
+
+    @Test fun `lien TMDB trouve a l'ouverture fusionne les groupes`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        db.movies().upsert(listOf(vmovie(pid, "1", "Le Film (2020)", tmdb = "77"), vmovie(pid, "2", "The Movie (2020)")))
+        val vod = vodRepo()
+        vod.regroup(pid, ContentType.MOVIE)
+        val m2 = db.movies().get(pid, "2")!!
+        assertNotEquals(db.movies().get(pid, "1")!!.groupKey, m2.groupKey)
+        vod.linkTmdb(pid, ContentType.MOVIE, "2", null, m2.groupKey, 77)
+        assertEquals("tmdb:77", db.movies().get(pid, "2")!!.groupKey)
+        // le lien survit à un nouveau calcul complet (synchro)
+        vod.regroup(pid, ContentType.MOVIE)
+        assertEquals("tmdb:77", db.movies().get(pid, "2")!!.groupKey)
+    }
+
+    @Test fun `reprise partagee et favori sur l'oeuvre`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        seedDuplicates(pid)
+        val vod = vodRepo()
+        vod.regroup(pid, ContentType.MOVIE)
+        val lib = com.sokoul.iptv.data.repo.LibraryRepository(db)
+        lib.saveProgress(pid, ContentType.MOVIE, "2", null, "Clayface", null, null, 600_000, 6_000_000)
+        val ids = listOf("1", "2", "3")
+        assertEquals(600_000L, vod.latestMovieProgress(pid, ids)?.positionMs)
+        assertFalse(vod.observeAnyFavorite(pid, ContentType.MOVIE, ids).first())
+        vod.toggleFavorite(pid, ContentType.MOVIE, ids, "1")
+        assertTrue(vod.observeAnyFavorite(pid, ContentType.MOVIE, ids).first())
+        db.library().addFavorite(FavoriteEntity(pid, ContentType.MOVIE, "3"))
+        vod.toggleFavorite(pid, ContentType.MOVIE, ids, "1")
+        assertFalse(vod.observeAnyFavorite(pid, ContentType.MOVIE, ids).first())
+        // la progression de chaque version reste enregistrée à part
+        assertEquals(600_000L, lib.progress(pid, ContentType.MOVIE, "2")?.positionMs)
+        assertEquals(null, lib.progress(pid, ContentType.MOVIE, "1"))
+    }
+
     @Test fun `conflits d'enregistrement`() = runBlocking {
         val sched = com.sokoul.iptv.recording.RecordingScheduler(context, db)
         val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.XTREAM, url = "http://h", username = "u", maxConnections = 1))

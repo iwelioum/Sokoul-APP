@@ -16,6 +16,7 @@ import dagger.hilt.android.HiltAndroidApp
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
@@ -24,6 +25,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject lateinit var okHttp: OkHttpClient
     @Inject lateinit var recordingScheduler: RecordingScheduler
     @Inject lateinit var parentalGate: com.sokoul.iptv.ui.ParentalGate
+    @Inject lateinit var vod: com.sokoul.iptv.data.repo.VodRepository
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -34,6 +36,11 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
         createChannels()
         SyncWorker.schedulePeriodic(this)
         recordingScheduler.restoreAll()
+        // Après la mise à jour de la base : calcule une fois les clés de regroupement des doublons.
+        com.sokoul.iptv.data.AppScope.launch {
+            kotlinx.coroutines.delay(3_000)
+            runCatching { vod.regroupIfNeeded() }.onFailure { Timber.w(it, "Regroupement initial") }
+        }
         // Contrôle parental : l'app passée en arrière-plan (touche Accueil, veille) se reverrouille.
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
             override fun onStop(owner: androidx.lifecycle.LifecycleOwner) = parentalGate.lock()

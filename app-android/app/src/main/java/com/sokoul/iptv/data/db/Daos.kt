@@ -452,3 +452,135 @@ interface TmdbDao {
     @Query("DELETE FROM tmdb_cache WHERE fetchedAt < :before")
     suspend fun purge(before: Long)
 }
+
+/** Ligne minimale pour calculer le regroupement des doublons. */
+data class GroupRow(val id: String, val title: String, val year: Int?, val tmdbId: String?, val groupKey: String?)
+
+/** Nombre de versions par œuvre. */
+data class GroupCount(val k: String, val c: Int)
+
+/** Œuvre regroupée (statistiques). */
+data class GroupSummary(val k: String, val c: Int, val title: String)
+
+/**
+ * Regroupement des doublons films/séries. Les lignes du fournisseur ne sont jamais supprimées ici :
+ * seule la colonne calculée `groupKey` est écrite.
+ */
+@Dao
+interface VodDao {
+    @Query("SELECT id, title, year, tmdbId, groupKey FROM movies WHERE playlistId = :pid")
+    suspend fun movieRows(pid: Long): List<GroupRow>
+
+    @Query("SELECT id, title, year, tmdbId, groupKey FROM series WHERE playlistId = :pid")
+    suspend fun seriesRows(pid: Long): List<GroupRow>
+
+    @Query("UPDATE movies SET groupKey = :key WHERE playlistId = :pid AND id IN (:ids)")
+    suspend fun setMovieKey(pid: Long, key: String, ids: List<String>)
+
+    @Query("UPDATE series SET groupKey = :key WHERE playlistId = :pid AND id IN (:ids)")
+    suspend fun setSeriesKey(pid: Long, key: String, ids: List<String>)
+
+    @Query("UPDATE movies SET groupKey = :to WHERE playlistId = :pid AND groupKey = :from")
+    suspend fun moveMovieGroup(pid: Long, from: String, to: String)
+
+    @Query("UPDATE series SET groupKey = :to WHERE playlistId = :pid AND groupKey = :from")
+    suspend fun moveSeriesGroup(pid: Long, from: String, to: String)
+
+    @Query("SELECT COUNT(*) FROM movies WHERE playlistId = :pid AND groupKey IS NULL")
+    suspend fun ungroupedMovies(pid: Long): Int
+
+    @Query("SELECT COUNT(*) FROM series WHERE playlistId = :pid AND groupKey IS NULL")
+    suspend fun ungroupedSeries(pid: Long): Int
+
+    @Query("SELECT * FROM movies WHERE playlistId = :pid AND groupKey = :key ORDER BY position")
+    suspend fun movieVersions(pid: Long, key: String): List<MovieEntity>
+
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND groupKey = :key ORDER BY position")
+    suspend fun seriesVersions(pid: Long, key: String): List<SeriesEntity>
+
+    @Query("SELECT groupKey AS k, COUNT(*) AS c FROM movies WHERE playlistId = :pid AND groupKey IN (:keys) GROUP BY groupKey")
+    suspend fun movieCounts(pid: Long, keys: List<String>): List<GroupCount>
+
+    @Query("SELECT groupKey AS k, COUNT(*) AS c FROM series WHERE playlistId = :pid AND groupKey IN (:keys) GROUP BY groupKey")
+    suspend fun seriesCounts(pid: Long, keys: List<String>): List<GroupCount>
+
+    @Query("SELECT id FROM movies WHERE playlistId = :pid AND (tmdbId = :tmdbId OR groupKey = 'tmdb:' || :tmdbId) LIMIT 1")
+    suspend fun movieWithTmdb(pid: Long, tmdbId: String): String?
+
+    @Query("SELECT id FROM series WHERE playlistId = :pid AND (tmdbId = :tmdbId OR groupKey = 'tmdb:' || :tmdbId) LIMIT 1")
+    suspend fun seriesWithTmdb(pid: Long, tmdbId: String): String?
+
+    @Query("SELECT * FROM tmdb_links WHERE playlistId = :pid AND type = :type")
+    suspend fun links(pid: Long, type: ContentType): List<TmdbLinkEntity>
+
+    @Upsert
+    suspend fun putLink(link: TmdbLinkEntity)
+
+    @Query("SELECT itemId FROM vod_choice WHERE playlistId = :pid AND type = :type AND groupKey = :key")
+    suspend fun choice(pid: Long, type: ContentType, key: String): String?
+
+    @Upsert
+    suspend fun putChoice(c: VodChoiceEntity)
+
+    // --- statistiques ---
+    @Query("SELECT COUNT(*) FROM movies WHERE playlistId = :pid AND tmdbId IS NOT NULL AND tmdbId != ''")
+    suspend fun moviesWithTmdb(pid: Long): Int
+
+    @Query("SELECT COUNT(*) FROM series WHERE playlistId = :pid AND tmdbId IS NOT NULL AND tmdbId != ''")
+    suspend fun seriesWithTmdbCount(pid: Long): Int
+
+    @Query("SELECT COUNT(DISTINCT COALESCE(groupKey, 'id:' || id)) FROM movies WHERE playlistId = :pid")
+    suspend fun movieGroups(pid: Long): Int
+
+    @Query("SELECT COUNT(DISTINCT COALESCE(groupKey, 'id:' || id)) FROM series WHERE playlistId = :pid")
+    suspend fun seriesGroups(pid: Long): Int
+
+    @Query(
+        "SELECT groupKey AS k, COUNT(*) AS c, MIN(title) AS title FROM movies WHERE playlistId = :pid AND groupKey IS NOT NULL " +
+            "GROUP BY groupKey HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT :limit"
+    )
+    suspend fun biggestMovieGroups(pid: Long, limit: Int = 20): List<GroupSummary>
+
+    @Query(
+        "SELECT groupKey AS k, COUNT(*) AS c, MIN(title) AS title FROM series WHERE playlistId = :pid AND groupKey IS NOT NULL " +
+            "GROUP BY groupKey HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT :limit"
+    )
+    suspend fun biggestSeriesGroups(pid: Long, limit: Int = 20): List<GroupSummary>
+
+    @Query("DELETE FROM tmdb_links WHERE playlistId = :pid")
+    suspend fun deleteLinks(pid: Long)
+
+    @Query("DELETE FROM vod_choice WHERE playlistId = :pid")
+    suspend fun deleteChoices(pid: Long)
+
+    @Query("SELECT id, groupKey AS k FROM movies WHERE playlistId = :pid AND id IN (:ids)")
+    suspend fun movieKeys(pid: Long, ids: List<String>): List<IdKey>
+
+    @Query("SELECT id, groupKey AS k FROM series WHERE playlistId = :pid AND id IN (:ids)")
+    suspend fun seriesKeys(pid: Long, ids: List<String>): List<IdKey>
+
+    /** Dernière progression parmi plusieurs versions d'un film (reprise partagée). */
+    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'MOVIE' AND itemId IN (:ids) ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun latestMovieProgress(pid: Long, ids: List<String>): ProgressEntity?
+
+    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'MOVIE' AND itemId IN (:ids) ORDER BY updatedAt DESC LIMIT 1")
+    fun observeLatestMovieProgress(pid: Long, ids: List<String>): Flow<ProgressEntity?>
+
+    /** Progression des épisodes de toutes les versions d'une série. */
+    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids)")
+    fun observeSeriesProgressIn(pid: Long, sids: List<String>): Flow<List<ProgressEntity>>
+
+    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids) ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun lastEpisodeProgressIn(pid: Long, sids: List<String>): ProgressEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE playlistId = :pid AND type = :type AND itemId IN (:ids))")
+    fun observeAnyFavorite(pid: Long, type: ContentType, ids: List<String>): Flow<Boolean>
+
+    @Query("SELECT itemId FROM favorites WHERE playlistId = :pid AND type = :type AND itemId IN (:ids)")
+    suspend fun favoriteAmong(pid: Long, type: ContentType, ids: List<String>): List<String>
+
+    @Query("SELECT * FROM episodes WHERE playlistId = :pid AND seriesId IN (:sids) ORDER BY season, episode")
+    fun observeEpisodesIn(pid: Long, sids: List<String>): Flow<List<EpisodeEntity>>
+}
+
+data class IdKey(val id: String, val k: String?)

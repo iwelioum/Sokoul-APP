@@ -29,6 +29,7 @@ import androidx.navigation.NavHostController
 import com.sokoul.iptv.data.repo.CatalogRepository
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SearchResults
+import com.sokoul.iptv.data.repo.VodRepository
 import com.sokoul.iptv.ui.components.ContentRow
 import com.sokoul.iptv.ui.components.EmptyState
 import com.sokoul.iptv.ui.components.FocusSurface
@@ -58,6 +59,7 @@ import javax.inject.Inject
 class SearchViewModel @Inject constructor(
     private val playlists: PlaylistRepository,
     private val catalog: CatalogRepository,
+    private val vod: VodRepository,
 ) : ViewModel() {
     val query = MutableStateFlow("")
     var playlistId: Long = 0
@@ -66,7 +68,14 @@ class SearchViewModel @Inject constructor(
     val results: StateFlow<SearchResults?> = query.debounce(300).distinctUntilChanged().mapLatest { q ->
         val p = playlists.activeNow() ?: return@mapLatest null
         playlistId = p.id
-        if (q.trim().length < 2) null else catalog.search(p.id, q)
+        if (q.trim().length < 2) null else catalog.search(p.id, q).let { r ->
+            val m = vod.groupMovies(p.id, r.movies)
+            val s = vod.groupSeries(p.id, r.series)
+            r.copy(
+                movies = m.map { it.item }, series = s.map { it.item },
+                versions = (m.map { it.item.id to it.versions } + s.map { it.item.id to it.versions }).toMap(),
+            )
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 }
 
@@ -109,12 +118,12 @@ fun SearchScreen(nav: NavHostController) {
                 }
                 item {
                     ContentRow("Films", r.movies, key = { it.id }) { _, m ->
-                        PosterCard(m.title, m.poster, { nav.navigate(MovieDetailRoute(m.id)) }, badge = m.quality, subtitle = m.year?.toString())
+                        PosterCard(com.sokoul.iptv.ui.screens.vod.workTitle(m.title, r.versions[m.id] ?: 1), m.poster, { nav.navigate(MovieDetailRoute(m.id)) }, badge = m.quality.takeIf { (r.versions[m.id] ?: 1) <= 1 }, subtitle = listOfNotNull(m.year?.toString(), com.sokoul.iptv.ui.screens.vod.versionsLabel(r.versions[m.id] ?: 1)).joinToString(" · ").ifEmpty { null })
                     }
                 }
                 item {
                     ContentRow("Séries", r.series, key = { it.id }) { _, s ->
-                        PosterCard(s.title, s.poster, { nav.navigate(SeriesDetailRoute(s.id)) }, subtitle = s.year?.toString())
+                        PosterCard(com.sokoul.iptv.ui.screens.vod.workTitle(s.title, r.versions[s.id] ?: 1), s.poster, { nav.navigate(SeriesDetailRoute(s.id)) }, subtitle = listOfNotNull(s.year?.toString(), com.sokoul.iptv.ui.screens.vod.versionsLabel(r.versions[s.id] ?: 1)).joinToString(" · ").ifEmpty { null })
                     }
                 }
                 item { Spacer(Modifier.height(40.dp)) }

@@ -37,6 +37,10 @@ data class AppSettings(
     val lastChannelId: String = "",
     val showClock: Boolean = true,
     val channelNumbers: Boolean = true,
+    /** Une seule fiche par film/série : les doublons (VF, MULTI, 4K…) deviennent des versions. */
+    val groupDuplicates: Boolean = true,
+    /** Ordre de préférence des langues pour choisir la version lancée (VF,MULTI,VOSTFR,VO). */
+    val vodLanguages: String = DEFAULT_VOD_LANGUAGES,
 ) {
     /** Bornes appliquées à chaque écriture : une valeur aberrante (import, bug d'UI) ne doit pas casser l'app. */
     fun sanitized(): AppSettings = copy(
@@ -49,11 +53,13 @@ data class AppSettings(
         parentalPin = parentalPin.takeIf { PinHasher.isValidStored(it) } ?: "",
         tmdbApiKey = tmdbApiKey.trim().take(256).filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' },
         lastChannelId = lastChannelId.take(64),
+        vodLanguages = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(vodLanguages).joinToString(","),
     )
 
     companion object {
         const val DEFAULT_USER_AGENT = "SokoulTV/2.0 (Linux; Android) ExoPlayer"
         const val MAX_USER_AGENT = 256
+        const val DEFAULT_VOD_LANGUAGES = "VF,MULTI,VOSTFR,VO"
     }
 }
 
@@ -80,6 +86,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val lastChannel = stringPreferencesKey("last_channel")
         val clock = booleanPreferencesKey("show_clock")
         val numbers = booleanPreferencesKey("channel_numbers")
+        val group = booleanPreferencesKey("group_duplicates")
+        val vodLangs = stringPreferencesKey("vod_languages")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -104,6 +112,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         lastChannelId = this[K.lastChannel] ?: "",
         showClock = this[K.clock] ?: true,
         channelNumbers = this[K.numbers] ?: true,
+        groupDuplicates = this[K.group] ?: true,
+        vodLanguages = this[K.vodLangs] ?: AppSettings.DEFAULT_VOD_LANGUAGES,
     )
 
     private inline fun <reified T : Enum<T>> enumOr(v: String?, default: T): T =
@@ -128,6 +138,11 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     }
 
     private val pinFailures = intPreferencesKey("pin_failures")
+    private val groupingRules = intPreferencesKey("grouping_rules")
+
+    /** Version des règles de regroupement avec laquelle les clés actuelles ont été calculées. */
+    suspend fun groupingRulesVersion(): Int = context.dataStore.data.first()[groupingRules] ?: 0
+    suspend fun setGroupingRulesVersion(v: Int) { context.dataStore.edit { it[groupingRules] = v } }
     private val pinLockedUntil = longPreferencesKey("pin_locked_until")
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
@@ -150,6 +165,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.lastChannel] = s.lastChannelId
             prefs[K.clock] = s.showClock
             prefs[K.numbers] = s.channelNumbers
+            prefs[K.group] = s.groupDuplicates
+            prefs[K.vodLangs] = s.vodLanguages
         }
     }
 }

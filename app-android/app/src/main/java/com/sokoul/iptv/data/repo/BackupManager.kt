@@ -63,6 +63,8 @@ data class SettingsBackup(
     val parentalPin: String? = null,
     val tmdbApiKey: String? = null,
     val autoplayNextEpisode: Boolean = true,
+    val groupDuplicates: Boolean = true,
+    val vodLanguages: String? = null,
 )
 
 /** Enveloppe d'une sauvegarde chiffrée (voir [BackupCrypto]). */
@@ -163,6 +165,8 @@ class BackupManager @Inject constructor(
                 parentalPin = s.parentalPin.takeIf { withSecrets && it.isNotEmpty() },
                 tmdbApiKey = s.tmdbApiKey.takeIf { withSecrets && it.isNotEmpty() },
                 autoplayNextEpisode = s.autoplayNextEpisode,
+                groupDuplicates = s.groupDuplicates,
+                vodLanguages = s.vodLanguages,
             ),
         )
         val plain = json.encodeToString(file)
@@ -227,6 +231,8 @@ class BackupManager @Inject constructor(
                 parentalPin = if (s.parentalPin.isEmpty()) BackupRules.importedPin(sb.parentalPin) else s.parentalPin,
                 tmdbApiKey = sb.tmdbApiKey?.takeIf { it.isNotBlank() } ?: s.tmdbApiKey,
                 autoplayNextEpisode = sb.autoplayNextEpisode,
+                groupDuplicates = sb.groupDuplicates,
+                vodLanguages = sb.vodLanguages ?: s.vodLanguages,
                 activePlaylistId = if (s.activePlaylistId == 0L) added.firstOrNull() ?: 0 else s.activePlaylistId,
             )
         }

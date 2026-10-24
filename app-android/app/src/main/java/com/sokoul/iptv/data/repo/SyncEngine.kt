@@ -66,6 +66,7 @@ class SyncEngine @Inject constructor(
     private val xtream: XtreamClient,
     private val http: OkHttpClient,
     private val settings: SettingsStore,
+    private val vod: VodRepository,
 ) {
     private val locks = ConcurrentHashMap<Long, Mutex>()
     private val _playlistStatus = MutableStateFlow<Map<Long, SyncStatus>>(emptyMap())
@@ -96,6 +97,11 @@ class SyncEngine @Inject constructor(
             }
             db.channels().resetEpgKeys(id)
             db.channels().matchEpgByName(id)
+            // Doublons : relie les versions TMDB et sans TMDB d'une même œuvre (ne bloque jamais la synchro)
+            setStatus(_playlistStatus, id, SyncStatus(running = true, step = "Regroupement des doublons…"))
+            withContext(Dispatchers.Default) {
+                for (t in listOf(ContentType.MOVIE, ContentType.SERIES)) runCatching { vod.regroup(id, t) }.onFailure { Timber.w(it, "Regroupement") }
+            }
             val counts = Triple(db.channels().count(id), db.movies().count(id), db.series().count(id))
             db.playlists().markSynced(id, System.currentTimeMillis(), counts.first, counts.second, counts.third)
             setStatus(_playlistStatus, id, SyncStatus(step = "Terminé", count = counts.first + counts.second + counts.third, warnings = warnings, finishedAt = System.currentTimeMillis()))
@@ -182,6 +188,7 @@ class SyncEngine @Inject constructor(
         var usedUnknown = false
         var position = 0
         val batch = ArrayList<MovieEntity>(BATCH)
+        val links = db.vod().links(pid, ContentType.MOVIE).associate { it.itemId to it.tmdbId }
         xtream.streamArray(auth, "get_vod_streams") { o ->
             val v = XtreamParse.vod(o) ?: return@streamArray
             val info = TitleTagger.parse(v.name)
@@ -191,6 +198,7 @@ class SyncEngine @Inject constructor(
                 year = v.year ?: info.year, language = info.language, quality = info.quality, poster = v.icon, rating = v.rating,
                 categoryId = cat, extension = v.extension, streamUrl = null, added = v.added ?: 0, tmdbId = v.tmdbId,
                 position = position++, gen = gen,
+                groupKey = groupKey(v.streamId.toString(), info.clean, v.year ?: info.year, v.tmdbId, links),
             )
             if (batch.size >= BATCH) {
                 db.movies().upsert(batch.toList()); batch.clear(); status(pid, "Films…", position)
@@ -211,6 +219,7 @@ class SyncEngine @Inject constructor(
         var usedUnknown = false
         var position = 0
         val batch = ArrayList<SeriesEntity>(BATCH)
+        val links = db.vod().links(pid, ContentType.SERIES).associate { it.itemId to it.tmdbId }
         xtream.streamArray(auth, "get_series") { o ->
             val s = XtreamParse.series(o) ?: return@streamArray
             val info = TitleTagger.parse(s.name)
@@ -220,6 +229,7 @@ class SyncEngine @Inject constructor(
                 year = info.year ?: s.releaseDate?.take(4)?.toIntOrNull(), poster = s.cover, backdrop = s.backdrop, plot = s.plot,
                 genre = s.genre, cast = s.cast, rating = s.rating, categoryId = cat, lastModified = s.lastModified ?: 0,
                 tmdbId = s.tmdbId, position = position++, gen = gen,
+                groupKey = groupKey(s.seriesId.toString(), info.clean, info.year ?: s.releaseDate?.take(4)?.toIntOrNull(), s.tmdbId, links),
             )
             if (batch.size >= BATCH) {
                 db.series().upsert(batch.toList()); batch.clear(); status(pid, "Séries…", position)
@@ -254,6 +264,8 @@ class SyncEngine @Inject constructor(
         val episodes = ArrayList<EpisodeEntity>(BATCH)
         val seriesMap = LinkedHashMap<String, SeriesEntity>()
         val idCounts = HashMap<String, Int>()
+        val movieLinks = db.vod().links(pid, ContentType.MOVIE).associate { it.itemId to it.tmdbId }
+        val seriesLinks = db.vod().links(pid, ContentType.SERIES).associate { it.itemId to it.tmdbId }
         var liveCount = 0
         var movieCount = 0
         var headerEpg: String? = null
@@ -308,7 +320,7 @@ class SyncEngine @Inject constructor(
                             searchName = searchable(info.clean), year = info.year, language = info.language, quality = info.quality,
                             poster = e.logo, rating = null, categoryId = cat, extension = e.url.substringBefore('?').substringAfterLast('.', "").take(5).ifEmpty { null },
                             streamUrl = e.url, added = gen - movieCount, tmdbId = null, position = movieCount++, gen = gen,
-                        )
+                        ).let { m -> m.copy(groupKey = groupKey(m.id, m.title, m.year, null, movieLinks)) }
                     }
                     M3uKind.EPISODE -> {
                         val ref = TitleTagger.episode(e.name) ?: return@parse
@@ -335,7 +347,8 @@ class SyncEngine @Inject constructor(
         flush()
         db.runInTransaction {
             db.categories().upsertNow(categories.values.toList())
-            seriesMap.values.chunked(BATCH).forEach { db.series().upsertNow(it) }
+            seriesMap.values.map { s -> s.copy(groupKey = groupKey(s.id, s.title, s.year, null, seriesLinks)) }
+                .chunked(BATCH).forEach { db.series().upsertNow(it) }
         }
         db.channels().deleteStale(pid, gen)
         db.movies().deleteStale(pid, gen)
@@ -489,6 +502,10 @@ class SyncEngine @Inject constructor(
         fun shouldKeepExisting(received: Int, stored: Int) = received == 0 && stored > 0
 
         fun epgId(raw: String?): String? = raw?.trim()?.substringBefore('@')?.lowercase()?.takeIf { it.isNotEmpty() }
+
+        /** Clé provisoire calculée à l'insertion ; les ponts TMDB ↔ titre sont faits par VodRepository.regroup. */
+        fun groupKey(id: String, title: String, year: Int?, tmdbId: String?, links: Map<String, String>): String =
+            VodGrouping.provisionalKey(VodGrouping.Row(id, title, year, tmdbId?.takeIf { it.isNotBlank() } ?: links[id]))
 
         fun searchable(s: String): String =
             Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").lowercase()

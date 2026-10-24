@@ -54,6 +54,8 @@ import com.sokoul.iptv.data.repo.EpgRepository
 import com.sokoul.iptv.data.repo.LibraryRepository
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SpecialCategory
+import com.sokoul.iptv.data.repo.VodRepository
+import kotlinx.coroutines.flow.map
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.BottomFade
 import com.sokoul.iptv.ui.components.ChannelLogo
@@ -104,6 +106,7 @@ class HomeViewModel @Inject constructor(
     catalog: CatalogRepository,
     library: LibraryRepository,
     private val epg: EpgRepository,
+    private val vodRepo: VodRepository,
 ) : ViewModel() {
 
     val state: StateFlow<HomeState> = playlists.active.flatMapLatest { p ->
@@ -111,10 +114,14 @@ class HomeViewModel @Inject constructor(
         val pid = p.id
         val channels: Flow<Pair<List<ChannelEntity>, List<ChannelEntity>>> =
             combine(catalog.channels(pid, SpecialCategory.FAVORITES), catalog.channels(pid, SpecialCategory.RECENT)) { f, r -> f to r }
-        val vod = combine(catalog.recentMovies(pid), catalog.recentSeries(pid), catalog.favoriteMovies(pid), catalog.favoriteSeries(pid)) { a, b, c, d ->
+        // une carte par œuvre (doublons VF/MULTI/4K regroupés si le réglage est actif)
+        fun movies(f: Flow<List<MovieEntity>>) = vodRepo.movieCards(pid, f).map { l -> l.map { it.item } }
+        fun series(f: Flow<List<SeriesEntity>>) = vodRepo.seriesCards(pid, f).map { l -> l.map { it.item } }
+        val cwFlow = library.continueWatching(pid).mapLatest { l -> vodRepo.dedupeProgress(pid, l, { it.type }, { if (it.type == ContentType.SERIES) it.parentId ?: it.itemId else it.itemId }) }
+        val vod = combine(movies(catalog.recentMovies(pid)), series(catalog.recentSeries(pid)), movies(catalog.favoriteMovies(pid)), series(catalog.favoriteSeries(pid))) { a, b, c, d ->
             listOf(a, b, c, d)
         }
-        combine(library.continueWatching(pid), channels, vod) { cw, ch, v ->
+        combine(cwFlow, channels, vod) { cw, ch, v ->
             @Suppress("UNCHECKED_CAST")
             HomeState(
                 loading = false, playlist = p, continueWatching = cw,

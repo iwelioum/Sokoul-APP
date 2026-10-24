@@ -69,6 +69,14 @@ import com.sokoul.iptv.data.repo.LibraryRepository
 import com.sokoul.iptv.data.repo.MovieDetails
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.userMessage
+import com.sokoul.iptv.data.repo.VersionPicker
+import com.sokoul.iptv.data.repo.VodRepository
+import com.sokoul.iptv.data.repo.toVersion
+import com.sokoul.iptv.data.db.MovieEntity
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.BottomFade
 import com.sokoul.iptv.ui.components.FocusSurface
@@ -97,17 +105,32 @@ import javax.inject.Inject
 
 // --- Film ----------------------------------------------------------------------------------
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class MovieDetailViewModel @Inject constructor(
     private val playlists: PlaylistRepository,
     private val catalog: CatalogRepository,
     private val library: LibraryRepository,
+    private val vod: VodRepository,
 ) : ViewModel() {
     val details = MutableStateFlow<MovieDetails?>(null)
     val error = MutableStateFlow<String?>(null)
-    val progress = MutableStateFlow<ProgressEntity?>(null)
-    val favorite = MutableStateFlow(false)
+    /** Versions de l'œuvre dans l'ordre de lancement (la première est lancée par « Lecture »). */
+    val versions = MutableStateFlow<List<MovieEntity>>(emptyList())
+    val preferredId = MutableStateFlow<String?>(null)
+    var categoryNames: Map<String, String> = emptyMap()
+        private set
     var playlist: PlaylistEntity? = null
+
+    private val ids = versions.map { l -> l.map { it.id } }.distinctUntilChanged()
+    val progress: StateFlow<ProgressEntity?> = ids.flatMapLatest { l ->
+        val p = playlist
+        if (p == null || l.isEmpty()) flowOf(null) else vod.observeLatestMovieProgress(p.id, l)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val favorite: StateFlow<Boolean> = ids.flatMapLatest { l ->
+        val p = playlist
+        if (p == null || l.isEmpty()) flowOf(false) else vod.observeAnyFavorite(p.id, ContentType.MOVIE, l)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun load(id: String) = viewModelScope.launch {
         if (details.value?.movie?.id == id) return@launch
@@ -115,30 +138,53 @@ class MovieDetailViewModel @Inject constructor(
         playlist = p
         val m = catalog.movie(p.id, id) ?: run { error.value = "Film introuvable"; return@launch }
         details.value = MovieDetails(m, null, null)
-        launch { library.isFavorite(p.id, ContentType.MOVIE, id).collect { favorite.value = it } }
-        progress.value = library.progress(p.id, ContentType.MOVIE, id)
+        categoryNames = vod.categoryNames(p.id, ContentType.MOVIE)
+        loadVersions(p, m)
         try {
-            details.value = catalog.movieDetails(p, m)
+            val d = catalog.movieDetails(p, m)
+            details.value = d
+            // TMDB a reconnu l'œuvre : on la rattache aux autres versions (année identique exigée, pour éviter un homonyme)
+            val tm = d.tmdb
+            if (tm != null && m.year != null && tm.year != null && kotlin.math.abs(tm.year - m.year) <= 1) {
+                vod.linkTmdb(p.id, ContentType.MOVIE, m.id, m.tmdbId, m.groupKey, tm.id)
+                catalog.movie(p.id, m.id)?.let { fresh -> if (fresh.groupKey != m.groupKey) loadVersions(p, fresh) }
+            }
         } catch (e: Exception) {
             error.value = e.userMessage()
         }
     }
 
-    fun refreshProgress(id: String) = viewModelScope.launch { playlist?.let { progress.value = library.progress(it.id, ContentType.MOVIE, id) } }
-    fun toggleFavorite(id: String) = viewModelScope.launch { playlist?.let { library.toggleFavorite(it.id, ContentType.MOVIE, id) } }
-    fun clearProgress(id: String) = viewModelScope.launch { playlist?.let { library.clearProgress(it.id, ContentType.MOVIE, id); progress.value = null } }
-}
+    private suspend fun loadVersions(p: PlaylistEntity, m: MovieEntity) {
+        val all = vod.movieVersions(p.id, m)
+        versions.value = vod.orderedMovies(p.id, all)
+        preferredId.value = vod.choice(p.id, ContentType.MOVIE, m.groupKey)
+    }
 
+    fun prefer(v: MovieEntity) = viewModelScope.launch {
+        val p = playlist ?: return@launch
+        vod.setChoice(p.id, ContentType.MOVIE, v.groupKey, v.id)
+        details.value?.movie?.let { loadVersions(p, it) }
+    }
+
+    fun toggleFavorite(shownId: String) = viewModelScope.launch {
+        playlist?.let { vod.toggleFavorite(it.id, ContentType.MOVIE, versions.value.map { v -> v.id }.ifEmpty { listOf(shownId) }, shownId) }
+    }
+    fun clearProgress() = viewModelScope.launch {
+        playlist?.let { p -> vod.clearMovieProgress(p.id, versions.value.map { it.id }) }
+    }
+}
 @Composable
 fun MovieDetailScreen(nav: NavHostController, id: String) {
     val vm: MovieDetailViewModel = hiltViewModel()
     val d by vm.details.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val favorite by vm.favorite.collectAsStateWithLifecycle()
+    val versions by vm.versions.collectAsStateWithLifecycle()
+    val preferredId by vm.preferredId.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val playFocus = remember { FocusRequester() }
+    var versionMenu by remember { mutableStateOf<MovieEntity?>(null) }
     LaunchedEffect(id) { vm.load(id) }
-    LaunchedEffect(Unit) { vm.refreshProgress(id) }
 
     val details = d ?: run { LoadingBox(); return }
     val m = details.movie
@@ -149,14 +195,18 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val plot = xt?.plot ?: tm?.overview
     val durationMin = xt?.durationSecs?.div(60) ?: tm?.runtimeMin
     val resume = progress?.takeIf { !it.finished && it.positionMs > 30_000 }
+    // version lancée par « Lecture » : la meilleure selon les préférences (langue, qualité, choix manuel)
+    val best = versions.firstOrNull() ?: m
+    val multi = versions.size > 1
 
-    DetailLayout(backdrop = backdrop, poster = tm?.poster ?: m.poster, logo = tm?.logo, title = m.title) {
+    DetailLayout(backdrop = backdrop, poster = tm?.poster ?: m.poster, logo = tm?.logo, title = workTitle(m.title, versions.size)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             (m.year ?: tm?.year)?.let { Tag(it.toString()) }
             durationMin?.takeIf { it > 0 }?.let { Tag(formatMinutes(it)) }
             (tm?.rating ?: xt?.rating ?: m.rating)?.let { Tag("★ %.1f".format(it), SokoulColors.Warning.copy(alpha = 0.2f), SokoulColors.Warning) }
-            m.quality?.let { Tag(it, SokoulColors.AccentSoft, SokoulColors.Accent) }
-            m.language?.let { Tag(it) }
+            best.quality?.let { Tag(it, SokoulColors.AccentSoft, SokoulColors.Accent) }
+            best.language?.let { Tag(it) }
+            if (multi) Tag("${versions.size} versions")
         }
         val genres = tm?.genres?.joinToString(", ") ?: xt?.genre
         if (!genres.isNullOrBlank()) Text(genres, Modifier.padding(top = 10.dp), color = SokoulColors.TextSecondary)
@@ -166,10 +216,10 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
 
         Row(Modifier.padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             AppButton(
-                if (resume != null) "Reprendre à ${formatDuration(resume.positionMs)}" else "Lecture",
-                { nav.navigate(PlayerRoute(PlayKind.MOVIE, pid, m.id)) }, icon = Icons.Default.PlayArrow, primary = true, focusRequester = playFocus,
+                (if (resume != null) "Reprendre à ${formatDuration(resume.positionMs)}" else "Lecture") + (if (multi) " · ${versionLabel(best)}" else ""),
+                { nav.navigate(PlayerRoute(PlayKind.MOVIE, pid, best.id)) }, icon = Icons.Default.PlayArrow, primary = true, focusRequester = playFocus,
             )
-            if (resume != null) AppButton("Depuis le début", { vm.clearProgress(m.id); nav.navigate(PlayerRoute(PlayKind.MOVIE, pid, m.id)) }, icon = Icons.Default.Replay)
+            if (resume != null) AppButton("Depuis le début", { vm.clearProgress(); nav.navigate(PlayerRoute(PlayKind.MOVIE, pid, best.id)) }, icon = Icons.Default.Replay)
             AppButton(if (favorite) "Dans ma liste" else "Ma liste", { vm.toggleFavorite(m.id) }, icon = if (favorite) Icons.Default.Check else Icons.Default.Add)
             val trailer = tm?.trailerYoutubeKey ?: xt?.trailer
             if (!trailer.isNullOrBlank()) AppButton("Bande-annonce", { openYoutube(context, trailer) }, icon = Icons.Default.Theaters)
@@ -177,6 +227,19 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         if (resume != null && resume.durationMs > 0) {
             Box(Modifier.padding(top = 12.dp).width(320.dp).height(4.dp).background(Color(0x33FFFFFF), RoundedCornerShape(2.dp))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(resume.positionMs.toFloat() / resume.durationMs).background(SokoulColors.Accent, RoundedCornerShape(2.dp)))
+            }
+        }
+        if (multi) {
+            Text("Versions", Modifier.padding(top = 26.dp, bottom = 4.dp), style = MaterialTheme.typography.titleLarge)
+            Text("OK pour lire une version · appui long (ou Menu) pour la lancer en premier", color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelMedium)
+            Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                versions.forEach { v ->
+                    VersionRow(
+                        label = versionLabel(v), detail = listOfNotNull(vm.categoryNames[v.categoryId], v.name).joinToString(" · "),
+                        preferred = v.id == preferredId, first = v.id == best.id,
+                        onClick = { nav.navigate(PlayerRoute(PlayKind.MOVIE, pid, v.id)) }, onLongClick = { versionMenu = v },
+                    )
+                }
             }
         }
         if (!tm?.cast.isNullOrEmpty()) {
@@ -194,6 +257,17 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
             Text("Avec : ${xt?.cast}", Modifier.padding(top = 16.dp), color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
+    versionMenu?.let { v ->
+        OptionsDialog(
+            versionLabel(v),
+            listOf(
+                MenuOption("Lire cette version", Icons.Default.PlayArrow) { nav.navigate(PlayerRoute(PlayKind.MOVIE, pid, v.id)) },
+                MenuOption("Toujours lancer cette version en premier", Icons.Default.Star) { vm.prefer(v) },
+            ),
+            subtitle = v.name,
+            onDismiss = { versionMenu = null },
+        )
+    }
     LaunchedEffect(Unit) { runCatching { playFocus.requestFocus() } }
 }
 
@@ -205,50 +279,99 @@ class SeriesDetailViewModel @Inject constructor(
     private val playlists: PlaylistRepository,
     private val catalog: CatalogRepository,
     private val library: LibraryRepository,
+    private val vod: VodRepository,
 ) : ViewModel() {
-    private val key = MutableStateFlow<Pair<Long, String>?>(null)
+    private var openedId: String? = null
+    private val pidFlow = MutableStateFlow<Long?>(null)
     var playlist: PlaylistEntity? = null
     val loading = MutableStateFlow(true)
     val error = MutableStateFlow<String?>(null)
     val tmdb = MutableStateFlow<TmdbInfo?>(null)
+    /** Versions de la série (VF, VOSTFR…), dans l'ordre de préférence. */
+    val versions = MutableStateFlow<List<SeriesEntity>>(emptyList())
+    /** Version principale : ses épisodes sont affichés, complétés par ceux des autres versions. */
+    val primaryId = MutableStateFlow<String?>(null)
+    val preferredId = MutableStateFlow<String?>(null)
 
-    val series: StateFlow<SeriesEntity?> = key.filterNotNull().flatMapLatest { (p, s) -> catalog.observeSeries(p, s) }
+    private val primaryKey = combine(pidFlow.filterNotNull(), primaryId.filterNotNull()) { p, s -> p to s }.distinctUntilChanged()
+    private val versionIds = versions.map { l -> l.map { it.id } }.distinctUntilChanged()
+
+    val series: StateFlow<SeriesEntity?> = primaryKey.flatMapLatest { (p, s) -> catalog.observeSeries(p, s) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-    val details: StateFlow<SeriesDetailsEntity?> = key.filterNotNull().flatMapLatest { (p, s) -> catalog.seriesDetails(p, s) }
+    val details: StateFlow<SeriesDetailsEntity?> = primaryKey.flatMapLatest { (p, s) -> catalog.seriesDetails(p, s) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-    val episodes: StateFlow<List<EpisodeEntity>> = key.filterNotNull().flatMapLatest { (p, s) -> catalog.episodes(p, s) }
+    /** Épisodes bruts de toutes les versions (pour retrouver la saison/épisode d'une progression). */
+    val allEpisodes: StateFlow<List<EpisodeEntity>> = combine(pidFlow.filterNotNull(), versionIds) { p, ids -> p to ids }
+        .flatMapLatest { (p, ids) -> if (ids.isEmpty()) flowOf(emptyList()) else vod.observeEpisodes(p, ids) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val progress: StateFlow<List<ProgressEntity>> = key.filterNotNull().flatMapLatest { (p, s) -> library.seriesProgress(p, s) }
+    val episodes: StateFlow<List<EpisodeEntity>> = combine(allEpisodes, primaryId, versionIds) { all, primary, ids ->
+        VodRepository.mergeEpisodes(all, listOfNotNull(primary) + ids)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val progress: StateFlow<List<ProgressEntity>> = combine(pidFlow.filterNotNull(), versionIds) { p, ids -> p to ids }
+        .flatMapLatest { (p, ids) -> if (ids.isEmpty()) flowOf(emptyList()) else vod.observeSeriesProgress(p, ids) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val favorite: StateFlow<Boolean> = key.filterNotNull().flatMapLatest { (p, s) -> library.isFavorite(p, ContentType.SERIES, s) }
+    val favorite: StateFlow<Boolean> = combine(pidFlow.filterNotNull(), versionIds) { p, ids -> p to ids }
+        .flatMapLatest { (p, ids) -> if (ids.isEmpty()) flowOf(false) else vod.observeAnyFavorite(p, ContentType.SERIES, ids) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun load(id: String, force: Boolean = false) = viewModelScope.launch {
-        if (!force && key.value?.second == id) return@launch
+        if (!force && openedId == id) return@launch
         val p = playlists.activeNow() ?: return@launch
         playlist = p
-        key.value = p.id to id
+        openedId = id
         loading.value = true
         error.value = null
+        val s = catalog.seriesItem(p.id, id) ?: run { error.value = "Série introuvable"; loading.value = false; return@launch }
+        val ordered = vod.orderedSeries(p.id, vod.seriesVersions(p.id, s))
+        versions.value = ordered
+        preferredId.value = vod.choice(p.id, ContentType.SERIES, s.groupKey)
+        val primary = ordered.firstOrNull()?.id ?: id
+        primaryId.value = primary
+        pidFlow.value = p.id
         try {
-            catalog.ensureEpisodes(p, id, force)
+            catalog.ensureEpisodes(p, primary, force)
         } catch (e: Exception) {
             error.value = e.userMessage()
         } finally {
             loading.value = false
         }
-        catalog.seriesItem(p.id, id)?.let { tmdb.value = catalog.seriesTmdb(it) }
+        // autres versions : épisodes chargés une par une (cache 12 h) pour combler les trous
+        ordered.filter { it.id != primary }.take(MAX_EXTRA_VERSIONS).forEach { v -> runCatching { catalog.ensureEpisodes(p, v.id, force) } }
+        val tm = catalog.seriesTmdb(s)
+        tmdb.value = tm
+        if (tm != null && s.year != null && tm.year != null && kotlin.math.abs(tm.year - s.year) <= 1) {
+            vod.linkTmdb(p.id, ContentType.SERIES, s.id, s.tmdbId, s.groupKey, tm.id)
+            catalog.seriesItem(p.id, s.id)?.let { fresh ->
+                if (fresh.groupKey != s.groupKey) {
+                    val more = vod.orderedSeries(p.id, vod.seriesVersions(p.id, fresh))
+                    if (more.size > versions.value.size) versions.value = more
+                }
+            }
+        }
     }
 
-    fun toggleFavorite(id: String) = viewModelScope.launch { playlist?.let { library.toggleFavorite(it.id, ContentType.SERIES, id) } }
+    fun selectVersion(v: SeriesEntity) = viewModelScope.launch {
+        val p = playlist ?: return@launch
+        primaryId.value = v.id
+        vod.setChoice(p.id, ContentType.SERIES, v.groupKey, v.id)
+        preferredId.value = v.id
+        runCatching { catalog.ensureEpisodes(p, v.id) }.onFailure { error.value = it.userMessage() }
+    }
+
+    fun toggleFavorite(shownId: String) = viewModelScope.launch {
+        playlist?.let { vod.toggleFavorite(it.id, ContentType.SERIES, versions.value.map { v -> v.id }.ifEmpty { listOf(shownId) }, shownId) }
+    }
     fun setWatched(e: EpisodeEntity, watched: Boolean) = viewModelScope.launch {
         playlist?.let { library.setWatched(it.id, ContentType.SERIES, e.id, e.seriesId, e.title, watched) }
     }
     fun setSeasonWatched(list: List<EpisodeEntity>, watched: Boolean) = viewModelScope.launch {
         playlist?.let { p -> list.forEach { e -> library.setWatched(p.id, ContentType.SERIES, e.id, e.seriesId, e.title, watched) } }
     }
-}
 
+    companion object {
+        const val MAX_EXTRA_VERSIONS = 4
+    }
+}
 @Composable
 fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val vm: SeriesDetailViewModel = hiltViewModel()
@@ -260,6 +383,9 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val loading by vm.loading.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val tmdb by vm.tmdb.collectAsStateWithLifecycle()
+    val versions by vm.versions.collectAsStateWithLifecycle()
+    val primaryId by vm.primaryId.collectAsStateWithLifecycle()
+    val allEpisodes by vm.allEpisodes.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val playFocus = remember { FocusRequester() }
     var season by remember { mutableStateOf<Int?>(null) }
@@ -268,14 +394,18 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
 
     val series = s ?: run { LoadingBox(); return }
     val pid = vm.playlist?.id ?: return
-    val progressById = progress.associateBy { it.itemId }
+    // progression rattachée à la saison/épisode : un épisode vu dans une version l'est dans toutes
+    val seOf = allEpisodes.associate { it.id to (it.season to it.episode) }
+    val progressBySe = progress.filter { seOf[it.itemId] != null }.groupBy { seOf.getValue(it.itemId) }.mapValues { (_, l) -> l.maxBy { it.updatedAt } }
+    val progressById = episodes.mapNotNull { e -> progressBySe[e.season to e.episode]?.let { e.id to it } }.toMap()
     val seasons = episodes.map { it.season }.distinct().sorted()
-    val currentSeason = season ?: progress.maxByOrNull { it.updatedAt }?.let { last -> episodes.firstOrNull { it.id == last.itemId }?.season } ?: seasons.firstOrNull()
+    val last = progress.filter { seOf[it.itemId] != null }.maxByOrNull { it.updatedAt }
+    val lastSe = last?.let { seOf[it.itemId] }
+    val currentSeason = season ?: lastSe?.first ?: seasons.firstOrNull()
 
     // prochain épisode à regarder : celui en cours, sinon le suivant du dernier vu, sinon le premier
-    val last = progress.maxByOrNull { it.updatedAt }
     val resumeEpisode = last?.let { lp ->
-        val i = episodes.indexOfFirst { it.id == lp.itemId }
+        val i = episodes.indexOfFirst { (it.season to it.episode) == lastSe }
         when {
             i < 0 -> null
             !lp.finished -> episodes[i]
@@ -286,7 +416,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
 
     DetailLayout(
         backdrop = tmdb?.backdrop ?: details?.backdrop ?: series.backdrop ?: series.poster,
-        poster = tmdb?.poster ?: series.poster, logo = tmdb?.logo, title = series.title,
+        poster = tmdb?.poster ?: series.poster, logo = tmdb?.logo, title = workTitle(series.title, versions.size),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             (series.year ?: tmdb?.year)?.let { Tag(it.toString()) }
@@ -303,14 +433,29 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
                 val label = "S%02dE%02d".format(resumeEpisode.season, resumeEpisode.episode)
                 AppButton(
                     if (resumeProgress != null) "Reprendre $label" else if (last != null) "Regarder $label" else "Lecture",
-                    { nav.navigate(PlayerRoute(PlayKind.EPISODE, pid, resumeEpisode.id, parentId = series.id)) },
+                    { nav.navigate(PlayerRoute(PlayKind.EPISODE, pid, resumeEpisode.id, parentId = resumeEpisode.seriesId)) },
                     icon = Icons.Default.PlayArrow, primary = true, focusRequester = playFocus,
                 )
             }
             AppButton(if (favorite) "Dans ma liste" else "Ma liste", { vm.toggleFavorite(series.id) }, icon = if (favorite) Icons.Default.Check else Icons.Default.Add)
             val trailer = tmdb?.trailerYoutubeKey ?: details?.trailer
             if (!trailer.isNullOrBlank()) AppButton("Bande-annonce", { openYoutube(context, trailer) }, icon = Icons.Default.Theaters)
-            AppButton("Actualiser", { vm.load(series.id, force = true) }, icon = Icons.Default.Refresh)
+            AppButton("Actualiser", { vm.load(id, force = true) }, icon = Icons.Default.Refresh)
+        }
+        if (versions.size > 1) {
+            Text("Versions", Modifier.padding(top = 22.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(versions, key = { it.id }) { v ->
+                    val sel = v.id == primaryId
+                    FocusSurface(
+                        onClick = { vm.selectVersion(v) },
+                        color = if (sel) SokoulColors.Accent else SokoulColors.SurfaceHigh,
+                        shape = RoundedCornerShape(50), focusScale = 1.05f,
+                    ) { _ ->
+                        Text(seriesVersionLabel(v), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
         }
 
         if (loading && episodes.isEmpty()) Text("Chargement des épisodes…", Modifier.padding(top = 20.dp), color = SokoulColors.TextMuted)
@@ -332,7 +477,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
             }
             Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 episodes.filter { it.season == currentSeason }.forEach { e ->
-                    EpisodeRow(e, progressById[e.id], { nav.navigate(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = series.id)) }, { episodeMenu = e })
+                    EpisodeRow(e, progressById[e.id], { nav.navigate(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = e.seriesId)) }, { episodeMenu = e })
                 }
             }
         }
@@ -354,7 +499,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
             OptionsDialog(
                 "S%02dE%02d · %s".format(e.season, e.episode, e.title),
                 listOf(
-                    MenuOption("Lecture", Icons.Default.PlayArrow) { nav.navigate(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = series.id)) },
+                    MenuOption("Lecture", Icons.Default.PlayArrow) { nav.navigate(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = e.seriesId)) },
                     MenuOption(if (watched) "Marquer comme non vu" else "Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(e, !watched) },
                 ),
                 subtitle = e.plot,
@@ -387,6 +532,21 @@ private fun EpisodeRow(e: EpisodeEntity, progress: ProgressEntity?, onClick: () 
                 e.durationSecs?.takeIf { it > 0 }?.let { Text(formatMinutes(it / 60), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelMedium) }
                 e.plot?.let { Text(it, Modifier.padding(top = 4.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
+        }
+    }
+}
+
+fun versionLabel(m: MovieEntity): String = VersionPicker.label(m.toVersion())
+fun seriesVersionLabel(s: SeriesEntity): String = VersionPicker.label(s.toVersion()).takeIf { it != "Version" } ?: s.name.take(28)
+
+@Composable
+private fun VersionRow(label: String, detail: String, preferred: Boolean, first: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+    FocusSurface(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().widthIn(max = 900.dp), color = SokoulColors.Surface, focusScale = 1.01f) { _ ->
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (preferred) Icons.Default.Star else Icons.Default.PlayArrow, null, Modifier.size(18.dp), tint = if (preferred) SokoulColors.Warning else SokoulColors.TextMuted)
+            Text(label, Modifier.padding(start = 10.dp).width(140.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            Text(detail, Modifier.weight(1f), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (first) Text("lancée en premier", Modifier.padding(start = 8.dp), color = SokoulColors.Accent, style = MaterialTheme.typography.labelSmall)
         }
     }
 }

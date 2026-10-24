@@ -36,6 +36,8 @@ data class SearchResults(
     val movies: List<MovieEntity> = emptyList(),
     val series: List<SeriesEntity> = emptyList(),
     val programs: List<Pair<ProgramEntity, ChannelEntity?>> = emptyList(),
+    /** Nombre de versions par id affiché (doublons regroupés). */
+    val versions: Map<String, Int> = emptyMap(),
 ) {
     val isEmpty get() = channels.isEmpty() && movies.isEmpty() && series.isEmpty() && programs.isEmpty()
 }

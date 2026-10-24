@@ -63,6 +63,10 @@ data class PlayerUi(
     /** Contenu d'un groupe verrouillé : le code parental est demandé avant la lecture. */
     val needsPin: Boolean = false,
     val pinError: String? = null,
+    /** Message ponctuel (ex. passage automatique à une autre version). */
+    val notice: String? = null,
+    /** Version en cours (« VF · FHD ») quand l'œuvre en compte plusieurs. */
+    val versionLabel: String? = null,
 )
 
 @HiltViewModel
@@ -77,6 +81,7 @@ class PlayerViewModel @Inject constructor(
     private val library: LibraryRepository,
     private val actions: ChannelActions,
     private val db: AppDatabase,
+    private val vod: com.sokoul.iptv.data.repo.VodRepository,
 ) : ViewModel() {
 
     val route: PlayerRoute = savedState.toRoute()
@@ -171,10 +176,14 @@ class PlayerViewModel @Inject constructor(
             PlayKind.MOVIE -> {
                 val m = catalog.movie(p.id, route.id) ?: throw IllegalStateException("Film introuvable")
                 if (!allowed(ContentType.MOVIE, m.categoryId) { start() }) return
-                val resume = resumePosition(ContentType.MOVIE, m.id)
-                _ui.update { it.copy(title = m.title, subtitle = listOfNotNull(m.year?.toString(), m.quality).joinToString(" · ").ifEmpty { null }, image = m.poster, isLive = false, resumedFromMs = resume) }
-                play(resolver.movie(p, m), m.title, resume)
-                trackProgress { pos, dur -> library.saveProgress(p.id, ContentType.MOVIE, m.id, null, m.title, m.year?.toString(), m.poster, pos, dur) }
+                // Versions de l'œuvre : celle demandée d'abord, puis les autres dans l'ordre de préférence (repli)
+                val others = vod.movieVersions(p.id, m).filter { it.id != m.id }
+                movieVersions = listOf(m) + vod.orderedMovies(p.id, others)
+                movieIndex = 0
+                // reprise partagée : la dernière position connue, quelle que soit la version regardée
+                val resume = LibraryRepository.resumeFrom(vod.latestMovieProgress(p.id, movieVersions.map { it.id }))
+                playMovie(p, m, resume)
+                watchMovieFailures(p)
             }
             PlayKind.EPISODE -> {
                 val sid = route.parentId ?: throw IllegalStateException("Série inconnue")
@@ -198,8 +207,67 @@ class PlayerViewModel @Inject constructor(
         updateVideoInfo()
     }
 
-    // --- Direct -------------------------------------------------------------------------
+    // --- Films : versions et repli ------------------------------------------------------
 
+    private var movieVersions: List<com.sokoul.iptv.data.db.MovieEntity> = emptyList()
+    private var movieIndex = 0
+    private var fallbackJob: Job? = null
+
+    private fun versionLabel(m: com.sokoul.iptv.data.db.MovieEntity) =
+        com.sokoul.iptv.data.repo.VersionPicker.label(com.sokoul.iptv.data.repo.VodVersion(m.id, m.name, m.language, m.quality, m.categoryId))
+
+    private suspend fun playMovie(p: PlaylistEntity, m: com.sokoul.iptv.data.db.MovieEntity, startMs: Long) {
+        _ui.update {
+            it.copy(
+                title = m.title, subtitle = listOfNotNull(m.year?.toString(), m.quality, m.language).joinToString(" · ").ifEmpty { null },
+                image = m.poster, isLive = false, resumedFromMs = startMs,
+                versionLabel = if (movieVersions.size > 1) versionLabel(m) else null,
+            )
+        }
+        play(resolver.movie(p, m), m.title, startMs)
+        trackProgress { pos, dur -> library.saveProgress(p.id, ContentType.MOVIE, m.id, null, m.title, m.year?.toString(), m.poster, pos, dur) }
+    }
+
+    /**
+     * Source en échec (retirée, refusée…) : on passe à la version suivante après une pause,
+     * une seule tentative par version (pas de rafale de connexions vers le fournisseur).
+     */
+    private fun watchMovieFailures(p: PlaylistEntity) {
+        if (movieVersions.size < 2) return
+        fallbackJob?.cancel()
+        fallbackJob = viewModelScope.launch {
+            val sp = _player.value ?: return@launch
+            sp.state.collect { s ->
+                if (s !is StreamState.Failed || movieIndex >= movieVersions.lastIndex) return@collect
+                val failed = movieVersions[movieIndex]
+                val next = movieVersions[movieIndex + 1]
+                _ui.update { it.copy(notice = "Version ${versionLabel(failed)} indisponible, lecture de la version ${versionLabel(next)}…") }
+                delay(FALLBACK_PAUSE_MS)
+                if (_player.value?.state?.value !is StreamState.Failed) return@collect // relancée entre-temps (Réessayer)
+                val pos = sp.player.currentPosition.takeIf { it > 5_000 } ?: _ui.value.resumedFromMs
+                movieIndex++
+                try { playMovie(p, next, pos) } catch (e: Exception) { _ui.update { it.copy(error = e.userMessage()) } }
+                _ui.update { it.copy(notice = null) }
+            }
+        }
+    }
+
+    /** Lance une autre version du film en cours (menu du lecteur). */
+    fun switchVersion(id: String) {
+        val p = playlist ?: return
+        val i = movieVersions.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
+        viewModelScope.launch {
+            saveNow()
+            val pos = _player.value?.player?.currentPosition?.takeIf { it > 5_000 } ?: 0
+            movieIndex = i
+            playMovie(p, movieVersions[i], pos)
+        }
+    }
+
+    fun movieVersionOptions(): List<Pair<String, String>> = movieVersions.map { it.id to versionLabel(it) }
+    fun currentMovieId(): String? = movieVersions.getOrNull(movieIndex)?.id
+
+    // --- Direct -------------------------------------------------------------------------
     fun playChannel(c: ChannelEntity) {
         val p = playlist ?: return
         val current = _ui.value.channel
@@ -402,6 +470,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun retry() = _player.value?.retryNow()
+
+    companion object {
+        const val FALLBACK_PAUSE_MS = 4_000L
+    }
     fun state(): StateFlow<StreamState>? = _player.value?.state
 
     override fun onCleared() {
