@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sokoul TV</string>
+    <string name="channel_recordings">Enregistrements</string>
+    <string name="channel_reminders">Rappels de programmes</string>
+</resources>

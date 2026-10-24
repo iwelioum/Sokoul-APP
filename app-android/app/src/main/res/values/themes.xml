@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Sokoul" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:colorAccent">@color/accent</item>
+    </style>
+    <color name="background">#FF0A0A0F</color>
+    <color name="accent">#FF7C6CFF</color>
+    <color name="ic_launcher_background">#FF0A0A0F</color>
+</resources>

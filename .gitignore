@@ -1,0 +1,21 @@
+# Anciens dépôts : gardés localement avec leur propre historique git
+legacy/
+
+# Binaires générés
+dist/
+*.apk
+*.aab
+
+# Android / Gradle
+app-android/local.properties
+app-android/.gradle/
+app-android/.kotlin/
+app-android/build/
+app-android/**/build/
+*.iml
+.idea/
+.DS_Store
+Thumbs.db
+
+# Sauvegardes de l'app (contiennent des mots de passe)
+sokoul-sauvegarde*.json

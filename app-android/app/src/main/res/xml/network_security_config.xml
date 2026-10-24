@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La grande majorité des serveurs IPTV (Xtream, M3U) sont en HTTP simple :
+     le trafic en clair doit être autorisé, sinon rien ne se charge. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
