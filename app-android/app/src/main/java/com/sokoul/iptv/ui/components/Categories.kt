@@ -1,26 +1,41 @@
 package com.sokoul.iptv.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,6 +93,48 @@ fun CategoryColumn(
                     if (c.locked) Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = SokoulColors.TextMuted)
                 }
             }
+        }
+    }
+}
+
+/** Bouton « groupe » + liste verticale en fenêtre : utilisable même avec des centaines de groupes. */
+@Composable
+fun CategoryPickerButton(
+    items: List<CategoryItem>,
+    selected: String,
+    onSelect: (CategoryItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var open by remember { mutableStateOf(false) }
+    val current = items.firstOrNull { it.id == selected }?.name ?: "Groupe"
+    AppButton(current.take(28), { open = true }, modifier, icon = Icons.AutoMirrored.Filled.List)
+    if (open) {
+        Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            val focus = remember { FocusRequester() }
+            val start = items.indexOfFirst { it.id == selected }.coerceAtLeast(0)
+            val state = rememberLazyListState((start - 4).coerceAtLeast(0))
+            Column(Modifier.widthIn(min = 360.dp, max = 560.dp).clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(vertical = 16.dp)) {
+                Text("Groupes (${items.size})", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.titleLarge)
+                LazyColumn(Modifier.heightIn(max = 480.dp), state = state, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    itemsIndexed(items, key = { _, c -> c.id }) { i, c ->
+                        val isSel = c.id == selected
+                        FocusSurface(
+                            onClick = { open = false; onSelect(c) },
+                            modifier = Modifier.fillMaxWidth().then(if (i == start) Modifier.focusRequester(focus) else Modifier),
+                            color = if (isSel) SokoulColors.AccentSoft else Color.Transparent,
+                            focusedColor = SokoulColors.SurfaceHigher,
+                            focusScale = 1.02f,
+                            borderWidth = 2.dp,
+                        ) { _ ->
+                            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(c.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (isSel) SokoulColors.Accent else SokoulColors.TextPrimary)
+                                if (c.locked) Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = SokoulColors.TextMuted)
+                            }
+                        }
+                    }
+                }
+            }
+            LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
         }
     }
 }

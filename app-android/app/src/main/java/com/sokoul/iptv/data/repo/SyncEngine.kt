@@ -461,7 +461,7 @@ class SyncEngine @Inject constructor(
         private const val EPG_BATCH = 3000
         private const val DAY = 24 * 3600_000L
 
-        /** Identifiant EPG comparable : minuscules, sans suffixe de flux iptv-org (TF1.fr@HD → 	f1.fr). */
+        /** Identifiant EPG comparable : minuscules, sans suffixe de flux iptv-org (TF1.fr@HD → tf1.fr). */
         fun epgId(raw: String?): String? = raw?.trim()?.substringBefore('@')?.lowercase()?.takeIf { it.isNotEmpty() }
 
         fun searchable(s: String): String =

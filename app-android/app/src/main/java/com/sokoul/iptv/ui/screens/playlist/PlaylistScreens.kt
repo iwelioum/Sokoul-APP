@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -181,7 +182,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
 
             if (existing == null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TypeChoice("Xtream Codes", type == PlaylistType.XTREAM, Modifier.weight(1f)) { type = PlaylistType.XTREAM }
+                    TypeChoice("Xtream Codes", type == PlaylistType.XTREAM, Modifier.weight(1f).focusRequester(firstFocus)) { type = PlaylistType.XTREAM }
                     TypeChoice("Lien M3U / fichier", type == PlaylistType.M3U, Modifier.weight(1f)) { type = PlaylistType.M3U }
                 }
             }
@@ -226,7 +227,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                     },
                     primary = true,
                     enabled = !busy,
-                    focusRequester = firstFocus,
+                    focusRequester = if (p != null) firstFocus else null,
                 )
                 if (busy) CircularProgressIndicator(Modifier.size(28.dp), color = SokoulColors.Accent)
                 if (p != null) {

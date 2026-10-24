@@ -78,6 +78,7 @@ import com.sokoul.iptv.data.repo.SyncEngine
 import com.sokoul.iptv.recording.RecordingScheduler
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.CategoryChips
+import com.sokoul.iptv.ui.components.CategoryPickerButton
 import com.sokoul.iptv.ui.components.CategoryItem
 import com.sokoul.iptv.ui.components.ChannelLogo
 import com.sokoul.iptv.ui.components.EmptyState
@@ -108,6 +109,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -129,9 +132,19 @@ class GuideViewModel @Inject constructor(
     private val recordings: RecordingScheduler,
     val actions: ChannelActions,
     @ApplicationContext private val context: android.content.Context,
+    private val settings: com.sokoul.iptv.data.SettingsStore,
 ) : ViewModel() {
     val playlist: StateFlow<PlaylistEntity?> = playlists.active.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val selected = MutableStateFlow(SpecialCategory.ALL)
+
+    init {
+        // Même groupe que l'écran Direct, comme sur TiviMate
+        viewModelScope.launch {
+            val p = playlist.filterNotNull().first()
+            settings.lastGroup("live", p.id)?.takeIf { it != SpecialCategory.RECENT }?.let { selected.value = it }
+            selected.drop(1).collect { settings.setLastGroup("live", p.id, it) }
+        }
+    }
 
     val categories: StateFlow<List<CategoryItem>> = playlist.filterNotNull()
         .flatMapLatest { catalog.categories(it.id, ContentType.LIVE) }
@@ -236,13 +249,15 @@ fun GuideScreen(nav: NavHostController) {
         val currentProgram = currentChannel?.let { c -> programs[c.id]?.firstOrNull { focusTime >= it.start && focusTime < it.end } }
         GuideHeader(currentChannel, currentProgram, now, windowStart)
 
-        CategoryChips(categories, selected, { c ->
+        val pickCategory: (CategoryItem) -> Unit = { c ->
             if (c.locked && !vm.isUnlocked()) pinFor = c else {
                 vm.selected.value = c.id; row = 0; vm.reset()
             }
-        })
+        }
+        if (!isTv) CategoryChips(categories, selected, pickCategory)
 
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (isTv) CategoryPickerButton(categories, selected, pickCategory)
             AppButton("−3 h", { windowStart -= 6 * HALF_HOUR; focusTime = windowStart + HALF_HOUR }, icon = Icons.Default.ChevronLeft)
             AppButton("Maintenant", { windowStart = vm.alignedNow() - HALF_HOUR; focusTime = System.currentTimeMillis() }, icon = Icons.Default.Schedule)
             AppButton("+3 h", { windowStart += 6 * HALF_HOUR; focusTime = windowStart + HALF_HOUR }, icon = Icons.Default.ChevronRight)
@@ -307,7 +322,15 @@ fun GuideScreen(nav: NavHostController) {
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                                     val cur = rowPrograms.getOrNull(idx)
                                     val atLeftEdge = (cur?.start ?: focusTime) <= windowStart
-                                    if (atLeftEdge && windowStart >= vm.alignedNow() - HALF_HOUR) return@onKeyEvent false // vers le menu
+                                    val t = System.currentTimeMillis()
+                                    val onNow = cur == null || (cur.start <= t && cur.end > t)
+                                    val atDefaultWindow = windowStart >= vm.alignedNow() - HALF_HOUR
+                                    // Sur le programme en cours (ou sans guide), gauche ouvre le menu comme sur TiviMate ;
+                                    // le passé reste accessible via les chaînes en replay et les boutons −3 h.
+                                    if (atDefaultWindow && (atLeftEdge || (onNow && !vm.supportsCatchup(c)) || rowPrograms.isEmpty())) {
+                                        focusTime = t
+                                        return@onKeyEvent false
+                                    }
                                     val prev = if (idx > 0) rowPrograms[idx - 1] else rowPrograms.lastOrNull { it.end <= focusTime }
                                     focusTime = prev?.start?.coerceAtLeast(windowStart - 6 * HALF_HOUR) ?: (focusTime - HALF_HOUR)
                                     if (focusTime < windowStart) windowStart = focusTime - focusTime % HALF_HOUR

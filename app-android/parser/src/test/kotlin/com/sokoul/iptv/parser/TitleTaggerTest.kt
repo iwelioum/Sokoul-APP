@@ -23,6 +23,19 @@ class TitleTaggerTest {
     }
 
     @Test
+    fun `real provider names`() {
+        val a = TitleTagger.parse("EN| Clayface - 2026 [HDTS]")
+        assertEquals("Clayface", a.clean)
+        assertEquals(2026, a.year)
+        assertEquals("EN", a.prefix)
+        val b = TitleTagger.parse("LATIN-LT| DAZN LALIGA 1 HD")
+        assertEquals("DAZN LALIGA 1", b.clean)
+        assertEquals("LATIN-LT", b.prefix)
+        assertEquals("Oppenheimer", TitleTagger.parse("FR| Oppenheimer (2023) WEB-DL 1080p").clean)
+        assertEquals("daznlaliga1", TitleTagger.channelKey("LATIN-LT| DAZN LALIGA 1 HD"))
+    }
+
+    @org.junit.Test
     fun `does not damage legitimate titles`() {
         assertEquals("NCIS: Los Angeles", TitleTagger.parse("NCIS: Los Angeles").clean)
         assertEquals("CSI: Miami", TitleTagger.parse("CSI: Miami").clean)

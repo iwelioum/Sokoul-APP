@@ -64,10 +64,17 @@ class StreamPlayer(
         override fun onPlayerError(error: PlaybackException) {
             Timber.w(error, "Erreur de lecture ${error.errorCodeName}")
             val s = stream ?: return
+            val http = httpStatus(error)
             when {
                 error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> {
                     player.seekToDefaultPosition()
                     player.prepare()
+                }
+                // Refus du serveur : autre format si disponible, sinon quelques essais espacés puis abandon
+                http != null && http in 400..499 -> when {
+                    candidateIndex < candidates.lastIndex && http != 401 -> { candidateIndex++; load(keepPosition = true) }
+                    http == 404 || http == 410 -> _state.value = StreamState.Failed("Flux introuvable sur le serveur (chaîne ou film retiré)")
+                    else -> scheduleRetry(refusal(http), refused = true)
                 }
                 isFormatError(error) && candidateIndex < candidates.lastIndex -> {
                     candidateIndex++
@@ -123,17 +130,21 @@ class StreamPlayer(
         player.playWhenReady = true
     }
 
-    private fun scheduleRetry(reason: String) {
+    private fun scheduleRetry(reason: String, refused: Boolean = false) {
         if (retryJob?.isActive == true) return
         retries++
-        val maxRetries = if (stream?.isLive == true) 40 else 8
+        val maxRetries = when {
+            refused -> 2 // la connexion se libère parfois quelques secondes après la chaîne précédente
+            stream?.isLive == true -> 40
+            else -> 8
+        }
         if (retries > maxRetries) {
             _state.value = StreamState.Failed(reason)
             return
         }
         _state.value = StreamState.Reconnecting(retries)
         retryJob = scope.launch {
-            delay(minOf(500L * (1L shl minOf(retries - 1, 5)), 15_000L))
+            delay(if (refused) 4_000L * retries else minOf(500L * (1L shl minOf(retries - 1, 5)), 15_000L))
             // en direct, on alterne entre les formats disponibles (TS / HLS)
             if (stream?.isLive == true && candidates.size > 1 && retries % 3 == 0) {
                 candidateIndex = (candidateIndex + 1) % candidates.size
@@ -166,6 +177,21 @@ class StreamPlayer(
         stop()
         player.removeListener(listener)
         player.release()
+    }
+
+    private fun httpStatus(e: PlaybackException): Int? {
+        var c: Throwable? = e.cause
+        while (c != null) {
+            if (c is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) return c.responseCode
+            c = c.cause
+        }
+        return null
+    }
+
+    private fun refusal(code: Int) = when (code) {
+        401, 403 -> "Le fournisseur refuse le flux ($code) : connexion déjà utilisée ailleurs, abonnement expiré ou accès bloqué temporairement"
+        406, 429, 458 -> "Le fournisseur limite les connexions ($code) : fermez l'autre appareil ou réessayez dans quelques minutes"
+        else -> "Le serveur refuse le flux (erreur $code)"
     }
 
     private fun isNetworkError(e: PlaybackException) = e.errorCode in 2000..2999

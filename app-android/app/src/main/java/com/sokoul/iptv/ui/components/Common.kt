@@ -43,6 +43,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusDirection
+import com.sokoul.iptv.ui.theme.LocalIsTv
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -247,11 +257,39 @@ fun FormField(
     imeAction: ImeAction = ImeAction.Next,
     onDone: (() -> Unit)? = null,
     singleLine: Boolean = true,
+    autoEdit: Boolean = false,
 ) {
+    // Sur TV, un champ qui reçoit le focus ouvre le clavier et piège la télécommande :
+    // le champ reste en lecture seule tant que l'utilisateur n'appuie pas sur OK.
+    val isTv = LocalIsTv.current
+    var editing by remember { mutableStateOf(!isTv || autoEdit) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
+        readOnly = !editing,
+        modifier = modifier.fillMaxWidth()
+            .onFocusChanged { if (isTv && !autoEdit && !it.isFocused) editing = false }
+            .onPreviewKeyEvent { e ->
+                if (!isTv) return@onPreviewKeyEvent false
+                // Les champs Compose consomment les flèches (déplacement du curseur) : on rend la main au focus.
+                val dir = when (e.key) {
+                    Key.DirectionUp -> FocusDirection.Up
+                    Key.DirectionDown -> FocusDirection.Down
+                    Key.DirectionLeft -> if (editing) null else FocusDirection.Left
+                    Key.DirectionRight -> if (editing) null else FocusDirection.Right
+                    else -> null
+                }
+                if (dir != null && (singleLine || dir == FocusDirection.Left || dir == FocusDirection.Right)) {
+                    if (e.type == KeyEventType.KeyDown) focusManager.moveFocus(dir)
+                    return@onPreviewKeyEvent true
+                }
+                val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+                if (editing || !ok) return@onPreviewKeyEvent false
+                if (e.type == KeyEventType.KeyUp) { editing = true; keyboard?.show() }
+                true
+            },
         label = { Text(label) },
         placeholder = placeholder?.let { { Text(it, color = SokoulColors.TextMuted) } },
         singleLine = singleLine,

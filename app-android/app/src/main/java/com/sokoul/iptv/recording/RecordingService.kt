@@ -46,6 +46,9 @@ import kotlin.coroutines.coroutineContext
  * Flux MPEG-TS : copie directe des octets. Flux HLS : suivi de la playlist et
  * concaténation des segments. Reconnexion automatique jusqu'à l'heure de fin.
  */
+/** Le serveur a répondu 4xx : inutile d'insister rapidement. */
+private class RefusedException(val code: Int) : IOException("HTTP $code")
+
 @AndroidEntryPoint
 class RecordingService : Service() {
 
@@ -87,11 +90,20 @@ class RecordingService : Service() {
                 val url = stream.urls.firstOrNull() ?: throw IOException("URL de flux manquante")
                 FileOutputStream(file, true).use { out ->
                     var failures = 0
+                    var refusals = 0
                     while (coroutineContext.isActive && System.currentTimeMillis() < rec.endAt) {
                         try {
                             if (url.substringBefore('?').endsWith(".m3u8", true)) recordHls(url, stream.userAgent, out, rec.endAt)
                             else recordRaw(url, stream.userAgent, stream.referrer, out, rec.endAt)
                             failures = 0
+                            refusals = 0
+                        } catch (e: RefusedException) {
+                            // Connexion refusée (souvent : la seule connexion autorisée est déjà utilisée).
+                            // On réessaie lentement pour ne pas se faire bannir par le fournisseur.
+                            refusals++
+                            Timber.w("Enregistrement $id refusé (HTTP ${e.code}), essai $refusals")
+                            if (refusals > 6) throw IOException("Le fournisseur refuse le flux (HTTP ${e.code}) : la connexion autorisée est sans doute déjà utilisée par un autre appareil ou une autre chaîne")
+                            delay(30_000)
                         } catch (e: IOException) {
                             failures++
                             Timber.w(e, "Enregistrement $id interrompu, reconnexion ($failures)")
@@ -120,6 +132,7 @@ class RecordingService : Service() {
     private suspend fun recordRaw(url: String, ua: String, referrer: String?, out: OutputStream, endAt: Long) {
         val req = Request.Builder().url(url).header("User-Agent", ua).apply { referrer?.let { header("Referer", it) } }.build()
         http.newCall(req).execute().use { resp ->
+            if (resp.code in 400..499) throw RefusedException(resp.code)
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             val type = resp.header("Content-Type").orEmpty()
             if (type.contains("mpegurl", true)) throw IOException("Flux HLS inattendu")
@@ -160,6 +173,7 @@ class RecordingService : Service() {
 
     private fun fetchText(url: String, ua: String): String =
         http.newCall(Request.Builder().url(url).header("User-Agent", ua).build()).execute().use { r ->
+            if (r.code in 400..499) throw RefusedException(r.code)
             if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
             r.body?.string() ?: ""
         }

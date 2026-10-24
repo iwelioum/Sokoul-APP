@@ -63,6 +63,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -79,19 +80,37 @@ class MultiviewViewModel @Inject constructor(
 ) : ViewModel() {
     private val _slots = MutableStateFlow(List(4) { SlotState(null, null) })
     val slots: StateFlow<List<SlotState>> = _slots.asStateFlow()
-    val channels = MutableStateFlow<List<ChannelEntity>>(emptyList())
+    /** Groupes de chaînes pour le sélecteur en deux étapes (groupe puis chaîne). */
+    val groups = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val notice = MutableStateFlow<String?>(null)
+    val maxConnections = MutableStateFlow<Int?>(null)
     private var audioSlot = 0
+    private var pid = 0L
 
     init {
         viewModelScope.launch {
             val p = playlists.activeNow() ?: return@launch
-            channels.value = (catalog.channelList(p.id, SpecialCategory.FAVORITES) + catalog.channelList(p.id, SpecialCategory.ALL)).distinctBy { it.id }
+            pid = p.id
+            maxConnections.value = p.maxConnections?.takeIf { it > 0 }
+            groups.value = listOf(SpecialCategory.FAVORITES to "★ Favoris") +
+                catalog.categories(p.id, com.sokoul.iptv.data.db.ContentType.LIVE).first()
+                    .filter { !it.hidden && !it.locked }.map { it.categoryId to it.name }
             session.slots.value.forEachIndexed { i, s -> if (s != null) catalog.channel(s.playlistId, s.channelId)?.let { assign(i, it) } }
         }
     }
 
+    suspend fun channelsOf(categoryId: String): List<ChannelEntity> = catalog.channelList(pid, categoryId)
+
     fun assign(index: Int, c: ChannelEntity) = viewModelScope.launch {
         val p = playlists.get(c.playlistId) ?: return@launch
+        // Chaque case ouvre une connexion : on respecte la limite de l'abonnement plutôt que d'échouer en boucle
+        val max = p.maxConnections?.takeIf { it > 0 }
+        val others = _slots.value.withIndex().count { (j, s) -> j != index && s.channel?.playlistId == c.playlistId && s.player?.state?.value.let { it is StreamState.Playing || it is StreamState.Loading || it is StreamState.Reconnecting } }
+        if (max != null && others >= max) {
+            notice.value = "Votre abonnement n'autorise que $max connexion${if (max > 1) "s" else ""} simultanée${if (max > 1) "s" else ""} : videz une case avant d'en lancer une autre."
+            return@launch
+        }
+        notice.value = null
         val current = _slots.value[index]
         val sp = current.player ?: StreamPlayer(factory.create(settings.current(), forMultiview = true), factory, viewModelScope)
         sp.player.volume = if (index == audioSlot) 1f else 0f
@@ -128,13 +147,25 @@ class MultiviewViewModel @Inject constructor(
 fun MultiviewScreen(nav: NavHostController) {
     val vm: MultiviewViewModel = hiltViewModel()
     val slots by vm.slots.collectAsStateWithLifecycle()
-    val channels by vm.channels.collectAsStateWithLifecycle()
+    val groups by vm.groups.collectAsStateWithLifecycle()
+    val notice by vm.notice.collectAsStateWithLifecycle()
+    val maxConn by vm.maxConnections.collectAsStateWithLifecycle()
     var pickerFor by remember { mutableStateOf<Int?>(null) }
+    var groupFor by remember { mutableStateOf<Pair<Int, Pair<String, String>>?>(null) }
+    var groupChannels by remember { mutableStateOf<List<ChannelEntity>?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var menuFor by remember { mutableStateOf<Int?>(null) }
     var audio by remember { mutableStateOf(0) }
     val firstFocus = remember { FocusRequester() }
 
     Column(Modifier.fillMaxSize().background(Color.Black).padding(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val banner = notice ?: maxConn?.takeIf { it == 1 }?.let { "Votre abonnement n'autorise qu'une connexion : une seule case peut être lue à la fois." }
+        if (banner != null) {
+            Text(
+                banner, Modifier.fillMaxWidth().background(SokoulColors.Warning.copy(alpha = 0.18f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
+                color = SokoulColors.TextPrimary, style = MaterialTheme.typography.bodyMedium,
+            )
+        }
         for (rowIndex in 0..1) {
             Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (col in 0..1) {
@@ -164,9 +195,22 @@ fun MultiviewScreen(nav: NavHostController) {
 
     pickerFor?.let { i ->
         OptionsDialog(
-            "Choisir une chaîne",
-            channels.map { c -> MenuOption("${c.number}. ${c.name}") { vm.assign(i, c) } },
+            "Choisir un groupe",
+            groups.map { g -> MenuOption(g.second) {
+                groupFor = i to g
+                groupChannels = null
+                scope.launch { groupChannels = vm.channelsOf(g.first) }
+            } },
             onDismiss = { pickerFor = null },
+        )
+    }
+    groupFor?.let { (i, g) ->
+        val list = groupChannels
+        if (list != null) OptionsDialog(
+            g.second,
+            if (list.isEmpty()) listOf(MenuOption("Aucune chaîne dans ce groupe") {})
+            else list.map { c -> MenuOption("${c.number}. ${c.name}") { vm.assign(i, c) } },
+            onDismiss = { groupFor = null; groupChannels = null },
         )
     }
     menuFor?.let { i ->

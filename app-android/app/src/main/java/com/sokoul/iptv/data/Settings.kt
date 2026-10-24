@@ -95,6 +95,14 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     private inline fun <reified T : Enum<T>> enumOr(v: String?, default: T): T =
         v?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
 
+    /** Dernier groupe ouvert par écran (« live », « guide »…), par playlist. */
+    suspend fun lastGroup(screen: String, playlistId: Long): String? =
+        context.dataStore.data.first()[stringPreferencesKey("last_group_${screen}_$playlistId")]
+
+    suspend fun setLastGroup(screen: String, playlistId: Long, categoryId: String) {
+        context.dataStore.edit { it[stringPreferencesKey("last_group_${screen}_$playlistId")] = categoryId }
+    }
+
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         context.dataStore.edit { prefs ->
             val s = transform(prefs.toSettings())

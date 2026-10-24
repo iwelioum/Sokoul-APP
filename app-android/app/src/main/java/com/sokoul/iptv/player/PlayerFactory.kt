@@ -90,7 +90,22 @@ class PlayerFactory @Inject constructor(
             .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS)
             .setConstantBitrateSeekingEnabled(true)
         return DefaultMediaSourceFactory(upstream, extractors)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
+            .setLoadErrorHandlingPolicy(IptvLoadErrorPolicy())
+    }
+
+    /**
+     * Ne réessaie pas en boucle un flux refusé par le serveur (401/403/404/406/429…) :
+     * insister sur un refus peut faire bannir temporairement l'abonnement par le fournisseur.
+     * Les coupures réseau restent réessayées normalement.
+     */
+    private class IptvLoadErrorPolicy : DefaultLoadErrorHandlingPolicy(6) {
+        override fun getRetryDelayMsFor(info: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+            val e = info.exception
+            if (e is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException && e.responseCode in 400..499) {
+                return androidx.media3.common.C.TIME_UNSET
+            }
+            return super.getRetryDelayMsFor(info)
+        }
     }
 
     /** Construit l'élément à lire ; `forceHls` sert de repli pour les URL sans extension. */

@@ -93,6 +93,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -110,11 +112,21 @@ class LiveViewModel @Inject constructor(
     private val resolver: StreamResolver,
     library: LibraryRepository,
     val actions: ChannelActions,
+    private val settings: com.sokoul.iptv.data.SettingsStore,
 ) : ViewModel() {
 
     val playlist: StateFlow<PlaylistEntity?> = playlists.active.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val selected = MutableStateFlow(SpecialCategory.ALL)
     private val focused = MutableStateFlow<ChannelEntity?>(null)
+
+    init {
+        // Rouvre le dernier groupe consulté (avec des centaines de groupes, revenir à « Tout » est pénible)
+        viewModelScope.launch {
+            val p = playlist.filterNotNull().first()
+            settings.lastGroup("live", p.id)?.let { selected.value = it }
+            selected.drop(1).collect { settings.setLastGroup("live", p.id, it) }
+        }
+    }
 
     val categories: StateFlow<List<CategoryItem>> = playlist.filterNotNull()
         .flatMapLatest { catalog.categories(it.id, ContentType.LIVE) }
@@ -188,11 +200,11 @@ fun LiveScreen(nav: NavHostController) {
 
     if (wide) {
         Row(Modifier.fillMaxSize()) {
-            CategoryColumn(categories, selected, selectCategory, Modifier.width(230.dp).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f)), onLongClick = openCategoryMenu)
+            CategoryColumn(categories, selected, selectCategory, Modifier.width(210.dp).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f)), onLongClick = openCategoryMenu)
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it })
             }
-            DetailsPanel(details, Modifier.width(360.dp).fillMaxHeight(), vm::supportsCatchup)
+            DetailsPanel(details, Modifier.width(300.dp).fillMaxHeight(), vm::supportsCatchup)
         }
     } else {
         Column(Modifier.fillMaxSize()) {

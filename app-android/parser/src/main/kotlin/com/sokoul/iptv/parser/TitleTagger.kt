@@ -23,8 +23,13 @@ object TitleTagger {
     // (liste fermée pour ne pas couper "NCIS: Los Angeles" ou "CSI: Miami").
     private const val KNOWN_PREFIXES =
         "FR|FRA|EN|ENG|UK|US|USA|DE|ES|IT|PT|AR|TR|NL|BE|CH|CA|QC|MA|DZ|TN|AF|EU|LAT|PL|RO|AL|EXYU|EX-YU|VOD|4K|UHD|FHD|HD|SD|MULTI|VF|VFF|VOSTFR"
+    // Un code en majuscules suivi d'un "|" est toujours un préfixe ("LATIN-LT| DAZN", "4K-NF| …").
     private val prefixRegex = Regex(
-        """^\s*(?:[|\[(]\s*([A-Z0-9]{2,5}(?:[- ][A-Z0-9]{2,5})?)\s*[|\])]\s*[:\-|]?|($KNOWN_PREFIXES)\s*(?::|\||\s-\s))\s*"""
+        """^\s*(?:[|\[(]\s*([A-Z0-9]{2,5}(?:[- ][A-Z0-9]{2,5})?)\s*[|\])]\s*[:\-|]?|($KNOWN_PREFIXES)\s*(?::|\s-\s)|([A-Z0-9]{2,8}(?:[-+ ][A-Z0-9]{1,5})?)\s*\|)\s*"""
+    )
+    // Source de la copie (CAM, HDTS, WEB-DL…) : sans intérêt dans le titre.
+    private val releaseRegex = Regex(
+        """(?i)[\[(]\s*(?:HD[- ]?TS|TS|HD[- ]?CAM|CAM|HD[- ]?TC|TC|SCR|WEB[- ]?DL|WEB[- ]?RIP|WEB|BLU[- ]?RAY|BD[- ]?RIP|DVD[- ]?RIP|HD[- ]?RIP|REMUX)\s*[)\]]|(?<![\p{L}\d])(?:HD[- ]?TS|HD[- ]?CAM|HD[- ]?TC|WEB[- ]?DL|WEB[- ]?RIP|BLU[- ]?RAY|BD[- ]?RIP|DVD[- ]?RIP|HD[- ]?RIP|REMUX)(?![\p{L}\d])"""
     )
     private val yearParen = Regex("""[(\[]\s*((?:19|20)\d{2})\s*[)\]]""")
     private val yearTrail = Regex("""(?:\s[-–]\s|\s)((?:19|20)\d{2})\s*$""")
@@ -40,9 +45,10 @@ object TitleTagger {
         var s = raw.trim()
         var prefix: String? = null
         prefixRegex.find(s)?.let { m ->
-            prefix = m.groups[1]?.value ?: m.groups[2]?.value
+            prefix = m.groups[1]?.value ?: m.groups[2]?.value ?: m.groups[3]?.value
             s = s.substring(m.range.last + 1)
         }
+        s = releaseRegex.replace(s, " ")
         val qualities = qualityRegex.findAll(s).map { normalizeQuality(it.value) }.toList()
         val languages = languageRegex.findAll(s).map { normalizeLanguage(it.value) }.toList()
         s = qualityRegex.replace(s, " ")

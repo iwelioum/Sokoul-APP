@@ -14,6 +14,7 @@ kotlin {
 tasks.test {
     systemProperty("realWorld", System.getProperty("realWorld") ?: "false")
     testLogging { showStandardStreams = true }
+    maxHeapSize = "2g"
 }
 
 dependencies {

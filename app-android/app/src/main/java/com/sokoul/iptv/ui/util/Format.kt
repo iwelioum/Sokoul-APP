@@ -22,7 +22,10 @@ private val full = formatter("EEE d MMM 'à' HH:mm")
 
 fun formatClock(t: Long): String = clock.get()!!.format(Date(t))
 fun formatRange(start: Long, end: Long) = "${formatClock(start)} – ${formatClock(end)}"
+private val fullYear = formatter("EEE d MMM yyyy")
 fun formatDateTime(t: Long): String = full.get()!!.format(Date(t))
+/** Date d'échéance : avec l'année, sinon « 2 juin » est ambigu pour un abonnement d'un an. */
+fun formatDate(t: Long): String = fullYear.get()!!.format(Date(t))
 
 fun dayLabel(t: Long, now: Long = System.currentTimeMillis()): String {
     val a = Calendar.getInstance().apply { timeInMillis = t }

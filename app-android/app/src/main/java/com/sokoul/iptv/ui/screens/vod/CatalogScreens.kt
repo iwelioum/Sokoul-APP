@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -28,6 +29,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRestorer
@@ -114,6 +119,12 @@ abstract class CatalogViewModel(
         SortMode.YEAR -> list.sortedByDescending { it.year ?: 0 }
     }
 
+    // Position conservée en revenant d'une fiche (focus sur l'affiche ouverte, défilement intact)
+    var lastOpened: String? = null
+    var gridIndex = 0
+    var gridOffset = 0
+    var listKey: Pair<String, SortMode>? = null
+
     fun hide(cat: String) = playlist.value?.let { p -> viewModelScope.launch { catalog.setCategoryPref(p.id, type, cat, hidden = true) } }
     fun lock(cat: String, locked: Boolean) = playlist.value?.let { p -> viewModelScope.launch { catalog.setCategoryPref(p.id, type, cat, locked = locked) } }
     suspend fun unlock(pin: String) = parental.tryUnlock(pin)
@@ -177,18 +188,39 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
                 list == null -> LoadingBox()
                 list.isEmpty() -> EmptyState(Icons.Default.Movie, "Rien ici pour le moment", if (selected == SpecialCategory.FAVORITES) "Ajoutez des titres à « Ma liste » depuis leur fiche." else null)
                 else -> {
-                    val state = rememberLazyGridState()
-                    LaunchedEffect(selected, sort) { state.scrollToItem(0) }
+                    val state = rememberLazyGridState(vm.gridIndex, vm.gridOffset)
+                    val restore = remember { FocusRequester() }
+                    LaunchedEffect(selected, sort) {
+                        val key = selected to sort
+                        if (vm.listKey != null && vm.listKey != key) { state.scrollToItem(0); vm.lastOpened = null }
+                        vm.listKey = key
+                    }
+                    LaunchedEffect(state) {
+                        snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
+                            .collect { (i, o) -> vm.gridIndex = i; vm.gridOffset = o }
+                    }
+                    LaunchedEffect(list) {
+                        if (vm.lastOpened != null && list.any { it.id == vm.lastOpened }) {
+                            withFrameNanos { }
+                            runCatching { restore.requestFocus() }
+                            vm.lastOpened = null
+                        }
+                    }
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(if (wide) 150.dp else 112.dp),
+                        // ~5 affiches par ligne sur TV (comme TiviMate), 3 sur téléphone
+                        columns = GridCells.Adaptive(if (wide) 104.dp else 104.dp),
                         state = state,
                         modifier = Modifier.fillMaxSize().focusRestorer(),
                         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp, top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         items(list, key = { it.id }) { item ->
-                            PosterCard(item.title, item.poster, { onOpen(item) }, width = if (wide) 150.dp else 112.dp, badge = item.badge, subtitle = item.subtitle)
+                            PosterCard(
+                                item.title, item.poster, { vm.lastOpened = item.id; onOpen(item) },
+                                Modifier.fillMaxWidth().then(if (item.id == vm.lastOpened) Modifier.focusRequester(restore) else Modifier),
+                                badge = item.badge, subtitle = item.subtitle,
+                            )
                         }
                     }
                 }

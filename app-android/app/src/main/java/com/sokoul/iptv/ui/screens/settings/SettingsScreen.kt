@@ -78,6 +78,7 @@ import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.components.PinDialog
 import com.sokoul.iptv.ui.nav.PlaylistEditRoute
 import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.util.formatDate
 import com.sokoul.iptv.ui.util.formatDateTime
 import com.sokoul.iptv.work.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -344,7 +345,7 @@ private fun PlaylistRow(p: PlaylistEntity, active: Boolean, status: SyncStatus?,
                     (if (p.lastSync > 0) " · synchronisée ${formatDateTime(p.lastSync)}" else ""),
                 color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall,
             )
-            p.expiresAt?.let { Text("Abonnement valable jusqu'au ${formatDateTime(it)}", color = if (it < System.currentTimeMillis() + 7 * 86_400_000L) SokoulColors.Warning else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
+            p.expiresAt?.let { Text("Abonnement valable jusqu'au ${formatDate(it)}" + (p.maxConnections?.let { n -> " · $n connexion${if (n > 1) "s" else ""} simultanée${if (n > 1) "s" else ""}" } ?: ""), color = if (it < System.currentTimeMillis() + 7 * 86_400_000L) SokoulColors.Warning else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
             statusLine("Playlist", status)?.let { Text(it, color = if (status?.error != null) SokoulColors.Live else SokoulColors.Accent, style = MaterialTheme.typography.bodySmall) }
             statusLine("Guide", epg)?.let { Text(it, color = if (epg?.error != null) SokoulColors.Live else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
         }
@@ -367,7 +368,7 @@ private fun TextEditDialog(t: TextEdit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Column(Modifier.widthIn(min = 360.dp, max = 560.dp).background(SokoulColors.SurfaceHigh, RoundedCornerShape(18.dp)).padding(24.dp)) {
             Text(t.title, style = MaterialTheme.typography.titleLarge)
-            FormField("Valeur", value, { value = it }, Modifier.padding(top = 14.dp).focusRequester(focus), onDone = { t.onSave(value); onDismiss() })
+            FormField("Valeur", value, { value = it }, Modifier.padding(top = 14.dp).focusRequester(focus), autoEdit = true, onDone = { t.onSave(value); onDismiss() })
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 AppButton("Annuler", onDismiss)
                 AppButton("Enregistrer", { t.onSave(value); onDismiss() }, primary = true)

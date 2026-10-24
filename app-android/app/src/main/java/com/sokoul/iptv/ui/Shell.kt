@@ -38,7 +38,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -127,19 +129,22 @@ fun Shell(nav: NavHostController, current: Dest, content: @Composable () -> Unit
 
 @Composable
 private fun SideRail(current: Dest, onSelect: (Dest) -> Unit) {
+    // En entrant dans le menu à la télécommande, le focus va sur la rubrique ouverte (pas sur la plus proche).
+    val selectedFocus = remember { FocusRequester() }
     Column(
-        Modifier.fillMaxHeight().width(92.dp).background(SokoulColors.Surface).padding(vertical = 20.dp)
+        Modifier.fillMaxHeight().width(92.dp).background(SokoulColors.Surface).padding(vertical = 12.dp)
+            .focusProperties { enter = { selectedFocus } }
             .focusGroup(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text("SOKOUL", color = SokoulColors.Accent, fontSize = 13.sp, letterSpacing = 2.sp, style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.size(14.dp))
+        Text("SOKOUL", color = SokoulColors.Accent, fontSize = 12.sp, letterSpacing = 2.sp, style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.size(8.dp))
         Dest.entries.forEach { d ->
             val selected = d == current
             FocusSurface(
                 onClick = { onSelect(d) },
-                modifier = Modifier.size(76.dp, 64.dp),
+                modifier = Modifier.size(76.dp, 56.dp).then(if (selected) Modifier.focusRequester(selectedFocus) else Modifier),
                 color = if (selected) SokoulColors.AccentSoft else Color.Transparent,
                 focusedColor = SokoulColors.SurfaceHigher,
                 shape = RoundedCornerShape(14.dp),
