@@ -125,6 +125,7 @@ class VodRepository @Inject constructor(
     }
 
     suspend fun latestMovieProgress(pid: Long, ids: List<String>) = if (ids.isEmpty()) null else db.vod().latestMovieProgress(pid, ids)
+    suspend fun lastEpisodeProgress(pid: Long, sids: List<String>) = if (sids.isEmpty()) null else db.vod().lastEpisodeProgressIn(pid, sids)
     fun observeLatestMovieProgress(pid: Long, ids: List<String>) = db.vod().observeLatestMovieProgress(pid, ids)
     fun observeSeriesProgress(pid: Long, sids: List<String>) = db.vod().observeSeriesProgressIn(pid, sids)
     fun observeEpisodes(pid: Long, sids: List<String>) = db.vod().observeEpisodesIn(pid, sids)

@@ -103,6 +103,11 @@ import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.nav.MultiviewRoute
 import com.sokoul.iptv.ui.nav.PlayerRoute
 import com.sokoul.iptv.ui.theme.LocalIsTv
+import com.sokoul.iptv.ui.theme.LocalLayout
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.draw.clip
+import com.sokoul.iptv.ui.components.NetImage
+import com.sokoul.iptv.data.repo.EpisodeMerge
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.util.formatClock
 import com.sokoul.iptv.ui.util.formatDuration
@@ -497,16 +502,18 @@ private fun StatusOverlay(state: StreamState, error: String?, onRetry: () -> Uni
 private fun LiveInfoBar(ui: PlayerUi) {
     val now = rememberNow(15_000)
     val c = ui.channel
+    val compact = LocalLayout.current.isCompact
+    val side = if (compact) 16.dp else 40.dp
     Box(
         Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000), Color(0xF2000000))))
-            .padding(start = 40.dp, end = 40.dp, top = 60.dp, bottom = 32.dp)
+            .padding(start = side, end = side, top = if (compact) 40.dp else 60.dp, bottom = if (compact) 20.dp else 32.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (c != null) {
-                Text(c.number.toString(), Modifier.padding(end = 18.dp), fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                ChannelLogo(c.logo, c.name, Modifier.size(120.dp, 72.dp))
+                if (!compact) Text(c.number.toString(), Modifier.padding(end = 18.dp), fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                ChannelLogo(c.logo, c.name, if (compact) Modifier.size(64.dp, 40.dp) else Modifier.size(120.dp, 72.dp))
             }
-            Column(Modifier.weight(1f).padding(start = 22.dp)) {
+            Column(Modifier.weight(1f).padding(start = if (compact) 12.dp else 22.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(ui.title, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (ui.isFavorite) Icon(Icons.Default.Star, null, Modifier.padding(start = 8.dp).size(18.dp), tint = SokoulColors.Warning)
@@ -522,7 +529,7 @@ private fun LiveInfoBar(ui: PlayerUi) {
                         }
                         Text(formatClock(p.end), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
                     }
-                    p.description?.let { Text(it, Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    if (!compact) p.description?.let { Text(it, Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 } else {
                     Text(ui.subtitle ?: "Pas d'information de programme", color = SokoulColors.TextMuted)
                 }
@@ -530,10 +537,10 @@ private fun LiveInfoBar(ui: PlayerUi) {
                     Text("Ensuite · ${formatClock(n.start)}  ${n.title}", Modifier.padding(top = 6.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
             }
-            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 24.dp)) {
+            if (!compact) Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 24.dp)) {
                 Text(formatClock(now), style = MaterialTheme.typography.headlineSmall)
                 if (ui.videoInfo.isNotBlank()) Text(ui.videoInfo, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                Text("◀ liste  ·  ▲▼ zapper  ·  Menu options", Modifier.padding(top = 6.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall)
+                if (LocalLayout.current.isTv) Text("◀ liste  ·  ▲▼ zapper  ·  Menu options", Modifier.padding(top = 6.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -546,7 +553,7 @@ private fun VodControls(
 ) {
     Column(
         Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))))
-            .padding(start = 40.dp, end = 40.dp, top = 80.dp, bottom = 28.dp)
+            .padding(horizontal = if (LocalLayout.current.isCompact) 16.dp else 40.dp).padding(top = 80.dp, bottom = 28.dp)
     ) {
         Text(ui.title, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         ui.subtitle?.let { Text(it, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -598,7 +605,7 @@ private fun ChannelListOverlay(channels: List<ChannelEntity>, highlighted: Int, 
         if (highlighted <= first || highlighted >= last) state.scrollToItem((highlighted - 4).coerceAtLeast(0))
     }
     LazyColumn(
-        Modifier.width(420.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(Color(0xF20A0A0F), Color(0xCC0A0A0F)))).padding(vertical = 24.dp),
+        Modifier.fillMaxWidth(0.9f).widthIn(max = 420.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(Color(0xF20A0A0F), Color(0xCC0A0A0F)))).padding(vertical = 24.dp),
         state = state,
     ) {
         itemsIndexed(channels, key = { _, c -> c.id }) { i, c ->
@@ -625,12 +632,24 @@ private fun ChannelListOverlay(channels: List<ChannelEntity>, highlighted: Int, 
 @Composable
 private fun NextEpisodeCard(ui: PlayerUi, seconds: Int, modifier: Modifier, onPlay: () -> Unit) {
     val next = ui.nextEpisode ?: return
-    Column(
-        modifier.width(320.dp).background(Color(0xE6111118), RoundedCornerShape(14.dp)).padding(18.dp)
-            .pointerInput(next.id) { detectTapGestures { onPlay() } }
+    val l = LocalLayout.current
+    Row(
+        modifier.fillMaxWidth(0.92f).widthIn(max = 460.dp).background(Color(0xE6111118), RoundedCornerShape(14.dp)).padding(12.dp)
+            .pointerInput(next.id) { detectTapGestures { onPlay() } },
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Épisode suivant dans $seconds s", color = SokoulColors.Accent, style = MaterialTheme.typography.labelLarge)
-        Text("S%02dE%02d · %s".format(next.season, next.episode, next.title), Modifier.padding(top = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text("OK / ⏭ pour lancer maintenant", Modifier.padding(top = 6.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+        if (next.image != null) {
+            Box(Modifier.width(if (l.isCompact) 112.dp else 150.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(SokoulColors.SurfaceHigher)) {
+                NetImage(next.image, null, Modifier.fillMaxSize())
+            }
+        }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text("Épisode suivant dans $seconds s", color = SokoulColors.Accent, style = MaterialTheme.typography.labelLarge)
+            Text(
+                "S%d · É%d — %s".format(next.season, next.episode, EpisodeMerge.cleanTitle(next.title, next.episode)),
+                Modifier.padding(top = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
+            )
+            Text(if (l.isTv) "OK / ⏭ pour lancer maintenant" else "Touchez pour lancer maintenant", Modifier.padding(top = 4.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }

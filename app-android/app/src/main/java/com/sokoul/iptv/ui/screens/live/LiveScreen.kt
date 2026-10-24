@@ -209,12 +209,16 @@ fun LiveScreen(nav: NavHostController) {
     val openCategoryMenu: (CategoryItem) -> Unit = { if (!it.id.startsWith("__")) categoryMenu = it }
 
     if (wide) {
+        val l = com.sokoul.iptv.ui.theme.LocalLayout.current
+        // panneau de détails seulement s'il reste au moins ~360 dp pour la liste des chaînes
+        val showDetails = l.isTv || l.widthDp >= 1000
+        val catWidth = if (l.widthDp < 840) 180.dp else 210.dp
         Row(Modifier.fillMaxSize()) {
-            CategoryColumn(categories, selected, selectCategory, Modifier.width(210.dp).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f)), onLongClick = openCategoryMenu)
+            CategoryColumn(categories, selected, selectCategory, Modifier.width(catWidth).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f)), onLongClick = openCategoryMenu)
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it }, vm.lastPlayed) { vm.lastPlayed = null }
             }
-            DetailsPanel(details, Modifier.width(300.dp).fillMaxHeight(), vm::supportsCatchup)
+            if (showDetails) DetailsPanel(details, Modifier.width(if (l.isTv) 300.dp else 340.dp).fillMaxHeight(), vm::supportsCatchup)
         }
     } else {
         Column(Modifier.fillMaxSize()) {

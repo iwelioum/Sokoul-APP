@@ -28,6 +28,10 @@ object SokoulColors {
     val TextMuted = Color(0xFF6B6B80)
     val Focus = Color(0xFFFFFFFF)
     val Divider = Color(0x1FFFFFFF)
+    /** Fond des squelettes de chargement et reflet animé. */
+    val Skeleton = Color(0xFF1C1C27)
+    val SkeletonShine = Color(0xFF2A2A3A)
+    val Gold = Color(0xFFFFC94D)
 }
 
 private val scheme = darkColorScheme(
@@ -47,6 +51,7 @@ private val scheme = darkColorScheme(
 )
 
 private val typography = Typography(
+    displayMedium = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp, lineHeight = 44.sp),
     displaySmall = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
     headlineMedium = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold),
     headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
@@ -68,6 +73,10 @@ val LocalIsTv = staticCompositionLocalOf { false }
 fun SokoulTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, typography = typography) {
         // Sans Surface parente, la couleur de texte par défaut serait le noir : illisible sur fond sombre.
-        CompositionLocalProvider(LocalContentColor provides SokoulColors.TextPrimary, content = content)
+        CompositionLocalProvider(
+            LocalContentColor provides SokoulColors.TextPrimary,
+            LocalLayout provides rememberAppLayout(LocalIsTv.current),
+            content = content,
+        )
     }
 }

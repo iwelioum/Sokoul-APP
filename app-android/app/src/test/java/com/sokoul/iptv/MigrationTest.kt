@@ -48,4 +48,18 @@ class MigrationTest {
         assertTrue(count("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('tmdb_links','vod_choice')") == 2)
         db.close()
     }
+
+    @Test fun `migration 2 vers 3 ajoute les metadonnees TMDB sans toucher au reste`() {
+        helper.createDatabase(dbName + "3", 2).apply {
+            execSQL("INSERT INTO playlists (id, name, type, url, lastSync, lastEpgSync, liveCount, movieCount, seriesCount, createdAt) VALUES (1, 'p', 'XTREAM', 'http://h', 0, 0, 0, 1, 0, 0)")
+            execSQL("INSERT INTO favorites (playlistId, type, itemId, addedAt) VALUES (1, 'MOVIE', '10', 5)")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(dbName + "3", 3, true, *Migrations.ALL)
+        fun count(sql: String) = db.query(sql).use { it.moveToFirst(); it.getInt(0) }
+        assertEquals(1, count("SELECT COUNT(*) FROM favorites"))
+        assertEquals(2, count("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('tmdb_meta','tmdb_match')"))
+        assertEquals(0, count("SELECT COUNT(*) FROM tmdb_meta"))
+        db.close()
+    }
 }

@@ -187,6 +187,7 @@ object XtreamParse {
         fun addEpisode(e: JsonElement, seasonHint: Int?) {
             val eo = e as? JsonObject ?: return
             val id = eo.str("id") ?: return
+            // « info » est parfois un tableau vide ([]) sur certains panels
             val einfo = eo["info"] as? JsonObject
             episodes += XtEpisode(
                 id = id,
@@ -196,7 +197,7 @@ object XtreamParse {
                 extension = eo.str("container_extension"),
                 durationSecs = einfo?.int("duration_secs") ?: einfo?.str("duration")?.let(::parseDuration),
                 plot = einfo?.str("plot"),
-                image = einfo?.str("movie_image") ?: einfo?.str("cover_big"),
+                image = episodeImage(einfo, eo),
                 rating = einfo?.double("rating")?.takeIf { it > 0 },
             )
         }
@@ -240,6 +241,29 @@ object XtreamParse {
             val start = o.long("start_timestamp")?.times(1000) ?: return@mapNotNull null
             val stop = o.long("stop_timestamp")?.times(1000) ?: return@mapNotNull null
             XtEpg(start, stop, decodeMaybeBase64(o.str("title")) ?: "Sans titre", decodeMaybeBase64(o.str("description")))
+        }
+    }
+
+    /**
+     * Vignette d'épisode : les panels l'exposent sous des noms variés (movie_image, cover_big, still_path…),
+     * parfois en chemin TMDB relatif (« /abc.jpg »).
+     */
+    fun episodeImage(info: JsonObject?, episode: JsonObject): String? {
+        val keys = listOf("movie_image", "cover_big", "still_path", "thumbnail", "image", "cover", "screenshot")
+        val raw = keys.firstNotNullOfOrNull { k -> info?.str(k) } ?: keys.firstNotNullOfOrNull { k -> episode.str(k) }
+            ?: info?.firstImage("backdrop_path")
+        return raw?.let { normalizeImage(it) }
+    }
+
+    /** URL d'image utilisable : chemin TMDB relatif complété, valeurs vides ou factices écartées. */
+    fun normalizeImage(s: String): String? {
+        val t = s.trim()
+        return when {
+            t.isEmpty() || t == "null" || t == "0" -> null
+            t.startsWith("http://") || t.startsWith("https://") -> t
+            t.startsWith("/") && t.length > 4 && t.substringAfterLast('.').lowercase() in setOf("jpg", "jpeg", "png", "webp") ->
+                "https://image.tmdb.org/t/p/w500$t"
+            else -> null
         }
     }
 

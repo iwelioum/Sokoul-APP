@@ -78,6 +78,7 @@ fun NetImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    alignment: Alignment = Alignment.Center,
     fallback: @Composable () -> Unit = {},
 ) {
     if (url.isNullOrBlank()) {
@@ -89,7 +90,8 @@ fun NetImage(
         contentDescription = contentDescription,
         modifier = modifier,
         contentScale = contentScale,
-        loading = { Box(Modifier.fillMaxSize().background(SokoulColors.SurfaceHigher)) },
+        alignment = alignment,
+        loading = { Box(Modifier.fillMaxSize().shimmer(RoundedCornerShape(0.dp))) },
         error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { fallback() } },
     )
 }
@@ -316,7 +318,7 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val first = remember { FocusRequester() }
         Column(
-            Modifier.widthIn(min = 320.dp, max = 520.dp).clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(20.dp)
+            Modifier.fillMaxWidth(0.92f).widthIn(max = 520.dp).clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(20.dp)
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) Text(subtitle, Modifier.padding(top = 4.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 3)

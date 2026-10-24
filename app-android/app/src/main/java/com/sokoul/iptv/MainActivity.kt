@@ -80,11 +80,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isTelevision(): Boolean {
+        // test des mises en page tactiles sur le boîtier : adb shell setprop debug.sokoul.touch 1
+        if (systemProperty("debug.sokoul.touch") == "1") return false
         val ui = getSystemService(UiModeManager::class.java)
         return ui?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
             packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
             !packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     }
+
+    @android.annotation.SuppressLint("PrivateApi")
+    private fun systemProperty(name: String): String? = runCatching {
+        Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, name) as String
+    }.getOrNull()
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()

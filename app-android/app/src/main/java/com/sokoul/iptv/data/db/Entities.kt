@@ -280,6 +280,48 @@ data class TmdbLinkEntity(
     val tmdbId: String,
 )
 
+/**
+ * Métadonnées TMDB en français d'une œuvre (affiche, fond, logo, accroche, saga…), utilisées par les
+ * rangées éditoriales et les fiches. Partagées entre playlists (clé = type + identifiant TMDB).
+ */
+@Entity(tableName = "tmdb_meta", primaryKeys = ["type", "tmdbId"], indices = [Index("collectionId")])
+data class TmdbMetaEntity(
+    val type: ContentType,
+    val tmdbId: Int,
+    val title: String,
+    val originalTitle: String?,
+    /** Résumé français ; à défaut, résumé anglais (overviewLang = "en"). */
+    val overview: String?,
+    val overviewLang: String?,
+    val tagline: String?,
+    /** Genres séparés par des virgules. */
+    val genres: String?,
+    val poster: String?,
+    val backdrop: String?,
+    val logo: String?,
+    val rating: Double?,
+    val year: Int?,
+    val runtimeMin: Int?,
+    val seasons: Int?,
+    val collectionId: Int?,
+    val collectionName: String?,
+    val certification: String?,
+    val fetchedAt: Long,
+)
+
+/**
+ * Correspondance œuvre du catalogue (clé de regroupement) → identifiant TMDB.
+ * tmdbId null = recherche faite sans résultat sûr (pas de nouvelle tentative avant `checkedAt` + 30 j).
+ */
+@Entity(tableName = "tmdb_match", primaryKeys = ["playlistId", "type", "workKey"], indices = [Index("type", "tmdbId")])
+data class TmdbMatchEntity(
+    val playlistId: Long,
+    val type: ContentType,
+    val workKey: String,
+    val tmdbId: Int?,
+    val checkedAt: Long,
+)
+
 /** Version choisie manuellement pour une œuvre (lancée en premier la fois suivante). */
 @Entity(tableName = "vod_choice", primaryKeys = ["playlistId", "type", "groupKey"])
 data class VodChoiceEntity(

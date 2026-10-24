@@ -32,8 +32,10 @@ import javax.inject.Singleton
         TmdbCacheEntity::class,
         TmdbLinkEntity::class,
         VodChoiceEntity::class,
+        TmdbMetaEntity::class,
+        TmdbMatchEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -47,6 +49,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun recordings(): RecordingDao
     abstract fun tmdb(): TmdbDao
     abstract fun vod(): VodDao
+    abstract fun browse(): BrowseDao
 }
 
 @Module
@@ -72,6 +75,7 @@ object DatabaseModule {
     @Provides fun recordings(db: AppDatabase) = db.recordings()
     @Provides fun tmdb(db: AppDatabase) = db.tmdb()
     @Provides fun vod(db: AppDatabase) = db.vod()
+    @Provides fun browse(db: AppDatabase) = db.browse()
 }
 
 /** Évolutions du schéma. Chaque version ajoute sans rien supprimer. */
@@ -94,5 +98,24 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    /** v3 : métadonnées TMDB en français (rangées éditoriales, sagas) et correspondances œuvre → TMDB. */
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `tmdb_meta` (`type` TEXT NOT NULL, `tmdbId` INTEGER NOT NULL, `title` TEXT NOT NULL, " +
+                    "`originalTitle` TEXT, `overview` TEXT, `overviewLang` TEXT, `tagline` TEXT, `genres` TEXT, `poster` TEXT, " +
+                    "`backdrop` TEXT, `logo` TEXT, `rating` REAL, `year` INTEGER, `runtimeMin` INTEGER, `seasons` INTEGER, " +
+                    "`collectionId` INTEGER, `collectionName` TEXT, `certification` TEXT, `fetchedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`type`, `tmdbId`))"
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tmdb_meta_collectionId` ON `tmdb_meta` (`collectionId`)")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `tmdb_match` (`playlistId` INTEGER NOT NULL, `type` TEXT NOT NULL, `workKey` TEXT NOT NULL, " +
+                    "`tmdbId` INTEGER, `checkedAt` INTEGER NOT NULL, PRIMARY KEY(`playlistId`, `type`, `workKey`))"
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tmdb_match_type_tmdbId` ON `tmdb_match` (`type`, `tmdbId`)")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

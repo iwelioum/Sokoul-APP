@@ -1,6 +1,13 @@
 package com.sokoul.iptv.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,11 +16,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewWeek
@@ -41,10 +50,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,17 +71,20 @@ import com.sokoul.iptv.ui.nav.RecordingsRoute
 import com.sokoul.iptv.ui.nav.SearchRoute
 import com.sokoul.iptv.ui.nav.SeriesRoute
 import com.sokoul.iptv.ui.nav.SettingsRoute
-import com.sokoul.iptv.ui.theme.LocalIsTv
+import com.sokoul.iptv.ui.theme.LocalLayout
+import com.sokoul.iptv.ui.theme.Motion
 import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.WindowClass
 
+/** Rubriques principales, dans l'ordre du menu (recherche en tête, comme sur les plateformes). */
 enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
+    SEARCH("Recherche", Icons.Default.Search, SearchRoute),
     HOME("Accueil", Icons.Default.Home, HomeRoute),
-    LIVE("Direct", Icons.Default.LiveTv, LiveRoute),
-    GUIDE("Guide", Icons.Default.CalendarViewWeek, GuideRoute),
     MOVIES("Films", Icons.Default.Movie, MoviesRoute),
     SERIES("Séries", Icons.Default.VideoLibrary, SeriesRoute),
-    SEARCH("Recherche", Icons.Default.Search, SearchRoute),
-    RECORDINGS("Enregistr.", Icons.Default.FiberManualRecord, RecordingsRoute),
+    LIVE("Direct", Icons.Default.LiveTv, LiveRoute),
+    GUIDE("Guide TV", Icons.Default.CalendarViewWeek, GuideRoute),
+    RECORDINGS("Enregistrements", Icons.Default.FiberManualRecord, RecordingsRoute),
     SETTINGS("Réglages", Icons.Default.Settings, SettingsRoute),
 }
 
@@ -82,77 +96,142 @@ fun NavHostController.goTo(dest: Dest) {
     }
 }
 
-/** Grand écran ou TV : barre latérale. Téléphone en portrait : barre du bas. */
+/** Grand écran ou TV : barre latérale. Téléphone : barre du bas. */
 @Composable
-fun useSideRail(): Boolean = LocalIsTv.current || LocalConfiguration.current.screenWidthDp >= 720
+fun useSideRail(): Boolean = LocalLayout.current.window != WindowClass.COMPACT
+
+/** Largeur occupée par le menu replié sur TV (le contenu commence après). */
+val TvRailCollapsed = 72.dp
+private val TvRailExpanded = 236.dp
 
 @Composable
-fun Shell(nav: NavHostController, current: Dest, content: @Composable () -> Unit) {
-    if (useSideRail()) {
-        Row(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-            SideRail(current) { nav.goTo(it) }
-            Box(Modifier.fillMaxSize().statusBarsPadding()) { content() }
+fun Shell(nav: NavHostController, current: Dest, edgeToEdge: Boolean = false, content: @Composable () -> Unit) {
+    val layout = LocalLayout.current
+    when (layout.window) {
+        WindowClass.TV -> Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+            Box(Modifier.fillMaxSize().padding(start = TvRailCollapsed)) { content() }
+            TvRail(current) { nav.goTo(it) }
         }
-    } else {
-        var more by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-            Box(Modifier.weight(1f).fillMaxWidth().statusBarsPadding()) { content() }
-            val main = listOf(Dest.HOME, Dest.LIVE, Dest.GUIDE, Dest.MOVIES, Dest.SERIES)
-            NavigationBar(containerColor = SokoulColors.Surface, modifier = Modifier.navigationBarsPadding()) {
-                main.forEach { d ->
-                    NavigationBarItem(
-                        selected = d == current,
-                        onClick = { nav.goTo(d) },
-                        icon = { Icon(d.icon, d.label) },
-                        label = { Text(d.label, fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(indicatorColor = SokoulColors.AccentSoft, selectedIconColor = SokoulColors.Accent),
+        WindowClass.MEDIUM, WindowClass.EXPANDED -> Row(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+            TabletRail(current) { nav.goTo(it) }
+            Box(Modifier.fillMaxSize().then(if (edgeToEdge) Modifier else Modifier.statusBarsPadding())) { content() }
+        }
+        WindowClass.COMPACT -> PhoneShell(nav, current, edgeToEdge, content)
+    }
+}
+
+/**
+ * Menu TV façon Google TV / Netflix : replié en icônes, il se déplie au-dessus du contenu
+ * (voile dégradé) dès qu'il reçoit le focus, puis se replie quand on revient au contenu.
+ */
+@Composable
+private fun TvRail(current: Dest, onSelect: (Dest) -> Unit) {
+    val selectedFocus = remember { FocusRequester() }
+    var open by remember { mutableStateOf(false) }
+    val width by animateDpAsState(if (open) TvRailExpanded else TvRailCollapsed, tween(Motion.MEDIUM, easing = Motion.Emphasized), label = "rail")
+    val scrim by animateFloatAsState(if (open) 1f else 0f, tween(Motion.MEDIUM), label = "scrim")
+    Box(Modifier.fillMaxSize()) {
+        // voile sur le contenu quand le menu est ouvert
+        if (scrim > 0f) {
+            Box(
+                Modifier.fillMaxHeight().width(TvRailExpanded + 220.dp).graphicsLayer { alpha = scrim }
+                    .background(Brush.horizontalGradient(listOf(Color(0xF20A0A0F), Color(0xCC0A0A0F), Color.Transparent)))
+            )
+        }
+        Column(
+            Modifier.fillMaxHeight().width(width)
+                .background(
+                    if (open) Brush.horizontalGradient(listOf(SokoulColors.Background, Color(0xF00A0A0F)))
+                    else Brush.horizontalGradient(listOf(Color(0xE60A0A0F), Color(0x990A0A0F)))
+                )
+                .padding(vertical = 20.dp, horizontal = 12.dp)
+                .onFocusChanged { open = it.hasFocus }
+                .focusProperties { enter = { selectedFocus } }
+                .focusGroup(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // monogramme / logo
+            Row(Modifier.height(40.dp).padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(32.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, Color(0xFFB36CFF))), RoundedCornerShape(9.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp) }
+                AnimatedVisibility(open, enter = fadeIn(tween(Motion.MEDIUM)), exit = fadeOut(tween(Motion.FAST))) {
+                    Text(
+                        "SOKOUL", Modifier.padding(start = 12.dp), color = SokoulColors.TextPrimary,
+                        fontWeight = FontWeight.Black, letterSpacing = 3.sp, fontSize = 16.sp, maxLines = 1,
                     )
                 }
-                NavigationBarItem(
-                    selected = current !in main,
-                    onClick = { more = true },
-                    icon = { Icon(Icons.Default.MoreHoriz, "Plus") },
-                    label = { Text("Plus", fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(indicatorColor = SokoulColors.AccentSoft, selectedIconColor = SokoulColors.Accent),
-                )
             }
-        }
-        if (more) {
-            OptionsDialog(
-                "Plus",
-                listOf(Dest.SEARCH, Dest.RECORDINGS, Dest.SETTINGS).map { d -> MenuOption(d.label, d.icon, d == current) { nav.goTo(d) } },
-                onDismiss = { more = false },
-            )
+            Spacer(Modifier.height(18.dp))
+            Dest.entries.forEach { d ->
+                val selected = d == current
+                if (d == Dest.RECORDINGS) Spacer(Modifier.weight(1f))
+                FocusSurface(
+                    onClick = { onSelect(d) },
+                    modifier = Modifier.fillMaxWidth().height(44.dp).then(if (selected) Modifier.focusRequester(selectedFocus) else Modifier),
+                    color = Color.Transparent,
+                    focusedColor = Color.White,
+                    shape = RoundedCornerShape(12.dp),
+                    focusScale = 1f,
+                    borderWidth = 0.dp,
+                ) { focused ->
+                    Row(Modifier.fillMaxSize().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val tint = when {
+                            focused -> Color(0xFF0A0A0F)
+                            selected -> SokoulColors.TextPrimary
+                            else -> SokoulColors.TextMuted
+                        }
+                        Box(contentAlignment = Alignment.BottomCenter) {
+                            Icon(d.icon, d.label, Modifier.size(24.dp), tint = tint)
+                            // repère de la rubrique ouverte quand le menu est replié
+                            if (selected && !open) Box(Modifier.padding(top = 30.dp).size(5.dp).background(SokoulColors.Accent, CircleShape))
+                        }
+                        if (open) {
+                            Text(
+                                d.label, Modifier.padding(start = 16.dp), maxLines = 1, color = tint,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
+/** Tablette : rail fixe avec libellés. */
 @Composable
-private fun SideRail(current: Dest, onSelect: (Dest) -> Unit) {
-    // En entrant dans le menu à la télécommande, le focus va sur la rubrique ouverte (pas sur la plus proche).
-    val selectedFocus = remember { FocusRequester() }
+private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
     Column(
-        Modifier.fillMaxHeight().width(92.dp).background(SokoulColors.Surface).padding(vertical = 12.dp)
-            .focusProperties { enter = { selectedFocus } }
-            .focusGroup(),
+        Modifier.fillMaxHeight().width(88.dp).background(SokoulColors.Surface).statusBarsPadding().navigationBarsPadding().padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text("SOKOUL", color = SokoulColors.Accent, fontSize = 12.sp, letterSpacing = 2.sp, style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.size(8.dp))
+        Box(
+            Modifier.padding(bottom = 10.dp).size(36.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, Color(0xFFB36CFF))), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center,
+        ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp) }
         Dest.entries.forEach { d ->
             val selected = d == current
+            if (d == Dest.RECORDINGS) Spacer(Modifier.weight(1f))
             FocusSurface(
                 onClick = { onSelect(d) },
-                modifier = Modifier.size(76.dp, 56.dp).then(if (selected) Modifier.focusRequester(selectedFocus) else Modifier),
-                color = if (selected) SokoulColors.AccentSoft else Color.Transparent,
+                modifier = Modifier.size(76.dp, 58.dp),
+                color = Color.Transparent,
                 focusedColor = SokoulColors.SurfaceHigher,
                 shape = RoundedCornerShape(14.dp),
-                focusScale = 1.04f,
-                borderWidth = 2.dp,
+                focusScale = 1f,
+                borderWidth = 0.dp,
             ) { focused ->
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(d.icon, d.label, Modifier.size(24.dp), tint = if (selected || focused) SokoulColors.Accent else SokoulColors.TextSecondary)
+                    Box(
+                        Modifier.size(52.dp, 30.dp).background(if (selected) SokoulColors.AccentSoft else Color.Transparent, RoundedCornerShape(15.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(d.icon, d.label, Modifier.size(22.dp), tint = if (selected || focused) SokoulColors.Accent else SokoulColors.TextSecondary)
+                    }
                     Text(
                         d.label, fontSize = 10.5.sp, maxLines = 1, textAlign = TextAlign.Center,
                         color = if (selected || focused) SokoulColors.TextPrimary else SokoulColors.TextMuted,
@@ -160,5 +239,41 @@ private fun SideRail(current: Dest, onSelect: (Dest) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** Téléphone : barre du bas (Accueil, Films, Séries, Direct, Plus). */
+@Composable
+private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolean, content: @Composable () -> Unit) {
+    var more by remember { mutableStateOf(false) }
+    val main = listOf(Dest.HOME, Dest.MOVIES, Dest.SERIES, Dest.LIVE)
+    Column(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+        // écrans à héros : bord à bord, l'image passe sous la barre d'état
+        Box(Modifier.weight(1f).fillMaxWidth().then(if (edgeToEdge) Modifier else Modifier.statusBarsPadding())) { content() }
+        NavigationBar(containerColor = Color(0xFF0D0D14), tonalElevation = 0.dp, modifier = Modifier.navigationBarsPadding().height(64.dp)) {
+            val colors = NavigationBarItemDefaults.colors(
+                indicatorColor = SokoulColors.AccentSoft, selectedIconColor = SokoulColors.TextPrimary, selectedTextColor = SokoulColors.TextPrimary,
+                unselectedIconColor = SokoulColors.TextMuted, unselectedTextColor = SokoulColors.TextMuted,
+            )
+            main.forEach { d ->
+                NavigationBarItem(
+                    selected = d == current, onClick = { nav.goTo(d) },
+                    icon = { Icon(d.icon, d.label, Modifier.size(22.dp)) },
+                    label = { Text(d.label, fontSize = 10.5.sp, maxLines = 1) }, colors = colors,
+                )
+            }
+            NavigationBarItem(
+                selected = current !in main, onClick = { more = true },
+                icon = { Icon(Icons.Default.MoreHoriz, "Plus", Modifier.size(22.dp)) },
+                label = { Text("Plus", fontSize = 10.5.sp) }, colors = colors,
+            )
+        }
+    }
+    if (more) {
+        OptionsDialog(
+            "Plus",
+            listOf(Dest.SEARCH, Dest.GUIDE, Dest.RECORDINGS, Dest.SETTINGS).map { d -> MenuOption(d.label, d.icon, d == current) { nav.goTo(d) } },
+            onDismiss = { more = false },
+        )
     }
 }

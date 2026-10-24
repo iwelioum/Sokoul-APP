@@ -584,3 +584,88 @@ interface VodDao {
 }
 
 data class IdKey(val id: String, val k: String?)
+/** Métadonnées TMDB d'une œuvre du catalogue (clé de regroupement). */
+data class KeyedMeta(val workKey: String, @androidx.room.Embedded val meta: TmdbMetaEntity)
+
+/** Saga (collection TMDB) et nombre d'œuvres du catalogue qui en font partie. */
+data class CollectionCount(val collectionId: Int, val collectionName: String, val works: Int)
+
+/**
+ * Rangées éditoriales (Accueil, Films, Séries) : requêtes bornées, jamais de liste complète du catalogue.
+ * Les catégories masquées/verrouillées sont exclues en amont (liste de catégories passée en paramètre).
+ */
+@Dao
+interface BrowseDao {
+    @Query("SELECT * FROM movies WHERE playlistId = :pid AND categoryId IN (:cats) ORDER BY added DESC LIMIT :limit")
+    suspend fun moviesInByAdded(pid: Long, cats: List<String>, limit: Int): List<MovieEntity>
+
+    @Query("SELECT * FROM movies WHERE playlistId = :pid AND categoryId IN (:cats) ORDER BY position LIMIT :limit")
+    suspend fun moviesInByPosition(pid: Long, cats: List<String>, limit: Int): List<MovieEntity>
+
+    @Query("SELECT * FROM movies WHERE playlistId = :pid AND categoryId NOT IN (:excluded) ORDER BY added DESC LIMIT :limit")
+    suspend fun recentMovies(pid: Long, excluded: List<String>, limit: Int): List<MovieEntity>
+
+    @Query("SELECT * FROM movies WHERE playlistId = :pid AND groupKey IN (:keys)")
+    suspend fun moviesByKeys(pid: Long, keys: List<String>): List<MovieEntity>
+
+    @Query("SELECT * FROM movies WHERE playlistId = :pid AND id IN (:ids)")
+    suspend fun moviesByIds(pid: Long, ids: List<String>): List<MovieEntity>
+
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND categoryId IN (:cats) ORDER BY lastModified DESC LIMIT :limit")
+    suspend fun seriesInByAdded(pid: Long, cats: List<String>, limit: Int): List<SeriesEntity>
+
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND categoryId IN (:cats) ORDER BY position LIMIT :limit")
+    suspend fun seriesInByPosition(pid: Long, cats: List<String>, limit: Int): List<SeriesEntity>
+
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND categoryId NOT IN (:excluded) ORDER BY lastModified DESC LIMIT :limit")
+    suspend fun recentSeries(pid: Long, excluded: List<String>, limit: Int): List<SeriesEntity>
+
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND groupKey IN (:keys)")
+    suspend fun seriesByKeys(pid: Long, keys: List<String>): List<SeriesEntity>
+
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND id IN (:ids)")
+    suspend fun seriesByIds(pid: Long, ids: List<String>): List<SeriesEntity>
+
+    // --- TMDB ---
+    @Query(
+        "SELECT m.workKey AS workKey, t.* FROM tmdb_match m JOIN tmdb_meta t ON t.type = m.type AND t.tmdbId = m.tmdbId " +
+            "WHERE m.playlistId = :pid AND m.type = :type AND m.workKey IN (:keys)"
+    )
+    suspend fun metaFor(pid: Long, type: ContentType, keys: List<String>): List<KeyedMeta>
+
+    @Query("SELECT * FROM tmdb_match WHERE playlistId = :pid AND type = :type AND workKey IN (:keys)")
+    suspend fun matches(pid: Long, type: ContentType, keys: List<String>): List<TmdbMatchEntity>
+
+    @Query("SELECT workKey FROM tmdb_match WHERE playlistId = :pid AND type = :type AND tmdbId = :tmdbId")
+    suspend fun keysForTmdb(pid: Long, type: ContentType, tmdbId: Int): List<String>
+
+    @Upsert
+    suspend fun putMatch(m: TmdbMatchEntity)
+
+    @Upsert
+    suspend fun putMatches(m: List<TmdbMatchEntity>)
+
+    @Query("SELECT * FROM tmdb_meta WHERE type = :type AND tmdbId = :id")
+    suspend fun meta(type: ContentType, id: Int): TmdbMetaEntity?
+
+    @Query("SELECT * FROM tmdb_meta WHERE type = :type AND tmdbId IN (:ids)")
+    suspend fun metaByIds(type: ContentType, ids: List<Int>): List<TmdbMetaEntity>
+
+    @Upsert
+    suspend fun putMeta(m: TmdbMetaEntity)
+
+    @Query(
+        "SELECT t.collectionId AS collectionId, MIN(t.collectionName) AS collectionName, COUNT(DISTINCT m.workKey) AS works " +
+            "FROM tmdb_match m JOIN tmdb_meta t ON t.type = m.type AND t.tmdbId = m.tmdbId " +
+            "WHERE m.playlistId = :pid AND m.type = 'MOVIE' AND t.collectionId IS NOT NULL " +
+            "GROUP BY t.collectionId ORDER BY works DESC, MAX(t.rating) DESC LIMIT :limit"
+    )
+    suspend fun collections(pid: Long, limit: Int): List<CollectionCount>
+
+    /** Derniers films/épisodes regardés (terminés ou non), pour « Parce que vous avez regardé ». */
+    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type != 'LIVE' ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun lastWatched(pid: Long, limit: Int): List<ProgressEntity>
+
+    @Query("DELETE FROM tmdb_match WHERE playlistId = :pid")
+    suspend fun deleteMatches(pid: Long)
+}

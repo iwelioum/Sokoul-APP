@@ -257,7 +257,10 @@ fun GuideScreen(nav: NavHostController) {
         }
         if (!isTv) CategoryChips(categories, selected, pickCategory)
 
-        Row(Modifier.padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             if (isTv) CategoryPickerButton(categories, selected, pickCategory)
             AppButton("−3 h", { windowStart -= 6 * HALF_HOUR; focusTime = windowStart + HALF_HOUR }, icon = Icons.Default.ChevronLeft)
             AppButton("Maintenant", { windowStart = vm.alignedNow() - HALF_HOUR; focusTime = System.currentTimeMillis() }, icon = Icons.Default.Schedule)
@@ -269,7 +272,7 @@ fun GuideScreen(nav: NavHostController) {
                     st?.error != null -> "Guide : ${st.error}"
                     else -> ""
                 },
-                Modifier.padding(start = 12.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                Modifier.padding(start = 12.dp).align(Alignment.CenterVertically), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1,
             )
         }
 
@@ -441,9 +444,13 @@ fun GuideScreen(nav: NavHostController) {
 
 @Composable
 private fun GuideHeader(c: ChannelEntity?, p: ProgramEntity?, now: Long, windowStart: Long) {
-    Row(Modifier.fillMaxWidth().height(118.dp).padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (c != null) ChannelLogo(c.logo, c.name, Modifier.size(110.dp, 66.dp))
-        Column(Modifier.weight(1f).padding(start = 18.dp)) {
+    val compact = com.sokoul.iptv.ui.theme.LocalLayout.current.isCompact
+    Row(
+        Modifier.fillMaxWidth().height(if (compact) 92.dp else 118.dp).padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 8.dp else 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (c != null) ChannelLogo(c.logo, c.name, if (compact) Modifier.size(64.dp, 40.dp) else Modifier.size(110.dp, 66.dp))
+        Column(Modifier.weight(1f).padding(start = if (compact) 12.dp else 18.dp)) {
             Text(
                 "${dayLabel(windowStart, now)}  ·  ${c?.name ?: ""}", color = SokoulColors.Accent,
                 style = MaterialTheme.typography.labelLarge, maxLines = 1,

@@ -140,3 +140,61 @@ Une seule fiche par œuvre ; les doublons (VF, MULTI, VOSTFR, 4K, autres pays, p
 - Le fournisseur ne transmet pas d'identifiant TMDB (0 %) : les films sans année restent séparés, par prudence. Le rattachement TMDB à l'ouverture d'une fiche exige aussi une année concordante, pour éviter un homonyme.
 - Le nombre « N versions » d'une carte compte aussi les versions verrouillées ; la fiche, elle, ne les liste pas sans le code.
 - La 1ʳᵉ ouverture d'une série en plusieurs versions charge les épisodes de 5 versions au plus (appels API, pas de flux).
+
+## 7. Phase 5 — Expérience streaming (design, données TMDB, adaptatif)
+
+**Navigation éditorialisée** (Accueil, Films, Séries) : une carte par œuvre ; les catégories brutes du fournisseur restent dans « Toutes les catégories » (icône liste) et dans la Recherche.
+- Héros qui défile toutes les 8 s : fond, logo TMDB, « N° 1 des films cette semaine », note, durée, classification (« -12 »), résumé en français. Effets : zoom lent, fondu.
+- Rangées avec phrase d'accroche :
+  - Reprendre la lecture, Ma liste ;
+  - Top 10 (chiffres détourés), tuiles plateformes (Netflix, Disney+, Prime Video, Max…), « À voir sur Netflix »… ;
+  - Tout juste arrivés, Le meilleur de 2026, Spécial Halloween / Noël selon la date, thèmes (frissons, super-héros, animés…) ;
+  - « Parce que vous avez regardé… », Sagas, Les mieux notés.
+  - Chaque rangée a « Tout voir » : grille avec bandeau (fond de saga, couleurs de la plateforme).
+- TV : rail latéral replié qui s'ouvre au focus ; panneau d'aperçu de la carte sélectionnée et fond d'ambiance.
+
+**Fiches** :
+- fond plein cadre animé, logo, accroche, méta, boutons qui passent à la ligne ;
+- résumé dans l'ordre TMDB français → fournisseur s'il est en français → anglais avec la mention « Résumé disponible en anglais uniquement » ;
+- versions en pastilles ;
+- saisons en onglets ; épisodes avec vignette, titre et résumé TMDB en français (repli : image du fournisseur, puis fond de la série) ;
+- distribution, saga, « Vous aimerez aussi ».
+
+**Données** :
+- base v3 : tables `tmdb_meta` (fiche TMDB en français) et `tmdb_match` (correspondance œuvre ↔ TMDB, résultats négatifs retentés après 30 jours). La migration 2 → 3 est explicite et testée.
+- Pas de table d'épisodes : les saisons TMDB passent par le cache JSON `tmdb_cache` (7 jours).
+- Enrichissement en file : 4 requêtes TMDB en parallèle au plus, jamais vers le serveur IPTV.
+- Parseur : vignettes d'épisode lues dans plus de champs (`movie_image`, `cover_big`, `still_path`, `thumbnail`…).
+- Titres affichés nettoyés quand TMDB ne fournit pas de titre : « The Musical - 2026 [ -SUB] » devient « The Musical ».
+
+**Adaptatif** (jetons `LocalLayout` : téléphone < 600 dp, tablette, grand écran, TV) :
+- téléphone : barre du bas (Accueil, Films, Séries, Direct, Plus), fiches en colonne avec bouton Lecture pleine largeur ;
+- tablette : rail latéral ;
+- Direct : panneau de détails seulement si l'écran est assez large ;
+- Guide : barre d'outils qui passe à la ligne, en-tête compact ;
+- lecteur : liste des chaînes à 90 % de la largeur (420 dp au plus), barre d'info compacte, carte « Épisode suivant » avec vignette ;
+- dialogues : 92 % de la largeur ;
+- Recherche : résultats en rangées de cartes enrichies ; les tendances s'affichent quand le champ est vide.
+
+| Test | Résultat |
+|---|---|
+| 95 tests automatisés (app + parseur), dont `BrowseTest` : plateformes et thèmes sur des noms réels, langue des catégories, détection du français, ordre des résumés, nettoyage des titres, fusion des épisodes, clés TMDB, une carte par titre, routes de grille ; `MigrationTest` 2 → 3 | OK |
+| Lint release | 0 erreur |
+| Box (TV 1080p) : Accueil, Films, Séries, Top 10, plateformes, rangées thématiques | OK |
+| Fiche film Bad Apples : logo, résumé FR, 6 versions, distribution, « Vous aimerez aussi » | OK |
+| Série Tchernobyl : titres, résumés et vignettes des épisodes en français | OK |
+| Téléphone simulé (1080×2340, densité 440, mode tactile forcé) : Accueil, Films, fiche série, Direct | OK |
+| Tablette simulée (1600×2560, densité 320) : rail + Accueil | OK |
+| Écran de la box rétabli (1920×1080 / 320) | OK |
+
+**Bugs trouvés pendant les tests et corrigés** :
+- Plantage au démarrage : le moteur d'expressions régulières d'Android (ICU) refuse une accolade fermante non échappée, alors que le JVM des tests l'accepte. Corrigé ; à retenir pour toute nouvelle expression régulière.
+- Une rangée cachait un remake (Dune 1984 / Dune 2021) comme doublon : le dédoublonnage tient maintenant compte de l'année.
+- Barre du haut (téléphone) transparente au défilement : elle devient opaque.
+
+**Test du mode tactile sur la box** : `adb shell setprop debug.sokoul.touch 1`, puis `wm size` / `wm density`. À remettre à 0 ensuite.
+
+**Limites** :
+- Le cadrage des écrans téléphone et tablette est simulé sur la box ; à confirmer sur un vrai téléphone.
+- Le héros peut indiquer « 1 saison » (catalogue du fournisseur) alors que la fiche TMDB en compte davantage.
+- Les œuvres jamais vues par TMDB gardent l'affiche du fournisseur et, souvent, un résumé en anglais tant que la file d'enrichissement ne les a pas traitées.

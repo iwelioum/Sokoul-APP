@@ -17,6 +17,12 @@ import kotlinx.serialization.Serializable
 @Serializable data class MovieDetailRoute(val id: String)
 @Serializable data class SeriesDetailRoute(val id: String)
 
+/** Grille « Tout voir » d'une rangée (spec = GridSpec encodée). */
+@Serializable data class BrowseGridRoute(val title: String, val spec: String)
+
+/** Ancienne navigation par catégories du fournisseur (type = MOVIE | SERIES). */
+@Serializable data class AllCategoriesRoute(val type: String)
+
 /**
  * Lecture. kind : live | catchup | movie | episode | recording.
  * - live : id = chaîne, categoryId = groupe pour le zapping

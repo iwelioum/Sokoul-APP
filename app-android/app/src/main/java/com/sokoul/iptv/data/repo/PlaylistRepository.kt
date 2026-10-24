@@ -174,7 +174,7 @@ class PlaylistRepository @Inject constructor(
     companion object {
         val PLAYLIST_TABLES = listOf(
             "categories", "category_prefs", "channels", "movies", "series", "episodes", "series_details",
-            "programs", "epg_channels", "favorites", "progress", "reminders", "tmdb_links", "vod_choice",
+            "programs", "epg_channels", "favorites", "progress", "reminders", "tmdb_links", "vod_choice", "tmdb_match",
         )
     }
 

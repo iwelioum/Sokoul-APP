@@ -1,0 +1,63 @@
+package com.sokoul.iptv.data.repo
+
+import com.sokoul.iptv.data.db.EpisodeEntity
+import com.sokoul.iptv.data.net.TmdbEpisode
+
+/** Épisode prêt à afficher : textes français de TMDB quand ils existent, sinon ceux du fournisseur. */
+data class EpisodeView(
+    val entity: EpisodeEntity,
+    val title: String,
+    val overview: String?,
+    /** Le résumé est en français (sinon : résumé anglais du fournisseur, signalé à l'écran). */
+    val overviewFr: Boolean,
+    val image: String?,
+    val runtimeMin: Int?,
+)
+
+object EpisodeMerge {
+    private val GENERIC = Regex("""^(é|e)pisode\s*\d+$""", RegexOption.IGNORE_CASE)
+    private val SE = Regex("""S\d{1,2}\s*[._-]?\s*E\d{1,3}""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Titre lisible d'un épisode du fournisseur : « PH| Someone, Someday - S01E01 - Pilot » → « Pilot ».
+     * Sans titre propre après le code saison/épisode : « Épisode N ».
+     */
+    fun cleanTitle(raw: String, episode: Int): String {
+        val m = SE.findAll(raw).lastOrNull()
+        val after = m?.let { raw.substring(it.range.last + 1) }?.trim(' ', '-', ':', '|', '.', '–')
+        return when {
+            m == null -> raw.trim().ifEmpty { "Épisode $episode" }
+            !after.isNullOrBlank() && !GENERIC.matches(after) -> after
+            else -> "Épisode $episode"
+        }
+    }
+
+    private val SE_NUM = Regex("""S(\d{1,2})\s*[._-]?\s*E(\d{1,3})""", RegexOption.IGNORE_CASE)
+
+    /** Légende courte d'un épisode à partir du libellé fournisseur : « S01E01 · PH| Show - S01E01 - Pilot » → « S1 · É1 · Pilot ». */
+    fun caption(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val m = SE_NUM.find(raw) ?: return raw.takeIf { it.length <= 40 }
+        val s = m.groupValues[1].toInt()
+        val e = m.groupValues[2].toInt()
+        val t = cleanTitle(raw, e)
+        return if (t == "Épisode $e" || t.length > 40) "S$s · É$e" else "S$s · É$e · $t"
+    }
+
+    /**
+     * Ordre des textes : TMDB français → fournisseur (s'il est en français) → fournisseur (autre langue).
+     * Vignette : TMDB → image du fournisseur → fond de la série.
+     */
+    fun merge(e: EpisodeEntity, tm: TmdbEpisode?, seriesBackdrop: String?): EpisodeView {
+        val tmName = tm?.name?.takeIf { !GENERIC.matches(it.trim()) }
+        val overview = tm?.overview ?: e.plot?.takeIf { it.isNotBlank() }
+        return EpisodeView(
+            entity = e,
+            title = tmName ?: cleanTitle(e.title, e.episode),
+            overview = overview,
+            overviewFr = tm?.overview != null || looksFrench(e.plot),
+            image = tm?.still ?: e.image ?: seriesBackdrop,
+            runtimeMin = e.durationSecs?.takeIf { it > 0 }?.div(60) ?: tm?.runtimeMin,
+        )
+    }
+}

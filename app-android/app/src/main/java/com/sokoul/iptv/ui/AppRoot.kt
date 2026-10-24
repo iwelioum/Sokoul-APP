@@ -20,6 +20,8 @@ import androidx.navigation.toRoute
 import com.sokoul.iptv.PlayIntent
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.ui.components.LoadingBox
+import com.sokoul.iptv.ui.nav.AllCategoriesRoute
+import com.sokoul.iptv.ui.nav.BrowseGridRoute
 import com.sokoul.iptv.ui.nav.GuideRoute
 import com.sokoul.iptv.ui.nav.HomeRoute
 import com.sokoul.iptv.ui.nav.LiveRoute
@@ -35,6 +37,10 @@ import com.sokoul.iptv.ui.nav.SeriesDetailRoute
 import com.sokoul.iptv.ui.nav.SeriesRoute
 import com.sokoul.iptv.ui.nav.SettingsRoute
 import com.sokoul.iptv.ui.nav.SyncRoute
+import com.sokoul.iptv.ui.screens.browse.BrowseGridScreen
+import com.sokoul.iptv.ui.screens.browse.BrowseScreen
+import com.sokoul.iptv.ui.screens.browse.MoviesBrowseViewModel
+import com.sokoul.iptv.ui.screens.browse.SeriesBrowseViewModel
 import com.sokoul.iptv.ui.screens.guide.GuideScreen
 import com.sokoul.iptv.ui.screens.home.HomeScreen
 import com.sokoul.iptv.ui.screens.live.LiveScreen
@@ -97,11 +103,16 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
 @Composable
 private fun AppNavHost(nav: NavHostController, start: Any) {
     NavHost(nav, startDestination = start) {
-        composable<HomeRoute> { Shell(nav, Dest.HOME) { HomeScreen(nav) } }
+        composable<HomeRoute> { Shell(nav, Dest.HOME, edgeToEdge = true) { HomeScreen(nav) } }
         composable<LiveRoute> { Shell(nav, Dest.LIVE) { LiveScreen(nav) } }
         composable<GuideRoute> { Shell(nav, Dest.GUIDE) { GuideScreen(nav) } }
-        composable<MoviesRoute> { Shell(nav, Dest.MOVIES) { MoviesScreen(nav) } }
-        composable<SeriesRoute> { Shell(nav, Dest.SERIES) { SeriesScreen(nav) } }
+        composable<MoviesRoute> { Shell(nav, Dest.MOVIES, edgeToEdge = true) { BrowseScreen(nav, hiltViewModel<MoviesBrowseViewModel>(), "Films") } }
+        composable<SeriesRoute> { Shell(nav, Dest.SERIES, edgeToEdge = true) { BrowseScreen(nav, hiltViewModel<SeriesBrowseViewModel>(), "Séries") } }
+        composable<AllCategoriesRoute> {
+            val movies = it.toRoute<AllCategoriesRoute>().type == "MOVIE"
+            Shell(nav, if (movies) Dest.MOVIES else Dest.SERIES) { if (movies) MoviesScreen(nav) else SeriesScreen(nav) }
+        }
+        composable<BrowseGridRoute> { val r = it.toRoute<BrowseGridRoute>(); BrowseGridScreen(nav, r.title, r.spec) }
         composable<SearchRoute> { Shell(nav, Dest.SEARCH) { SearchScreen(nav) } }
         composable<RecordingsRoute> { Shell(nav, Dest.RECORDINGS) { RecordingsScreen(nav) } }
         composable<SettingsRoute> { Shell(nav, Dest.SETTINGS) { SettingsScreen(nav) } }

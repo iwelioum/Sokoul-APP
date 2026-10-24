@@ -143,19 +143,23 @@ class CatalogRepository @Inject constructor(
         )
     }
 
-    suspend fun movieDetails(p: PlaylistEntity, movie: MovieEntity): MovieDetails {
+    suspend fun movieDetails(p: PlaylistEntity, movie: MovieEntity, tmdbHint: Int? = null): MovieDetails {
         val key = "${p.id}:${movie.id}"
         val xt = if (p.type == PlaylistType.XTREAM) {
             vodInfoCache[key] ?: runCatching {
                 playlists.auth(p)?.let { xtream.vodInfo(it, movie.id.toLong()) }
             }.getOrNull()?.also { vodInfoCache[key] = it }
         } else null
-        val tm = tmdb.movie(settings.current().tmdbApiKey, movie.title, movie.year, xt?.tmdbId ?: movie.tmdbId)
+        // identifiant TMDB : fournisseur, sinon correspondance déjà établie par l'app (rangées, regroupement)
+        val tm = tmdb.movie(settings.current().tmdbApiKey, movie.title, movie.year, xt?.tmdbId?.takeIf { it.isNotBlank() } ?: movie.tmdbId?.takeIf { it.isNotBlank() } ?: tmdbHint?.toString())
         return MovieDetails(movie, xt, tm)
     }
 
-    suspend fun seriesTmdb(series: SeriesEntity): TmdbInfo? =
-        tmdb.tv(settings.current().tmdbApiKey, series.title, series.year, series.tmdbId)
+    suspend fun seriesTmdb(series: SeriesEntity, tmdbHint: Int? = null): TmdbInfo? =
+        tmdb.tv(settings.current().tmdbApiKey, series.title, series.year, series.tmdbId?.takeIf { it.isNotBlank() } ?: tmdbHint?.toString())
+
+    /** Épisodes d'une saison en français (titres, résumés, vignettes TMDB). */
+    suspend fun tmdbSeason(tvId: Int, season: Int) = tmdb.season(settings.current().tmdbApiKey, tvId, season)
 
     suspend fun search(pid: Long, query: String): SearchResults {
         val trimmed = query.trim().take(MAX_QUERY)

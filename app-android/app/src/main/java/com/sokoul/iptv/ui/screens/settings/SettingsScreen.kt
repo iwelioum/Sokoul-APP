@@ -489,7 +489,7 @@ private fun SettingRow(
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (hint != null) Text(hint, color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall)
             }
-            if (value != null) Text(value, Modifier.padding(start = 16.dp).widthIn(max = 380.dp), color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (value != null) Text(value, Modifier.padding(start = 16.dp).widthIn(max = if (com.sokoul.iptv.ui.theme.LocalLayout.current.isCompact) 140.dp else 380.dp), color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -538,7 +538,7 @@ private fun TextEditDialog(t: TextEdit, onDismiss: () -> Unit) {
         if (e != null) error = e else { t.onSave(value); onDismiss() }
     }
     Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.widthIn(min = 360.dp, max = 560.dp).background(SokoulColors.SurfaceHigh, RoundedCornerShape(18.dp)).padding(24.dp)) {
+        Column(Modifier.fillMaxWidth().widthIn(max = 560.dp).background(SokoulColors.SurfaceHigh, RoundedCornerShape(18.dp)).padding(24.dp)) {
             Text(t.title, style = MaterialTheme.typography.titleLarge)
             FormField("Valeur", value, { value = it; error = null }, Modifier.padding(top = 14.dp).focusRequester(focus), password = t.password, autoEdit = true, onDone = save)
             error?.let { Text(it, Modifier.padding(top = 8.dp), color = SokoulColors.Live, style = MaterialTheme.typography.bodyMedium) }
