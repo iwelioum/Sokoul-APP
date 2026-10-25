@@ -211,7 +211,10 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
             } else if (w.platform != null) {
                 PlatformBadge(w.platform, Modifier.padding(bottom = 10.dp), large = true)
             }
-            if (w.logo != null) {
+            // téléphone : l'affiche porte déjà le titre de l'œuvre ; un logo par-dessus le répéterait
+            if (compact && w.poster != null) {
+                // rien : le titre est lu par l'image (contentDescription = titre)
+            } else if (w.logo != null) {
                 NetImage(
                     tmdbSized(w.logo, "w500"), w.title,
                     Modifier.heightIn(max = if (compact) 96.dp else (l.heroHeight * 0.26f).coerceAtMost(130.dp)).widthIn(max = if (compact) 260.dp else l.heroTextWidth * 0.8f),

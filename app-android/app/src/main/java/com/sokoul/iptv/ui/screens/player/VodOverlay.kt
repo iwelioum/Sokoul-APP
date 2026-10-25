@@ -50,7 +50,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -194,8 +193,14 @@ fun VodControls(
             Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.Center) {
                 TransportButtons(playing, playFocus, up, onBack10, onPlayPause, onFwd30)
             }
-            LazyRow(Modifier.padding(top = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
-                items(pills) { PillButton(it, upFocus = up) }
+            // passage à la ligne plutôt qu'une rangée défilante : tous les boutons restent visibles
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.padding(top = 12.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                pills.forEach { PillButton(it, upFocus = up) }
             }
         } else {
             Row(Modifier.padding(top = 16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -331,6 +336,7 @@ fun seekDeltaLabel(ms: Long): String {
     return if (s < 60) "$s s" else "${s / 60} min" + if (s % 60 > 0) " ${s % 60}" else ""
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun TouchScrubber(position: Long, duration: Long, onSeekTo: (Long) -> Unit, onInteract: () -> Unit) {
     var drag by remember { mutableStateOf<Float?>(null) }
@@ -341,7 +347,13 @@ private fun TouchScrubber(position: Long, duration: Long, onSeekTo: (Long) -> Un
         // une seule requête au relâchement (pas de rafale de requêtes pendant le glissement)
         onValueChangeFinished = { drag?.let { if (duration > 0) onSeekTo((it * duration).toLong()) }; drag = null },
         modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Position de lecture" },
-        colors = SliderDefaults.colors(thumbColor = SokoulColors.Accent, activeTrackColor = SokoulColors.Accent, inactiveTrackColor = SokoulColors.GlassLight),
+        // piste fine et repère rond (le style Material par défaut — piste épaisse, repère en trait — jure avec la TV)
+        thumb = { Box(Modifier.size(if (drag != null) 22.dp else 16.dp).background(SokoulColors.Accent, CircleShape)) },
+        track = {
+            Box(Modifier.fillMaxWidth().height(if (drag != null) 6.dp else 4.dp).background(SokoulColors.GlassLight, CircleShape)) {
+                Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(SokoulColors.Accent, CircleShape))
+            }
+        },
     )
 }
 
