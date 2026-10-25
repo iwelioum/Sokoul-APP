@@ -120,9 +120,10 @@ class SubtitlesClient @Inject constructor(private val api: ApiHttp, private val 
             if ((o["status"] as? JsonPrimitive)?.booleanOrNull == false) return emptyList()
             return (o["subtitles"] as? JsonArray).orEmpty().mapNotNull { e ->
                 val x = e as? JsonObject ?: return@mapNotNull null
-                val path = x.str("url")?.takeIf { it.startsWith("/") && ".." !in it } ?: return@mapNotNull null
+                // le lien fourni porte la clé en paramètre (« ?api_key=… ») : on ne garde que le chemin public du .zip
+                val path = x.str("url")?.substringBefore('?')?.takeIf { it.startsWith("/") && ".." !in it } ?: return@mapNotNull null
                 SubtitleResult(
-                    ApiService.SUBDL, ref = path, language = (x.str("lang") ?: x.str("language") ?: "fr").lowercase(),
+                    ApiService.SUBDL, ref = path, language = (x.str("language") ?: x.str("lang") ?: "fr").lowercase(),
                     release = (x.str("release_name") ?: x.str("name"))?.take(80),
                     hearingImpaired = (x["hi"] as? JsonPrimitive)?.booleanOrNull == true,
                 )

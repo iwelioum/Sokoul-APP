@@ -356,9 +356,9 @@ Causes trouvées et corrigées :
 | TasteDive | ✅ OK (5 titres similaires) | Complète « Vous aimerez aussi » quand TMDB donne moins de 6 titres disponibles |
 | xmltv.fr (sans clé) | ✅ OK (guide de 8 Mo) | Guide TV FR/BE/CH en complément, à activer dans Réglages |
 | iptv-org (sans clé) | Prêt | Logos de chaînes manquants (icône du guide d'abord), après chaque synchronisation |
-| OMDb | ⚠️ Clé manquante | Notes IMDb / RT / MC à côté de ★ (code prêt, inactif) |
-| OpenSubtitles | ⚠️ Clé manquante | Sous-titres en ligne dans le panneau Audio et sous-titres (code prêt, inactif) |
-| Subdl | ⚠️ Clé manquante | Repli d'OpenSubtitles (code prêt, inactif) |
+| OMDb | ✅ OK (Interstellar : IMDb 8,7 · RT 73 % · MC 74) | Badges « IMDb 6,2 » et « MC 46 » à côté de ★ (Street Fighter) ; rien quand OMDb n'a pas encore de note (Masterplan) |
+| OpenSubtitles | ✅ OK (10 résultats FR, 1 780 répliques téléchargées ; 8 pour Breaking Bad S1E1) | Sous-titres en ligne dans le panneau Audio et sous-titres |
+| Subdl | ✅ OK (10 résultats, 2 149 répliques) | Complète OpenSubtitles ; vu sur la box : « Français · Subdl · Street Fighter… » choisi, répliques affichées sur la vidéo |
 | Watchmode | Non utilisé | L'offre gratuite n'inclut pas la France |
 | ThePosterDB, Mediux, Addic7ed | Abandonnés | Pas d'API publique (404, jeton de compte privé, ou scraping fragile) |
 
@@ -393,3 +393,9 @@ Ensuite, deux façons de donner la clé :
   - le bouton « Tester » ignore le cache (une clé refusée n'est pas masquée) et ne fait aucun appel sans clé.
 - `ApiLiveCheck` : vrais appels avec les clés lues dans l'environnement (`SOKOUL_LIVE_API=1`). Ce test est ignoré sinon.
 - Suite complète : 158 tests app et 18 tests parser verts, `lintRelease` OK.
+
+### Corrections après les essais sur la box (clés OMDb, OpenSubtitles, Subdl)
+- **Subdl** renvoie un lien de téléchargement qui contient la clé (`?api_key=…`). L'app ne garde plus que le chemin public du fichier, et le téléchargement marche toujours.
+- **Libellé des sous-titres en ligne** : « Français · Subdl · Interstellar 2014 1080p BluRay… » au lieu de « Sous-titres · Subdl ». La langue est lue depuis le code (« FR ») ou le nom anglais (« French »), et le nom de version permet de distinguer les résultats.
+- **Lecteur** : quand la barre réapparaît, le focus est replacé sur le curseur dès qu'il est prêt (nouvel essai à chaque image, 600 ms au plus). Avant, le focus restait sur l'écran et le premier ▼ ne servait à rien.
+- Suite : 159 tests app (vérification réelle incluse) et 18 tests parser verts, `lintRelease` OK.

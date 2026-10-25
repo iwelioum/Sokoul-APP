@@ -704,11 +704,7 @@ class PlayerViewModel @Inject constructor(
             s.searching -> listOf(TrackOption("Recherche en ligne…", null, -2, false, info = true))
             s.results.isEmpty() -> listOf(TrackOption("Aucun sous-titre en ligne", null, -2, false, info = true))
             else -> s.results.map { r ->
-                val label = listOfNotNull(
-                    com.sokoul.iptv.ui.screens.player.trackLabel(r.language, null, 0, null, false).takeIf { it.isNotBlank() } ?: r.language,
-                    if (r.hearingImpaired) "SDH" else null,
-                    r.service.label,
-                ).joinToString(" · ") + when (r.ref) { s.loadingRef -> " (téléchargement…)"; else -> "" }
+                val label = onlineSubtitleLabel(r) + when (r.ref) { s.loadingRef -> " (téléchargement…)"; else -> "" }
                 TrackOption(label, null, -3, r.ref == s.activeRef, online = r)
             } + listOfNotNull(if (s.failed) TrackOption("Téléchargement impossible, essayez un autre", null, -2, false, info = true) else null)
         }
@@ -859,4 +855,20 @@ internal fun numberDuplicates(options: List<TrackOption>): List<TrackOption> {
     return options.map { o ->
         if ((counts[o.label] ?: 0) < 2) o else o.copy(label = "${o.label} (${seen.merge(o.label, 1, Int::plus)})")
     }
+}
+
+/**
+ * Sous-titre en ligne : « Français · Subdl · Street Fighter 2026 1080p WEB ». La langue vient du code
+ * (« fr », « FR ») ou du nom anglais (« French ») ; la version (nom de fichier) distingue les résultats.
+ */
+internal fun onlineSubtitleLabel(r: SubtitleResult): String {
+    val lang = r.language.trim()
+    val name = trackLanguageName(lang.take(3).takeIf { lang.length <= 3 })
+        ?: java.util.Locale.getAvailableLocales().firstOrNull { it.getDisplayLanguage(java.util.Locale.ENGLISH).equals(lang, ignoreCase = true) }
+            ?.getDisplayLanguage(java.util.Locale.FRENCH)?.replaceFirstChar { it.uppercase() }
+        ?: lang.ifEmpty { "Sous-titres" }
+    val release = r.release?.substringBeforeLast('.')?.takeIf { it.isNotBlank() }
+        ?.let { if (Regex("""\.(srt|vtt|ass|sub|zip)$""", RegexOption.IGNORE_CASE).containsMatchIn(r.release)) it else r.release }
+        ?.replace(Regex("[._]+"), " ")?.replace(Regex("""\s+"""), " ")?.trim()
+    return listOfNotNull(name, if (r.hearingImpaired) "SDH" else null, r.service.label, release?.take(40)).joinToString(" · ")
 }

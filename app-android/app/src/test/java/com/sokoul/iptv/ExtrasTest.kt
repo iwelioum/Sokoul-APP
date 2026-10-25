@@ -103,9 +103,9 @@ class ExtrasTest {
         val x = r.extras(true, info())
         assertNull("fanart en panne : rien", x.art)
         assertEquals(listOf("Netflix"), x.offers.map { it.service })
-        assertNull("OMDb sans clé : aucune note", x.ratings)
+        assertNull("OMDb sans clé ou sans réponse : aucune note", x.ratings)
         assertNull("film : pas de prochain épisode", x.nextEpisode)
-        assertTrue("aucun appel OMDb sans clé", calls.none { "omdbapi" in it })
+        if (ApiService.OMDB.buildKey.isEmpty()) assertTrue("aucun appel OMDb sans clé", calls.none { "omdbapi" in it })
         assertTrue("aucun appel TVmaze pour un film", calls.none { "tvmaze" in it })
     }
 
@@ -219,5 +219,16 @@ class ExtrasTest {
         assertEquals("Non utilisé : l'offre gratuite n'inclut pas la France", tester.test(ApiService.WATCHMODE).message)
         assertEquals(0, calls.size)
         assertEquals("Clé manquante", sourceStatus(ApiService.OMDB, "", null, null, false))
+    }
+
+    @Test fun `sous-titre en ligne libelle lisible et lien subdl sans cle`() {
+        val o = HttpModule.json().parseToJsonElement(
+            """{"status":true,"subtitles":[{"release_name":"Interstellar.2014.1080p.BluRay.x264.YIFY","lang":"French","language":"FR","url":"/subtitle/3567647-8486901.zip?api_key=SECRETKEY","hi":false}]}"""
+        ) as kotlinx.serialization.json.JsonObject
+        val r = SubtitlesClient.parseSubdl(o).single()
+        assertEquals("/subtitle/3567647-8486901.zip", r.ref)
+        assertEquals("Français · Subdl · Interstellar 2014 1080p BluRay x264 YIFY", com.sokoul.iptv.ui.screens.player.onlineSubtitleLabel(r))
+        val named = r.copy(language = "french", release = "Movie.Name.FRENCH.srt", hearingImpaired = true)
+        assertEquals("Français · SDH · Subdl · Movie Name FRENCH", com.sokoul.iptv.ui.screens.player.onlineSubtitleLabel(named))
     }
 }

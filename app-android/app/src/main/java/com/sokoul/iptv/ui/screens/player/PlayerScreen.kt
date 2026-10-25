@@ -264,9 +264,14 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     LaunchedEffect(sp) { if (sp != null) runCatching { focus.requestFocus() } }
     LaunchedEffect(infoVisible, modal) {
         if (modal) return@LaunchedEffect
-        delay(40)
-        runCatching {
-            if (infoVisible && !ui.isLive) { if (l.isTouch) Unit else scrubberFocus.requestFocus() } else focus.requestFocus()
+        // la barre entre en animation : son curseur n'est pas toujours prêt à la première image (vu sur la box,
+        // le focus restait sur l'écran et le premier ▼ ne servait à rien) → nouvel essai à chaque image, 600 ms au plus
+        repeat(15) {
+            delay(40)
+            val done = runCatching {
+                if (infoVisible && !ui.isLive) { if (l.isTouch) true else scrubberFocus.requestFocus() } else focus.requestFocus()
+            }.getOrDefault(false)
+            if (done) return@LaunchedEffect
         }
     }
 
