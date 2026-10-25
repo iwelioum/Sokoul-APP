@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.guide
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -291,9 +292,9 @@ fun GuideScreen(nav: NavHostController) {
                     val t = System.currentTimeMillis()
                     when {
                         p == null || (p.start <= t && p.end > t) ->
-                            nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
+                            nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
                         p.end <= t && vm.supportsCatchup(c) && StreamResolver.inCatchupWindow(c, p.start, t) ->
-                            nav.navigate(PlayerRoute(PlayKind.CATCHUP, pid, c.id, categoryId = selected, start = p.start, end = p.end))
+                            nav.navigateOnce(PlayerRoute(PlayKind.CATCHUP, pid, c.id, categoryId = selected, start = p.start, end = p.end))
                         p.end <= t && vm.supportsCatchup(c) ->
                             Toast.makeText(context, "Replay disponible sur ${c.catchupDays} jour(s) seulement pour cette chaîne", Toast.LENGTH_LONG).show()
                         else -> menu = c to p
@@ -385,7 +386,7 @@ fun GuideScreen(nav: NavHostController) {
                                     row = i; focusTime = p?.start ?: focusTime
                                     act(c, p)
                                 },
-                                onChannelClick = { nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected)) },
+                                onChannelClick = { nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected)) },
                             )
                         }
                     }
@@ -408,10 +409,10 @@ fun GuideScreen(nav: NavHostController) {
         val reminderKey = p?.let { "${c.id}|${it.start}" }
         val options = buildList {
             if (p == null || (p.start <= t && p.end > t)) add(MenuOption("Regarder en direct", Icons.Default.PlayArrow) {
-                nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
+                nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
             })
             if (p != null && p.end <= t && vm.supportsCatchup(c) && StreamResolver.inCatchupWindow(c, p.start, t)) add(MenuOption("Revoir (replay)", Icons.Default.History) {
-                nav.navigate(PlayerRoute(PlayKind.CATCHUP, pid, c.id, categoryId = selected, start = p.start, end = p.end))
+                nav.navigateOnce(PlayerRoute(PlayKind.CATCHUP, pid, c.id, categoryId = selected, start = p.start, end = p.end))
             })
             if (p != null && p.start > t) {
                 if (reminderKey in reminders) add(MenuOption("Annuler le rappel", Icons.Default.NotificationsActive) { vm.removeReminder(c, p) })

@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.recordings
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -94,7 +95,7 @@ fun RecordingsScreen(nav: NavHostController) {
         items(recordings, key = { it.id }) { r ->
             FocusSurface(
                 onClick = {
-                    if (r.status == RecordingStatus.COMPLETED || r.status == RecordingStatus.RECORDING) nav.navigate(PlayerRoute(PlayKind.RECORDING, r.playlistId, r.id.toString()))
+                    if (r.status == RecordingStatus.COMPLETED || r.status == RecordingStatus.RECORDING) nav.navigateOnce(PlayerRoute(PlayKind.RECORDING, r.playlistId, r.id.toString()))
                     else menu = r
                 },
                 onLongClick = { menu = r },
@@ -143,7 +144,7 @@ fun RecordingsScreen(nav: NavHostController) {
             r.title,
             buildList {
                 if (r.status == RecordingStatus.COMPLETED || r.status == RecordingStatus.RECORDING) add(MenuOption("Lire", Icons.Default.PlayArrow) {
-                    nav.navigate(PlayerRoute(PlayKind.RECORDING, r.playlistId, r.id.toString()))
+                    nav.navigateOnce(PlayerRoute(PlayKind.RECORDING, r.playlistId, r.id.toString()))
                 })
                 if (r.status == RecordingStatus.RECORDING) add(MenuOption("Arrêter l'enregistrement", Icons.Default.Stop) { vm.cancel(r) })
                 if (r.status == RecordingStatus.SCHEDULED) add(MenuOption("Annuler la programmation", Icons.Default.Cancel) { vm.cancel(r) })

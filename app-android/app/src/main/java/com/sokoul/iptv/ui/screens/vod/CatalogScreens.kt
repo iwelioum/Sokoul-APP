@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.vod
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -178,13 +179,13 @@ fun SeriesEntity.toGrid(versions: Int = 1) = GridItem(
 @Composable
 fun MoviesScreen(nav: NavHostController) {
     val vm: MoviesViewModel = hiltViewModel()
-    CatalogGrid(vm, "Films") { nav.navigate(MovieDetailRoute(it.id)) }
+    CatalogGrid(vm, "Films") { nav.navigateOnce(MovieDetailRoute(it.id)) }
 }
 
 @Composable
 fun SeriesScreen(nav: NavHostController) {
     val vm: SeriesViewModel = hiltViewModel()
-    CatalogGrid(vm, "Séries") { nav.navigate(SeriesDetailRoute(it.id)) }
+    CatalogGrid(vm, "Séries") { nav.navigateOnce(SeriesDetailRoute(it.id)) }
 }
 
 @Composable

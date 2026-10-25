@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.search
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -168,7 +169,7 @@ fun SearchScreen(nav: NavHostController) {
                     Column(Modifier.padding(bottom = l.rowSpacing)) {
                         RowHeader("Chaînes", null)
                         CardRow(r.channels, { it.id }) { _, c ->
-                            ChannelCard(c, null) { nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId)) }
+                            ChannelCard(c, null) { nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId)) }
                         }
                     }
                 }
@@ -177,7 +178,7 @@ fun SearchScreen(nav: NavHostController) {
                         RowHeader("Au programme", "Dans le guide TV des prochains jours")
                         CardRow(r.programs, { "${it.first.channelKey}|${it.first.start}" }) { _, (p, c) ->
                             FocusSurface(onClick = {
-                                if (c != null) nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId))
+                                if (c != null) nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId))
                             }, modifier = Modifier.width(l.landscape)) { _ ->
                                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                                     Text(p.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

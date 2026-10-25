@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.multiview
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -231,7 +232,7 @@ fun MultiviewScreen(nav: NavHostController) {
             buildList {
                 add(MenuOption("Changer de chaîne", Icons.Default.SwapHoriz) { pickerFor = i })
                 if (c != null) {
-                    add(MenuOption("Plein écran", Icons.Default.Fullscreen) { nav.navigate(PlayerRoute(PlayKind.LIVE, c.playlistId, c.id, categoryId = c.categoryId)) })
+                    add(MenuOption("Plein écran", Icons.Default.Fullscreen) { nav.navigateOnce(PlayerRoute(PlayKind.LIVE, c.playlistId, c.id, categoryId = c.categoryId)) })
                     add(MenuOption("Vider la case", Icons.Default.Delete) { vm.clear(i) })
                 }
             },

@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.browse
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -115,7 +116,7 @@ import kotlinx.coroutines.launch
 
 /** Ouvre la fiche d'une œuvre. */
 fun NavHostController.openWork(w: Work) {
-    if (w.type == ContentType.MOVIE) navigate(MovieDetailRoute(w.id)) else navigate(SeriesDetailRoute(w.id))
+    navigateOnce(if (w.type == ContentType.MOVIE) MovieDetailRoute(w.id) else SeriesDetailRoute(w.id))
 }
 
 /** Panneau d'information de la carte focalisée (TV). */
@@ -168,9 +169,9 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     }
     val rows = ui.rows.filter { !it.isEmpty }
 
-    val play: (Work) -> Unit = { w -> scope.launch { nav.navigate(vm.playRoute(w)) } }
+    val play: (Work) -> Unit = { w -> scope.launch { nav.navigateOnce(vm.playRoute(w)) } }
     val open: (Work) -> Unit = { w -> nav.openWork(w) }
-    val seeAll: (BrowseRow) -> Unit = { r -> r.seeAll?.let { nav.navigate(BrowseGridRoute(r.title, it)) } }
+    val seeAll: (BrowseRow) -> Unit = { r -> r.seeAll?.let { nav.navigateOnce(BrowseGridRoute(r.title, it)) } }
 
     // TV : le défilement est piloté par le focus (rangée focalisée sous le panneau d'information)
     val defaultSpec = LocalBringIntoViewSpec.current
@@ -306,7 +307,7 @@ private fun RowView(
             }
             RowStyle.CONTINUE -> CardRow(row.works, { it.uid }) { _, w ->
                 LandscapeCard(
-                    w, { w.resume?.let { r -> nav.navigate(com.sokoul.iptv.ui.screens.home.resumeRoute(pid, r)) } ?: onOpen(w) },
+                    w, { w.resume?.let { r -> nav.navigateOnce(com.sokoul.iptv.ui.screens.home.resumeRoute(pid, r)) } ?: onOpen(w) },
                     onFocus = { onSpot(w.toSpot().copy(meta = w.subtitle)) }, onLongClick = { onMenu(w) },
                 )
             }
@@ -315,19 +316,19 @@ private fun RowView(
             }
             RowStyle.SAGAS -> CardRow(row.sagas, { it.id }) { _, s ->
                 SagaTile(
-                    s, { nav.navigate(BrowseGridRoute(s.name, GridSpec.Saga(s.id).encode())) },
+                    s, { nav.navigateOnce(BrowseGridRoute(s.name, GridSpec.Saga(s.id).encode())) },
                     onFocus = { onSpot(Spot(s.name, meta = "Saga · ${s.count} films disponibles", image = s.backdrop)) },
                 )
             }
             RowStyle.PLATFORMS -> CardRow(row.platforms, { it.platform.name }) { _, t ->
                 PlatformTileView(
-                    t, { nav.navigate(BrowseGridRoute(t.platform.label, GridSpec.Plat(t.type, t.platform).encode())) },
+                    t, { nav.navigateOnce(BrowseGridRoute(t.platform.label, GridSpec.Plat(t.type, t.platform).encode())) },
                     onFocus = { onSpot(Spot(t.platform.label, meta = "Plateforme", overview = t.platform.tagline, platform = t.platform)) },
                 )
             }
             RowStyle.CHANNELS -> CardRow(row.channels, { it.channel.id }) { _, c ->
                 Box(Modifier.onFocusChanged { if (it.isFocused) onSpot(Spot(c.channel.name, meta = "En direct", overview = c.now?.title)) }) {
-                    ChannelCard(c.channel, c.now) { nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.channel.id, categoryId = SpecialCategory.FAVORITES)) }
+                    ChannelCard(c.channel, c.now) { nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.channel.id, categoryId = SpecialCategory.FAVORITES)) }
                 }
             }
             RowStyle.CATEGORIES -> {
@@ -343,7 +344,7 @@ private fun RowView(
                     }
                     items(row.chips, key = { it.first }) { (id, label) ->
                         Chip(label, onFocus = { onSpot(Spot(label, meta = "Catégorie")) }) {
-                            nav.navigate(BrowseGridRoute(label, GridSpec.Cats(type, listOf(id), byPosition = true).encode()))
+                            nav.navigateOnce(BrowseGridRoute(label, GridSpec.Cats(type, listOf(id), byPosition = true).encode()))
                         }
                     }
                 }

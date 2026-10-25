@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.live
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -204,7 +205,7 @@ fun LiveScreen(nav: NavHostController) {
     }
     val play: (ChannelEntity) -> Unit = { c ->
         vm.lastPlayed = c.id
-        nav.navigate(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
+        nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
     }
     val openCategoryMenu: (CategoryItem) -> Unit = { if (!it.id.startsWith("__")) categoryMenu = it }
 

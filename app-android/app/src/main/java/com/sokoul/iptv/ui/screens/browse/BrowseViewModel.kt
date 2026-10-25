@@ -11,6 +11,8 @@ import com.sokoul.iptv.data.repo.BrowseRow
 import com.sokoul.iptv.data.repo.CatalogRepository
 import com.sokoul.iptv.data.repo.ChannelTile
 import com.sokoul.iptv.data.repo.EnrichmentRepository
+import com.sokoul.iptv.data.repo.EpisodeResolver
+import com.sokoul.iptv.data.repo.SeriesAction
 import com.sokoul.iptv.data.repo.EpgRepository
 import com.sokoul.iptv.data.repo.GridSpec
 import com.sokoul.iptv.data.repo.LibraryRepository
@@ -182,10 +184,16 @@ abstract class BrowseViewModel(
                 PlayerRoute(PlayKind.MOVIE, pid, best.id)
             }
             else -> {
+                // même logique que le bouton de la fiche : reprise, sinon épisode suivant (liste en cache uniquement)
                 val s = catalog.seriesItem(pid, w.id) ?: return detailRoute(w)
-                val last = vod.lastEpisodeProgress(pid, vod.seriesVersions(pid, s).map { it.id })
-                if (last != null && !last.finished && last.parentId != null) PlayerRoute(PlayKind.EPISODE, pid, last.itemId, parentId = last.parentId)
-                else detailRoute(w)
+                val ids = vod.orderedSeries(pid, vod.seriesVersions(pid, s)).map { it.id }
+                val all = vod.episodesIn(pid, ids)
+                val merged = VodRepository.mergeEpisodes(all, ids)
+                val action = EpisodeResolver.primaryAction(merged, EpisodeResolver.progressBySe(vod.seriesProgressIn(pid, ids), all))
+                when (action) {
+                    null, is SeriesAction.Start, is SeriesAction.Rewatch -> detailRoute(w)
+                    else -> PlayerRoute(PlayKind.EPISODE, pid, action.episode.id, parentId = action.episode.seriesId)
+                }
             }
         }
     }

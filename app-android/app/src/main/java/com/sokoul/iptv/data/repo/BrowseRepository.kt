@@ -444,15 +444,29 @@ class BrowseRepository @Inject constructor(
                     ?: Work(ContentType.MOVIE, p.itemId, "id:${p.itemId}", p.title, null, p.image, progress = fraction, resume = p, subtitle = remaining)
                 ContentType.SERIES -> {
                     val sid = p.parentId ?: return@mapNotNull null
-                    val caption = listOfNotNull(EpisodeMerge.caption(p.subtitle), remaining).joinToString(" · ").ifEmpty { null }
-                    series[sid]?.toWork()?.let { it.copy(backdrop = it.backdrop ?: p.image, progress = fraction, resume = p, subtitle = caption) }
-                        ?: Work(ContentType.SERIES, sid, "id:$sid", p.title, null, p.image, progress = fraction, resume = p, subtitle = caption)
+                    // dernier épisode terminé : la carte propose le suivant (lancé depuis le début), sinon la série sort de la rangée
+                    val (entry, caption, frac) = if (p.finished) {
+                        val next = nextEpisode(pid, sid, p) ?: return@mapNotNull null
+                        Triple(
+                            p.copy(itemId = next.id, positionMs = 0, finished = false, season = next.season, episode = next.episode, subtitle = "S%02dE%02d · %s".format(next.season, next.episode, next.title)),
+                            "Épisode suivant · S${next.season} · É${next.episode}", null,
+                        )
+                    } else Triple(p, listOfNotNull(EpisodeMerge.caption(p.subtitle), remaining).joinToString(" · ").ifEmpty { null }, fraction)
+                    series[sid]?.toWork()?.let { it.copy(backdrop = it.backdrop ?: p.image, progress = frac, resume = entry, subtitle = caption) }
+                        ?: Work(ContentType.SERIES, sid, "id:$sid", p.title, null, p.image, progress = frac, resume = entry, subtitle = caption)
                 }
                 ContentType.LIVE -> null
             }
         }
         // fond TMDB prioritaire ; à défaut, image du fournisseur (épisode ou affiche)
         return enrich.decorate(pid, works)
+    }
+
+    /** Épisode qui suit [p] dans la série (liste déjà en cache, sans appel au fournisseur). */
+    private suspend fun nextEpisode(pid: Long, sid: String, p: com.sokoul.iptv.data.db.ProgressEntity): com.sokoul.iptv.data.db.EpisodeEntity? {
+        val eps = db.vod().episodesIn(pid, listOf(sid))
+        val se = EpisodeResolver.seOf(p, eps.associate { it.id to (it.season to it.episode) }) ?: return null
+        return EpisodeResolver.nextAfter(eps, se)
     }
 
     // --- grilles « Tout voir » -------------------------------------------------------------------------

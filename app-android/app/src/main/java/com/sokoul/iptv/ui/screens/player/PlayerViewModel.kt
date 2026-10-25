@@ -160,7 +160,8 @@ class PlayerViewModel @Inject constructor(
             sp.state.collect { s ->
                 if (s is StreamState.Ended && !_ui.value.isLive) {
                     saveNow()
-                    if (_ui.value.nextEpisode != null) {
+                    val next = _ui.value.nextEpisode
+                    if (next != null && next.id != autoplayCancelledFor) {
                         if (autoplayNext) playNextEpisode() else _ui.update { it.copy(endedWithNext = true) }
                     }
                 }
@@ -470,9 +471,18 @@ class PlayerViewModel @Inject constructor(
 
     /** Changement d'épisode depuis le lecteur (suivant, panneau « Épisodes »). */
     fun playEpisodeNow(e: EpisodeEntity) {
+        // appuis répétés (OK + fin de lecture simultanés) : un seul lancement
+        if (switching == e.id) return
+        switching = e.id
         viewModelScope.launch {
-            saveNow()
-            try { playEpisode(e) } catch (ex: Exception) { _ui.update { it.copy(error = ex.userMessage()) } }
+            try {
+                saveNow()
+                playEpisode(e)
+            } catch (ex: Exception) {
+                _ui.update { it.copy(error = ex.userMessage()) }
+            } finally {
+                switching = null
+            }
         }
     }
 
@@ -480,6 +490,11 @@ class PlayerViewModel @Inject constructor(
         _player.value?.player?.seekTo(0)
         _ui.update { it.copy(resumedFromMs = 0) }
     }
+
+    /** « Annuler » sur la carte « Épisode suivant » : pas d'enchaînement à la fin de cet épisode. */
+    fun cancelAutoplay(nextId: String) { autoplayCancelledFor = nextId }
+    private var autoplayCancelledFor: String? = null
+    private var switching: String? = null
 
     fun dismissEndCard() = _ui.update { it.copy(endedWithNext = false) }
 

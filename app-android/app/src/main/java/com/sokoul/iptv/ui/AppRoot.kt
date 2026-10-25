@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui
 
+import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -91,7 +92,7 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                 val play by pendingPlay.collectAsStateWithLifecycle()
                 LaunchedEffect(play) {
                     play?.let {
-                        if (vm.isPlayable(it)) nav.navigate(PlayerRoute(PlayKind.LIVE, it.playlistId, it.channelId))
+                        if (vm.isPlayable(it)) nav.navigateOnce(PlayerRoute(PlayKind.LIVE, it.playlistId, it.channelId))
                         onPlayConsumed()
                     }
                 }
