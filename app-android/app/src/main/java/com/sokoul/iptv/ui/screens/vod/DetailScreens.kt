@@ -147,6 +147,13 @@ import com.sokoul.iptv.ui.components.rememberFocusMemory
 import com.sokoul.iptv.ui.components.shimmer
 import com.sokoul.iptv.data.repo.EpisodeResolver
 import com.sokoul.iptv.data.repo.SeriesAction
+import com.sokoul.iptv.data.repo.DetailExtras
+import com.sokoul.iptv.data.repo.ExtrasRepository
+import com.sokoul.iptv.data.net.providers.NextEpisode
+import com.sokoul.iptv.data.net.providers.OfferType
+import com.sokoul.iptv.data.net.providers.Ratings
+import com.sokoul.iptv.data.net.providers.StreamingOffer
+import com.sokoul.iptv.data.net.providers.TvdbEpisode
 
 /** Texte affichable et sa langue : TMDB français → fournisseur en français → TMDB anglais → fournisseur. */
 data class Synopsis(val text: String, val french: Boolean)
@@ -170,6 +177,7 @@ class MovieDetailViewModel @Inject constructor(
     private val vod: VodRepository,
     private val enrich: EnrichmentRepository,
     private val browse: BrowseRepository,
+    private val extrasRepo: ExtrasRepository,
 ) : ViewModel() {
     val details = MutableStateFlow<MovieDetails?>(null)
     val error = MutableStateFlow<String?>(null)
@@ -178,6 +186,8 @@ class MovieDetailViewModel @Inject constructor(
     val preferredId = MutableStateFlow<String?>(null)
     val similar = MutableStateFlow<List<Work>>(emptyList())
     val saga = MutableStateFlow<Pair<String, List<Work>>?>(null)
+    /** Compléments des sources secondaires (notes, « Aussi sur », logo de secours). */
+    val extras = MutableStateFlow(DetailExtras())
     var categoryNames: Map<String, String> = emptyMap()
         private set
     var playlist: PlaylistEntity? = null
@@ -212,7 +222,8 @@ class MovieDetailViewModel @Inject constructor(
                 catalog.movie(p.id, m.id)?.let { fresh -> if (fresh.groupKey != m.groupKey) loadVersions(p, fresh) }
             }
             if (tm != null) {
-                launch { similar.value = runCatching { browse.similar(p.id, ContentType.MOVIE, tm.id, m.keyOf()) }.getOrDefault(emptyList()) }
+                launch { extras.value = extrasRepo.extras(true, tm) }
+                launch { moreLikeThis(browse, extrasRepo, p.id, ContentType.MOVIE, tm, m.keyOf()) { similar.value = it } }
                 tm.collectionId?.let { cid -> launch { saga.value = runCatching { browse.saga(p.id, cid) }.getOrNull()?.takeIf { it.second.size >= 2 } } }
             }
         } catch (e: Exception) {
@@ -262,6 +273,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val preferredId by vm.preferredId.collectAsStateWithLifecycle()
     val similar by vm.similar.collectAsStateWithLifecycle()
     val saga by vm.saga.collectAsStateWithLifecycle()
+    val extras by vm.extras.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
     val memory = rememberFocusMemory()
@@ -295,14 +307,14 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val director = (tm?.director ?: xt?.director)?.takeIf { it.isNotBlank() }
 
     val hero = DetailHeroData(
-        title = title, logo = tm?.logo, backdrop = tm?.backdrop ?: xt?.backdrop, poster = tm?.poster ?: xt?.poster ?: m.poster,
+        title = title, logo = tm?.logo ?: extras.art?.logo, backdrop = tm?.backdrop ?: xt?.backdrop ?: extras.art?.background, poster = tm?.poster ?: xt?.poster ?: m.poster,
         rating = tm?.rating ?: xt?.rating ?: m.rating,
         facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), best.language, if (multi) "${versions.size} versions" else null),
         certification = tm?.certification, quality = best.quality,
         genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
         tagline = tm?.tagline, synopsis = synopsis,
         credit = director?.let { "Réalisation : $it" } ?: xt?.cast?.takeIf { tm?.cast.isNullOrEmpty() && it.isNotBlank() }?.let { "Avec : $it" },
-        watched = watched,
+        watched = watched, externalRatings = ratingBadges(extras.ratings), availability = availabilityPills(extras.offers),
     )
     val primary = PrimaryAction(
         label = (when { resume != null -> "Reprendre"; watched -> "Revoir"; else -> "Lecture" }) + if (multi) " · ${versionLabel(best)}" else "",
@@ -411,6 +423,7 @@ class SeriesDetailViewModel @Inject constructor(
     private val vod: VodRepository,
     private val enrich: EnrichmentRepository,
     private val browse: BrowseRepository,
+    private val extrasRepo: ExtrasRepository,
 ) : ViewModel() {
     private var openedId: String? = null
     private val pidFlow = MutableStateFlow<Long?>(null)
@@ -421,6 +434,9 @@ class SeriesDetailViewModel @Inject constructor(
     /** Épisodes TMDB en français, par (saison, épisode). */
     val tmdbEpisodes = MutableStateFlow<Map<Pair<Int, Int>, TmdbEpisode>>(emptyMap())
     private val loadedSeasons = HashSet<Int>()
+    /** Repli TheTVDB (titres, résumés et vignettes en français), par (saison, épisode). */
+    val tvdbEpisodes = MutableStateFlow<Map<Pair<Int, Int>, TvdbEpisode>>(emptyMap())
+    val extras = MutableStateFlow(DetailExtras())
     val similar = MutableStateFlow<List<Work>>(emptyList())
     /** Versions de la série (VF, VOSTFR…), dans l'ordre de préférence. */
     val versions = MutableStateFlow<List<SeriesEntity>>(emptyList())
@@ -473,7 +489,9 @@ class SeriesDetailViewModel @Inject constructor(
             val tm = catalog.seriesTmdb(s, hint)
             tmdb.value = tm
             if (tm != null) {
-                launch { similar.value = runCatching { browse.similar(p.id, ContentType.SERIES, tm.id, s.keyOf()) }.getOrDefault(emptyList()) }
+                launch { extras.value = extrasRepo.extras(false, tm) }
+                launch { tvdbEpisodes.value = extrasRepo.tvdbEpisodes(tm) }
+                launch { moreLikeThis(browse, extrasRepo, p.id, ContentType.SERIES, tm, s.keyOf()) { similar.value = it } }
                 if (s.year != null && tm.year != null && kotlin.math.abs(tm.year - s.year) <= 1) {
                     vod.linkTmdb(p.id, ContentType.SERIES, s.id, s.tmdbId, s.groupKey, tm.id)
                     catalog.seriesItem(p.id, s.id)?.let { fresh ->
@@ -556,6 +574,8 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val tmdb by vm.tmdb.collectAsStateWithLifecycle()
     val tmdbEpisodes by vm.tmdbEpisodes.collectAsStateWithLifecycle()
     val similar by vm.similar.collectAsStateWithLifecycle()
+    val extras by vm.extras.collectAsStateWithLifecycle()
+    val tvdbEpisodes by vm.tvdbEpisodes.collectAsStateWithLifecycle()
     val versions by vm.versions.collectAsStateWithLifecycle()
     val primaryId by vm.primaryId.collectAsStateWithLifecycle()
     val preferredId by vm.preferredId.collectAsStateWithLifecycle()
@@ -585,11 +605,11 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val currentSeason = season?.takeIf { it in seasons } ?: action?.episode?.season ?: seasons.firstOrNull()
     LaunchedEffect(currentSeason, tmdb?.id) { currentSeason?.let { vm.loadSeason(it) } }
 
-    val backdrop = tmdb?.backdrop ?: details?.backdrop ?: series.backdrop
+    val backdrop = tmdb?.backdrop ?: details?.backdrop ?: series.backdrop ?: extras.art?.background
     val synopsis = pickSynopsis(tmdb?.overview, details?.plot ?: series.plot, tmdb?.overviewEn)
     val title = tmdb?.title?.takeIf { it.isNotBlank() } ?: com.sokoul.iptv.data.repo.cleanDisplayTitle(series.title, series.year)
-    val seasonEpisodes = remember(episodes, currentSeason, tmdbEpisodes, backdrop) {
-        episodes.filter { it.season == currentSeason }.map { EpisodeMerge.merge(it, tmdbEpisodes[it.season to it.episode], backdrop) }
+    val seasonEpisodes = remember(episodes, currentSeason, tmdbEpisodes, tvdbEpisodes, backdrop) {
+        episodes.filter { it.season == currentSeason }.map { EpisodeMerge.merge(it, tmdbEpisodes[it.season to it.episode], backdrop, tvdbEpisodes[it.season to it.episode]) }
     }
     val playEpisode = { e: EpisodeEntity, fromStart: Boolean ->
         nav.navigateOnce(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = e.seriesId, fromStart = fromStart))
@@ -604,7 +624,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val creator = (tmdb?.director ?: details?.director)?.takeIf { it.isNotBlank() }
 
     val hero = DetailHeroData(
-        title = title, logo = tmdb?.logo, backdrop = backdrop, poster = tmdb?.poster ?: series.poster,
+        title = title, logo = tmdb?.logo ?: extras.art?.logo, backdrop = backdrop, poster = tmdb?.poster ?: series.poster,
         rating = tmdb?.rating ?: series.rating,
         facts = listOfNotNull(
             (series.year ?: tmdb?.year)?.toString(),
@@ -615,6 +635,8 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
         certification = tmdb?.certification, quality = null,
         genres = tmdb?.genres?.joinToString(", ")?.ifEmpty { null } ?: details?.genre ?: series.genre,
         tagline = tmdb?.tagline, synopsis = synopsis, credit = creator?.let { "Création : $it" }, watched = allSeen,
+        externalRatings = ratingBadges(extras.ratings), availability = availabilityPills(extras.offers),
+        upcoming = extras.nextEpisode?.let { upcomingLabel(it) },
     )
     val primary = action?.let { a ->
         val p = (a as? SeriesAction.Resume)?.progress
@@ -910,4 +932,43 @@ private fun openYoutube(context: android.content.Context, key: String) {
             android.widget.Toast.makeText(context, "Installez YouTube pour voir la bande-annonce", android.widget.Toast.LENGTH_LONG).show()
         }
     }
+}
+
+// --- sources secondaires -------------------------------------------------------------------------------
+
+/**
+ * « Vous aimerez aussi » : recommandations TMDB d'abord ; si elles donnent moins de 6 titres disponibles,
+ * complétées par les titres similaires de TasteDive retrouvés dans le catalogue.
+ */
+private suspend fun moreLikeThis(
+    browse: BrowseRepository, extras: ExtrasRepository, pid: Long, type: ContentType, tm: TmdbInfo, own: String, emit: (List<Work>) -> Unit,
+) {
+    val base = runCatching { browse.similar(pid, type, tm.id, own) }.getOrDefault(emptyList())
+    emit(base)
+    if (base.size >= ExtrasRepository.MIN_SIMILAR) return
+    val names = extras.similarNames(type == ContentType.MOVIE, tm)
+    if (names.isEmpty()) return
+    val more = runCatching { browse.similarByNames(pid, type, names, base.mapTo(HashSet()) { it.key } + own) }.getOrDefault(emptyList())
+    if (more.isNotEmpty()) emit(base + more)
+}
+
+/** Notes OMDb pour la ligne d'infos : IMDb, Rotten Tomatoes (RT), Metacritic (MC). */
+fun ratingBadges(r: Ratings?): List<Pair<String, String>> =
+    listOfNotNull(r?.imdb?.let { "IMDb" to it }, r?.rottenTomatoes?.let { "RT" to it }, r?.metacritic?.let { "MC" to it })
+
+/** Services inclus (abonnement, gratuit, option) seulement : location et achat n'apportent rien sur la fiche. */
+fun availabilityPills(offers: List<StreamingOffer>): List<Pair<String, Long?>> =
+    offers.filter { it.type == OfferType.SUBSCRIPTION || it.type == OfferType.FREE || it.type == OfferType.ADDON }.map { it.service to it.color }
+
+/** « Prochain épisode : S3 · É4 demain », « … le mardi 12 novembre ». */
+fun upcomingLabel(n: NextEpisode, now: java.time.Instant = java.time.Instant.now(), zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String? {
+    val day = n.airsAt.atZone(zone).toLocalDate()
+    val today = now.atZone(zone).toLocalDate()
+    if (day.isBefore(today)) return null
+    val whenText = when (day) {
+        today -> "aujourd'hui"
+        today.plusDays(1) -> "demain"
+        else -> "le " + day.format(java.time.format.DateTimeFormatter.ofPattern(if (day.year == today.year) "EEEE d MMMM" else "EEEE d MMMM yyyy", java.util.Locale.FRANCE))
+    }
+    return "Prochain épisode : S${n.season} · É${n.episode} $whenText"
 }

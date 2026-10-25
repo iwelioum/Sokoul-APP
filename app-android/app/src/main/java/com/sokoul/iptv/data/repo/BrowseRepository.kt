@@ -450,6 +450,18 @@ class BrowseRepository @Inject constructor(
         return enrich.decorate(pid, c.matchItems(recs, 20).filter { it.key != exclude })
     }
 
+    /**
+     * Titres cités par nom (recommandations TasteDive) retrouvés dans le catalogue : chaque nom passe par une
+     * recherche TMDB exacte (en cache 7 jours), puis par la correspondance stricte habituelle (id TMDB ou titre + année).
+     */
+    suspend fun similarByNames(pid: Long, type: ContentType, names: List<String>, exclude: Set<String>, limit: Int = 12): List<Work> {
+        val api = enrich.apiKey()
+        if (api.isBlank() || names.isEmpty()) return emptyList()
+        val c = ctx(pid, type)
+        val items = names.distinct().take(limit).mapNotNull { n -> net.withPermit { tmdb.findByName(api, c.kind, n) } }
+        return enrich.decorate(pid, c.matchItems(items, limit).filter { it.key !in exclude })
+    }
+
     /** Films d'une saga présents dans le catalogue, dans l'ordre de sortie. */
     suspend fun saga(pid: Long, collectionId: Int): Pair<String, List<Work>>? {
         val api = enrich.apiKey()

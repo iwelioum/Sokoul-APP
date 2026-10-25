@@ -48,8 +48,30 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import javax.inject.Inject
+import com.sokoul.iptv.data.net.providers.Cue
+import com.sokoul.iptv.data.net.providers.SubtitleQuery
+import com.sokoul.iptv.data.net.providers.SubtitleResult
+import com.sokoul.iptv.data.net.providers.SubtitlesClient
 
-data class TrackOption(val label: String, val group: Tracks.Group?, val index: Int, val selected: Boolean)
+/**
+ * Piste proposée dans le panneau. [online] : sous-titre trouvé en ligne (téléchargé seulement si choisi) ;
+ * [info] : ligne d'état non sélectionnable (« Recherche en ligne… »).
+ */
+data class TrackOption(
+    val label: String, val group: Tracks.Group?, val index: Int, val selected: Boolean,
+    val online: SubtitleResult? = null, val info: Boolean = false,
+)
+
+/** Sous-titres en ligne de l'œuvre en cours (OpenSubtitles, Subdl) ; [enabled] faux sans clé. */
+data class OnlineSubs(
+    val enabled: Boolean = false,
+    val searching: Boolean = false,
+    val searched: Boolean = false,
+    val results: List<SubtitleResult> = emptyList(),
+    val activeRef: String? = null,
+    val loadingRef: String? = null,
+    val failed: Boolean = false,
+)
 
 data class PlayerUi(
     val title: String = "",
@@ -95,6 +117,7 @@ class PlayerViewModel @Inject constructor(
     private val db: AppDatabase,
     private val vod: VodRepository,
     private val gate: ProviderGate,
+    private val subtitles: SubtitlesClient,
 ) : ViewModel() {
 
     val route: PlayerRoute = savedState.toRoute()
@@ -250,6 +273,13 @@ class PlayerViewModel @Inject constructor(
 
     private fun play(stream: ResolvedStream, title: String, startMs: Long) {
         _ui.update { it.copy(error = null, endedWithNext = false) }
+        // même œuvre (autre version, nouvelle tentative) : le sous-titre en ligne choisi reste affiché
+        val content = when (route.kind) {
+            PlayKind.MOVIE -> movieVersions.firstOrNull()?.id
+            PlayKind.EPISODE -> currentEpisode?.let { "${it.season}:${it.episode}" }
+            else -> title
+        }
+        if (content != subsContent) { subsContent = content; resetOnlineSubtitles() }
         _player.value?.play(stream, title, startMs)
         updateVideoInfo()
     }
@@ -588,12 +618,108 @@ class PlayerViewModel @Inject constructor(
         if (_ui.value.isLive && sp.state.value == StreamState.Idle) sp.retryNow()
     }
 
+    // --- Sous-titres en ligne ---------------------------------------------------------------
+
+    private val _onlineSubs = MutableStateFlow(OnlineSubs())
+    val onlineSubs: StateFlow<OnlineSubs> = _onlineSubs.asStateFlow()
+    private val _cues = MutableStateFlow<List<Cue>>(emptyList())
+    /** Sous-titre en ligne choisi, affiché par-dessus la vidéo (sans relancer le flux). */
+    val cues: StateFlow<List<Cue>> = _cues.asStateFlow()
+    private var subsKey: SubtitleQuery? = null
+    private var subsJob: Job? = null
+    private var subsContent: String? = null
+    /** Sous-titres du flux désactivés avant le choix d'un sous-titre en ligne (état rendu ensuite). */
+    private var textDisabledBefore = false
+
+    /** Ouverture du panneau des pistes : une recherche par œuvre (jamais de téléchargement ici). */
+    fun searchOnlineSubtitles() {
+        if (_ui.value.isLive || route.kind == PlayKind.RECORDING) return
+        viewModelScope.launch {
+            if (!subtitles.available()) { _onlineSubs.update { it.copy(enabled = false) }; return@launch }
+            val q = subtitleQuery() ?: return@launch
+            if (q == subsKey && (_onlineSubs.value.searching || _onlineSubs.value.searched)) return@launch
+            subsKey = q
+            _onlineSubs.value = OnlineSubs(enabled = true, searching = true)
+            subsJob?.cancel()
+            subsJob = viewModelScope.launch {
+                val list = runCatching { subtitles.search(q) }.getOrDefault(emptyList())
+                if (subsKey == q) _onlineSubs.update { it.copy(searching = false, searched = true, results = list) }
+            }
+        }
+    }
+
+    private suspend fun subtitleQuery(): SubtitleQuery? = when (route.kind) {
+        PlayKind.MOVIE -> movieVersions.getOrNull(movieIndex)?.let { m -> runCatching { catalog.movieTmdb(m) }.getOrNull()?.id }
+            ?.let { SubtitleQuery(it, isMovie = true) }
+        PlayKind.EPISODE -> {
+            val e = currentEpisode
+            val series = currentSeries
+            val tm = if (e == null || series == null) null else tmdbLock.withLock {
+                if (!tmdbSeriesLoaded) { tmdbSeriesLoaded = true; tmdbSeries = runCatching { catalog.seriesTmdb(series) }.getOrNull() }
+                tmdbSeries
+            }
+            if (tm == null || e == null) null else SubtitleQuery(tm.id, isMovie = false, season = e.season, episode = e.episode)
+        }
+        else -> null
+    }
+
+    /** Choix d'un sous-titre en ligne : téléchargé maintenant, puis affiché à la place des sous-titres du flux. */
+    private fun pickOnlineSubtitle(r: SubtitleResult) {
+        if (_onlineSubs.value.activeRef == r.ref) return
+        val key = subsKey
+        _onlineSubs.update { it.copy(loadingRef = r.ref, failed = false) }
+        viewModelScope.launch {
+            val cues = runCatching { subtitles.download(r) }.getOrDefault(emptyList())
+            if (subsKey != key) return@launch
+            if (cues.isEmpty()) { _onlineSubs.update { it.copy(loadingRef = null, failed = true) }; return@launch }
+            _player.value?.player?.let { exo ->
+                if (_onlineSubs.value.activeRef == null) textDisabledBefore = C.TRACK_TYPE_TEXT in exo.trackSelectionParameters.disabledTrackTypes
+                exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            }
+            _cues.value = cues
+            _onlineSubs.update { it.copy(loadingRef = null, activeRef = r.ref) }
+        }
+    }
+
+    private fun clearOnlineSubtitle() {
+        _cues.value = emptyList()
+        _onlineSubs.update { it.copy(activeRef = null, loadingRef = null) }
+    }
+
+    /** Autre œuvre ou autre épisode : les sous-titres en ligne de la précédente ne valent plus. */
+    private fun resetOnlineSubtitles() {
+        subsJob?.cancel()
+        subsKey = null
+        if (_onlineSubs.value.activeRef != null && !textDisabledBefore) {
+            _player.value?.player?.let { exo -> exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build() }
+        }
+        _cues.value = emptyList()
+        _onlineSubs.value = OnlineSubs()
+    }
+
+    private fun onlineOptions(): List<TrackOption> {
+        val s = _onlineSubs.value
+        if (!s.enabled) return emptyList()
+        return when {
+            s.searching -> listOf(TrackOption("Recherche en ligne…", null, -2, false, info = true))
+            s.results.isEmpty() -> listOf(TrackOption("Aucun sous-titre en ligne", null, -2, false, info = true))
+            else -> s.results.map { r ->
+                val label = listOfNotNull(
+                    com.sokoul.iptv.ui.screens.player.trackLabel(r.language, null, 0, null, false).takeIf { it.isNotBlank() } ?: r.language,
+                    if (r.hearingImpaired) "SDH" else null,
+                    r.service.label,
+                ).joinToString(" · ") + when (r.ref) { s.loadingRef -> " (téléchargement…)"; else -> "" }
+                TrackOption(label, null, -3, r.ref == s.activeRef, online = r)
+            } + listOfNotNull(if (s.failed) TrackOption("Téléchargement impossible, essayez un autre", null, -2, false, info = true) else null)
+        }
+    }
+
     // --- Pistes ------------------------------------------------------------------------
 
     fun audioOptions(): List<TrackOption> = trackOptions(C.TRACK_TYPE_AUDIO)
     fun textOptions(): List<TrackOption> =
-        listOf(TrackOption("Désactivés", null, -1, _tracks.value.groups.none { it.type == C.TRACK_TYPE_TEXT && it.isSelected })) +
-            trackOptions(C.TRACK_TYPE_TEXT)
+        listOf(TrackOption("Désactivés", null, -1, _onlineSubs.value.activeRef == null && _tracks.value.groups.none { it.type == C.TRACK_TYPE_TEXT && it.isSelected })) +
+            trackOptions(C.TRACK_TYPE_TEXT) + onlineOptions()
 
     private fun trackOptions(type: Int): List<TrackOption> = _tracks.value.groups.filter { it.type == type }.flatMap { g ->
         (0 until g.length).filter { g.isTrackSupported(it) }.map { i -> TrackOption(describe(g.getTrackFormat(i), type), g, i, g.isTrackSelected(i)) }
@@ -604,6 +730,9 @@ class PlayerViewModel @Inject constructor(
      * ou la version suivante (autres groupes de pistes) garde la même langue.
      */
     fun selectTrack(type: Int, option: TrackOption) {
+        if (option.info) return
+        option.online?.let { pickOnlineSubtitle(it); return }
+        if (type == C.TRACK_TYPE_TEXT) clearOnlineSubtitle()
         val exo: ExoPlayer = _player.value?.player ?: return
         val builder = exo.trackSelectionParameters.buildUpon()
         if (option.group == null) {

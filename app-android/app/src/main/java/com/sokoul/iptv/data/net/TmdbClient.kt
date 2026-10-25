@@ -182,6 +182,19 @@ class TmdbClient @Inject constructor(
         } ?: emptyList()
     }
 
+    /** Œuvre portant exactement ce titre (français ou original), la plus populaire : sert à rapprocher un nom (TasteDive). */
+    suspend fun findByName(apiKey: String, kind: String, title: String): TmdbItem? {
+        if (apiKey.isBlank()) return null
+        return safe {
+            val norm = VodGrouping.normalizeTitle(title, null)
+            if (norm.length < 2) return@safe null
+            items(get(apiKey, "/3/search/$kind", mapOf("query" to title)), kind).firstOrNull { r ->
+                VodGrouping.normalizeTitle(r.title, r.year) == VodGrouping.normalizeTitle(title, r.year) ||
+                    r.originalTitle?.let { VodGrouping.normalizeTitle(it, r.year) == VodGrouping.normalizeTitle(title, r.year) } == true
+            }
+        }
+    }
+
     private suspend fun search(apiKey: String, kind: String, title: String, year: Int?): Int? =
         match(apiKey, kind, title, year) ?: run {
             // repli historique : premier résultat (fiche ouverte par l'utilisateur, pas de regroupement automatique)

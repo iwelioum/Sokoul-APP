@@ -2,6 +2,7 @@ package com.sokoul.iptv.data.repo
 
 import com.sokoul.iptv.data.db.EpisodeEntity
 import com.sokoul.iptv.data.net.TmdbEpisode
+import com.sokoul.iptv.data.net.providers.TvdbEpisode
 
 /** Épisode prêt à afficher : textes français de TMDB quand ils existent, sinon ceux du fournisseur. */
 data class EpisodeView(
@@ -50,19 +51,22 @@ object EpisodeMerge {
     }
 
     /**
-     * Ordre des textes : TMDB français → fournisseur (s'il est en français) → fournisseur (autre langue).
-     * Vignette : TMDB → image du fournisseur → fond de la série.
+     * Ordre des textes : TMDB français → TheTVDB français → fournisseur (s'il est en français) → fournisseur (autre langue).
+     * Vignette : TMDB → TheTVDB → image du fournisseur → fond de la série.
      */
-    fun merge(e: EpisodeEntity, tm: TmdbEpisode?, seriesBackdrop: String?): EpisodeView {
+    fun merge(e: EpisodeEntity, tm: TmdbEpisode?, seriesBackdrop: String?, tvdb: TvdbEpisode? = null): EpisodeView {
         val tmName = tm?.name?.takeIf { !GENERIC.matches(it.trim()) }
-        val overview = tm?.overview ?: e.plot?.takeIf { it.isNotBlank() }
+        val tvdbName = tvdb?.name?.takeIf { it.isNotBlank() && !GENERIC.matches(it.trim()) }
+        val tvdbPlot = tvdb?.overview?.takeIf { it.isNotBlank() && looksFrench(it) }
+        val providerPlot = e.plot?.takeIf { it.isNotBlank() }
+        val overview = tm?.overview ?: tvdbPlot ?: providerPlot?.takeIf { looksFrench(it) } ?: providerPlot
         return EpisodeView(
             entity = e,
-            title = tmName ?: cleanTitle(e.title, e.episode),
+            title = tmName ?: tvdbName ?: cleanTitle(e.title, e.episode),
             overview = overview,
-            overviewFr = tm?.overview != null || looksFrench(e.plot),
-            image = tm?.still ?: e.image ?: seriesBackdrop,
-            runtimeMin = e.durationSecs?.takeIf { it > 0 }?.div(60) ?: tm?.runtimeMin,
+            overviewFr = tm?.overview != null || tvdbPlot != null || looksFrench(e.plot),
+            image = tm?.still ?: tvdb?.image ?: e.image ?: seriesBackdrop,
+            runtimeMin = e.durationSecs?.takeIf { it > 0 }?.div(60) ?: tm?.runtimeMin ?: tvdb?.runtimeMin,
         )
     }
 }

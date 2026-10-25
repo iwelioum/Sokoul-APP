@@ -157,6 +157,10 @@ class CatalogRepository @Inject constructor(
         return MovieDetails(movie, xt, tm)
     }
 
+    /** Fiche TMDB d'un film sans appel au fournisseur (cache 7 jours) : sert au lecteur (sous-titres en ligne). */
+    suspend fun movieTmdb(movie: MovieEntity): TmdbInfo? =
+        tmdb.movie(settings.current().tmdbApiKey, movie.title, movie.year, movie.tmdbId?.takeIf { it.isNotBlank() })
+
     suspend fun seriesTmdb(series: SeriesEntity, tmdbHint: Int? = null): TmdbInfo? =
         tmdb.tv(settings.current().tmdbApiKey, series.title, series.year, series.tmdbId?.takeIf { it.isNotBlank() } ?: tmdbHint?.toString())
 

@@ -412,6 +412,8 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             )
         }
 
+        OnlineCues(vm, exo, Modifier.align(Alignment.BottomCenter).padding(bottom = if (infoVisible && !inPip) 190.dp else if (inPip) 8.dp else 56.dp))
+
         if (!inPip) {
             if (!ui.needsPin) StatusOverlay(streamState, ui.error, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() })
             if (ui.needsPin) {
@@ -502,7 +504,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit()),
             ) {
                 val audioOpts = remember(tracks) { vm.audioOptions() }
-                val textOpts = remember(tracks) { vm.textOptions() }
+                val online by vm.onlineSubs.collectAsStateWithLifecycle()
+                LaunchedEffect(Unit) { vm.searchOnlineSubtitles() }
+                val textOpts = remember(tracks, online) { vm.textOptions() }
                 TracksPanel(audioOpts, textOpts) { type, o -> vm.selectTrack(type, o) }
             }
             AnimatedVisibility(pauseScreen, enter = fadeIn(tween(Motion.SLOW)), exit = fadeOut(Motion.exit())) {
@@ -732,3 +736,28 @@ private fun ChannelListOverlay(channels: List<ChannelEntity>, highlighted: Int, 
     }
 }
 
+
+/**
+ * Sous-titre en ligne choisi (OpenSubtitles, Subdl) : dessiné par-dessus la vidéo, synchronisé sur la position
+ * du lecteur (lue 5 fois par seconde), sans relancer le flux. Lecture dans ce composant seulement (pas de
+ * recomposition de tout l'écran).
+ */
+@Composable
+private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?, modifier: Modifier) {
+    val cues by vm.cues.collectAsStateWithLifecycle()
+    if (cues.isEmpty() || exo == null) return
+    var text by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(cues, exo) {
+        while (true) {
+            text = com.sokoul.iptv.data.net.providers.SubtitleFile.at(cues, exo.currentPosition)?.text
+            delay(200)
+        }
+    }
+    val t = text ?: return
+    val l = LocalLayout.current
+    Text(
+        t, modifier.padding(horizontal = 48.dp).background(Color(0xB3000000), RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
+        color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        style = if (l.isTv) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+    )
+}

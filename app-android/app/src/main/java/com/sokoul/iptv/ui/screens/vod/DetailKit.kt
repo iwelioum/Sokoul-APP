@@ -60,6 +60,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -151,6 +152,12 @@ data class DetailHeroData(
     /** « Réalisation : … » / « Création : … ». */
     val credit: String?,
     val watched: Boolean = false,
+    /** Notes externes (OMDb) : « IMDb » → « 8,7 », « Rotten Tomatoes » → « 73 % ». */
+    val externalRatings: List<Pair<String, String>> = emptyList(),
+    /** Services de streaming en France (Movie of the Night) : nom et couleur de la marque. */
+    val availability: List<Pair<String, Long?>> = emptyList(),
+    /** « Prochain épisode : S3 · É4, mardi 12 novembre » (séries en cours, TVmaze). */
+    val upcoming: String? = null,
 )
 
 /** Bouton principal : libellé, détail (« 18 min restantes ») et progression intégrée. */
@@ -347,6 +354,12 @@ private fun HeroBlock(
     if (!hero.genres.isNullOrBlank()) {
         Text(hero.genres, tw.padding(top = 6.dp).entrance(2, entered), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+    hero.upcoming?.let {
+        Row(tw.padding(top = 8.dp).entrance(2, entered), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Event, null, Modifier.size(16.dp), tint = SokoulColors.Accent)
+            Text(it, Modifier.padding(start = 6.dp), color = SokoulColors.TextPrimary, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
     hero.synopsis?.let { s ->
         Column(tw.padding(top = 14.dp).entrance(3, entered)) {
             Text(
@@ -377,6 +390,45 @@ private fun HeroBlock(
     hero.credit?.let {
         Text(it, tw.padding(top = 14.dp).entrance(5, entered), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+    if (hero.availability.isNotEmpty()) AvailabilityLine(hero.availability, tw.padding(top = if (hero.credit != null) 8.dp else 14.dp).entrance(5, entered))
+}
+
+/** « Aussi sur  ● Netflix  ● Prime Video » : nom du service et pastille à sa couleur (pas de logo de marque). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AvailabilityLine(services: List<Pair<String, Long?>>, modifier: Modifier) {
+    FlowRow(
+        modifier.semantics(mergeDescendants = true) { contentDescription = "Aussi sur " + services.joinToString(", ") { it.first } },
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Aussi sur", Modifier.align(Alignment.CenterVertically), style = MaterialTheme.typography.bodyMedium, color = SokoulColors.TextSecondary)
+        services.take(MAX_SERVICES).forEach { (name, color) ->
+            Row(
+                Modifier.background(SokoulColors.GlassLight.copy(alpha = 0.12f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(8.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, CircleShape))
+                Text(name, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextPrimary, maxLines = 1)
+            }
+        }
+    }
+}
+
+private const val MAX_SERVICES = 5
+
+/** Note externe : « IMDb 8,7 » (fond jaune IMDb), « RT 73 % », « MC 74 ». */
+@Composable
+private fun ExternalRating(source: String, value: String) {
+    val imdb = source == "IMDb"
+    Row(
+        Modifier.then(if (imdb) Modifier.background(Color(0xFFF5C518), RoundedCornerShape(4.dp)) else Modifier.border(1.dp, SokoulColors.TextMuted, RoundedCornerShape(4.dp)))
+            .padding(horizontal = 6.dp, vertical = 1.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "$source $value" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(source, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black, color = if (imdb) Color.Black else SokoulColors.TextSecondary)
+        Text(value, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = if (imdb) Color.Black else SokoulColors.TextPrimary)
+    }
 }
 
 @Composable
@@ -394,8 +446,10 @@ private fun DetailTitle(title: String) {
 private fun FactsLine(hero: DetailHeroData, modifier: Modifier) {
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (hero.rating != null && hero.rating >= MIN_RATING) RatingChip(hero.rating, Modifier.align(Alignment.CenterVertically))
+        hero.externalRatings.forEach { (source, value) -> Box(Modifier.align(Alignment.CenterVertically)) { ExternalRating(source, value) } }
+        val lead = (hero.rating != null && hero.rating >= MIN_RATING) || hero.externalRatings.isNotEmpty()
         hero.facts.forEachIndexed { i, f ->
-            if (i > 0 || (hero.rating != null && hero.rating >= MIN_RATING)) Dot()
+            if (i > 0 || lead) Dot()
             Text(f, Modifier.align(Alignment.CenterVertically), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary)
         }
         hero.certification?.let { Badge(certificationLabel(it), filled = true) }
