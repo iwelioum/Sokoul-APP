@@ -277,3 +277,59 @@ Tests réels faits avec l'abonnement : un flux à la fois, au moins 30 s entre d
 - L'atomicité de `ensureEpisodes` (suppression + insertion en transaction) n'a pas de test dédié.
 - Dans « Reprendre la lecture », l'épisode suivant n'est cherché que dans la même version de la série.
 - Pas de tests instrumentés (`androidTest`) : les tests d'interface tournent sous Robolectric, sans flux réel, et les vérifications sur la box ont été faites à la main.
+
+## 9. Phase 7 — Fiche « style Apple TV », lecteur « icônes + texte », fluidité
+
+Objectif : refaire la fiche détail et le lecteur (emplacement des boutons, design, animations), corriger ce qui restait, et une interface fluide sur la box (Google TV Streamer, 1080p).
+
+**Fiche détail** (`DetailKit.kt`, `DetailScreens.kt`) :
+- grand fond plein écran avec effet Ken Burns lent, logo du titre, ligne d'infos, résumé et boutons ronds ;
+- le contenu monte par-dessus le fond quand on descend ;
+- onglets de saison : ▼ arrive sur la saison sélectionnée et ne change plus de saison par erreur ;
+- vignette de secours pour les épisodes sans image (fond de la série et grand numéro) ;
+- Retour depuis le bas de la fiche remonte en haut et remet le focus sur « Lecture ».
+
+**Lecteur** (`VodOverlay.kt`, `PlayerScreen.kt`, nouveau `TracksPanel.kt`) :
+- barre du haut : titre, épisode, version et heure ;
+- en bas : barre de progression, −10 / ⏯ / +30, puis les boutons Épisodes · Suivant · Audio et sous-titres · Plus (icône + texte, toujours dans le même ordre) ;
+- panneau « Audio et sous-titres » à deux colonnes, qui s'ouvre sur la piste en cours ;
+- noms de pistes lisibles : « Anglais · SDH », « Français · 5.1 · Dolby Digital+ », « Chinois · traditionnel ». Jamais de nom d'encodeur (« GalaxyTV - small excellence! ») ni de format interne (« X-MEDIA3-CUES »). Les doublons sont numérotés ;
+- panneau Épisodes avec les titres et vignettes TMDB, comme la fiche. Les noms de release (« 720p.NF.WEBRip.x264-GalaxyTV ») ne sont plus affichés comme titre ;
+- écran « En pause » après 10 s (titre, résumé TMDB en français, temps restant). OK reprend la lecture ; Retour ferme l'écran de pause, un second Retour quitte le lecteur ;
+- retour visuel cumulé des sauts (« +1 min 30 », heure visée), indicateur de chargement après 300 ms seulement, carte « Épisode suivant » avec bouton qui se remplit pendant le compte à rebours ;
+- téléphone : boutons sur deux lignes centrées (plus de rangée coupée), barre de progression fine avec un repère rond.
+
+**Fluidité** (mesurée avec `dumpsys gfxinfo` sur la box, même parcours à la télécommande avant et après) :
+
+| Écran | Avant | Après |
+|---|---|---|
+| Fiche détail, navigation | 32–34 % d'images saccadées | **1,9 %** (médiane 9 ms) |
+| Fiche détail, immobile | 12 % | **0 %** |
+| Accueil, navigation dans les rangées | 12–16 % | **4,2 %** (90e centile 61 → 40 ms) |
+| Accueil, immobile | — | **0,8 %** |
+
+Causes trouvées et corrigées :
+- fond et dégradés plein écran redessinés à chaque image de l'effet Ken Burns : ils sont maintenant rendus une seule fois dans une texture (calque matériel), et l'animation ne fait que l'agrandir. Le flou a été retiré ;
+- héros de l'accueil toujours dessiné sous le panneau d'aperçu opaque : il n'est plus dessiné quand le panneau le cache ;
+- quatre fonds opaques identiques empilés (fenêtre, racine, coque, écran) : seul celui de la fenêtre est gardé ;
+- fond d'ambiance de l'accueil en fondu enchaîné entre deux images plein écran : il coûtait à lui seul environ 5 points. Il passe à une seule image ;
+- chaque déplacement du focus recomposait tout l'écran d'accueil : la lecture du focus est isolée dans de petits composables.
+
+| Test | Résultat |
+|---|---|
+| 153 tests automatisés (135 app + 18 parseur), dont `DetailUiTest` (fiche : focus, saisons, vignettes de secours) et `PlayerUiTest` (ordre des boutons, parcours D-pad barre → ⏯ → +30 → boutons → ▲, tout sur une ligne en 960 dp, panneau audio/sous-titres, carte suivante, noms de pistes, sauts bornés) | OK |
+| Lint release | 0 erreur |
+| Box, vrais flux (un seul à la fois, ≥ 30 s d'écart) : barre du lecteur, panneau Épisodes (vignettes TMDB), panneau Audio et sous-titres, écran de pause, Retour | OK |
+| Box en mode téléphone (1080 × 2340) : accueil, lecteur | OK après correctifs |
+| Journal système pendant les tests : aucune erreur de l'app ni du lecteur | OK |
+
+**Bugs trouvés sur la box et corrigés** :
+- Panneau Épisodes du lecteur : nom de release affiché comme titre et vignettes vides.
+- Pistes audio et sous-titres affichées avec le nom de l'encodeur et « X-MEDIA3-CUES ».
+- En pause, Retour sur l'écran de pause réaffichait la barre. Avec la réapparition de l'écran de pause toutes les 10 s, on pouvait tourner en rond.
+- Téléphone : « Audio et sous-titres » coupé et « Plus » invisible ; logo affiché par-dessus une affiche qui porte déjà le titre (« HOPE » en double).
+
+**Limites** :
+- Quand TMDB n'a pas de titre français pour un épisode, il s'appelle « Épisode N ». Les titres TVDB arriveront avec la phase 8.
+- Le résumé affiché sur l'écran de pause vient du fournisseur (souvent en anglais) quand TMDB n'en a pas en français.
+- Un film (version AR, puis VF en secours) a renvoyé « Format de flux non reconnu » pendant une séquence de touches involontaire. Le fournisseur semble avoir renvoyé autre chose qu'une vidéo. Ce cas n'a pas été reproduit volontairement, pour respecter la limite d'une connexion.
