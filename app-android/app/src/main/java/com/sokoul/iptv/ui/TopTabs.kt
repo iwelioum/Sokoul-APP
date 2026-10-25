@@ -119,7 +119,13 @@ fun StreamingShell(nav: NavHostController, current: Dest, content: @Composable (
             onFocusChanged = { bar.tabsFocused = it },
             onTab = { d -> if (d != current) { TabHandoff.pending = true; nav.goTo(d) } },
             // 📺 TV : l'univers TV s'ouvre sur la dernière chaîne, en plein écran
-            onAction = { d -> if (d == Dest.LIVE) nav.navigateOnce(com.sokoul.iptv.ui.nav.TvRoute) else nav.goTo(d) },
+            onAction = { d ->
+                when (d) {
+                    Dest.LIVE -> nav.navigateOnce(com.sokoul.iptv.ui.nav.TvRoute)
+                    Dest.SEARCH -> nav.openSearch(current.searchOrigin())
+                    else -> nav.goTo(d)
+                }
+            },
             downTarget = { bar.down?.invoke() ?: FocusRequester.Default },
         )
     }

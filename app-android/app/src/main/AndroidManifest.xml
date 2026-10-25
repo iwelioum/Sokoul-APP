@@ -17,6 +17,10 @@
             <action android:name="android.intent.action.OPEN_DOCUMENT" />
             <data android:mimeType="*/*" />
         </intent>
+        <!-- dictée sur le clavier de recherche TV -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 
     <!-- Une seule application pour Android TV, Fire TV, téléphones et tablettes -->

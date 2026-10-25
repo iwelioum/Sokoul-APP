@@ -32,6 +32,36 @@ object SpecialCategory {
     const val ALL = "__all"
 }
 
+/** Ce que la recherche interroge ; le périmètre par défaut dépend de la page d'où on l'ouvre. */
+enum class SearchKind(val label: String, val type: ContentType) {
+    MOVIES("Films", ContentType.MOVIE),
+    SERIES("Séries", ContentType.SERIES),
+    CHANNELS("Chaînes", ContentType.LIVE),
+    PROGRAMS("Programmes TV", ContentType.LIVE);
+
+    companion object {
+        val ALL: Set<SearchKind> = entries.toSet()
+
+        /** Accueil → films et séries ; Films → films ; Séries → séries ; TV → chaînes et programmes. */
+        fun forOrigin(origin: String): Set<SearchKind> = when (origin) {
+            SearchOrigin.MOVIES -> setOf(MOVIES)
+            SearchOrigin.SERIES -> setOf(SERIES)
+            SearchOrigin.TV -> setOf(CHANNELS, PROGRAMS)
+            SearchOrigin.HOME -> setOf(MOVIES, SERIES)
+            else -> ALL
+        }
+    }
+}
+
+/** Page d'origine de la recherche (paramètre de route). */
+object SearchOrigin {
+    const val HOME = "home"
+    const val MOVIES = "movies"
+    const val SERIES = "series"
+    const val TV = "tv"
+    const val ALL = "all"
+}
+
 data class SearchResults(
     val channels: List<ChannelEntity> = emptyList(),
     val movies: List<MovieEntity> = emptyList(),
@@ -167,27 +197,56 @@ class CatalogRepository @Inject constructor(
     /** Épisodes d'une saison en français (titres, résumés, vignettes TMDB). */
     suspend fun tmdbSeason(tvId: Int, season: Int) = tmdb.season(settings.current().tmdbApiKey, tvId, season)
 
-    suspend fun search(pid: Long, query: String): SearchResults {
+    /**
+     * Recherche limitée au périmètre [scope] : seules les requêtes utiles partent
+     * (depuis Films, ni les chaînes ni le guide TV ne sont interrogés).
+     */
+    suspend fun search(pid: Long, query: String, scope: Set<SearchKind> = SearchKind.ALL): SearchResults {
         val trimmed = query.trim().take(MAX_QUERY)
         val q = likeEscape(SyncEngine.searchable(trimmed))
-        if (trimmed.length < 2) return SearchResults()
+        if (trimmed.length < 2 || scope.isEmpty()) return SearchResults()
         val now = System.currentTimeMillis()
-        val programs = db.programs().search(pid, likeEscape(trimmed), now, 30)
         val channelsByKey = HashMap<String, ChannelEntity?>()
-        // Groupes verrouillés : invisibles dans la recherche tant que le code n'a pas été saisi
-        val open = parental.isOpen()
-        suspend fun locked(type: ContentType) = if (open) emptySet() else db.categories().observeLocked(pid, type).first().toSet()
-        val lockedLive = locked(ContentType.LIVE)
-        val lockedMovies = locked(ContentType.MOVIE)
-        val lockedSeries = locked(ContentType.SERIES)
+        val locked = lockedSets(pid, scope)
+        val lockedLive = locked[ContentType.LIVE].orEmpty()
         return SearchResults(
-            channels = db.channels().search(pid, q).filter { it.categoryId !in lockedLive },
-            movies = db.movies().search(pid, q).filter { it.categoryId !in lockedMovies },
-            series = db.series().search(pid, q).filter { it.categoryId !in lockedSeries },
-            programs = programs.map { pr ->
+            channels = if (SearchKind.CHANNELS in scope) db.channels().search(pid, q).filter { it.categoryId !in lockedLive } else emptyList(),
+            movies = if (SearchKind.MOVIES in scope) db.movies().search(pid, q).filter { it.categoryId !in locked[ContentType.MOVIE].orEmpty() } else emptyList(),
+            series = if (SearchKind.SERIES in scope) db.series().search(pid, q).filter { it.categoryId !in locked[ContentType.SERIES].orEmpty() } else emptyList(),
+            programs = if (SearchKind.PROGRAMS !in scope) emptyList() else db.programs().search(pid, likeEscape(trimmed), now, 30).map { pr ->
                 pr to channelsByKey.getOrPut(pr.channelKey) { findChannelForKey(pid, pr.channelKey) }
             }.filter { (_, c) -> c == null || c.categoryId !in lockedLive },
         )
+    }
+
+    /**
+     * Complétion (3 propositions dès 2 lettres) : titres dont un mot commence par la saisie,
+     * sur les noms du catalogue (`searchName`).
+     */
+    suspend fun suggest(pid: Long, query: String, scope: Set<SearchKind> = SearchKind.ALL, limit: Int = 3): List<String> {
+        val trimmed = query.trim().take(MAX_QUERY)
+        if (trimmed.length < 2) return emptyList()
+        val q = likeEscape(SyncEngine.searchable(trimmed))
+        val locked = lockedSets(pid, scope)
+        val rows = buildList {
+            if (SearchKind.MOVIES in scope) db.movies().suggest(pid, q).filter { it.categoryId !in locked[ContentType.MOVIE].orEmpty() }.let(::addAll)
+            if (SearchKind.SERIES in scope) db.series().suggest(pid, q).filter { it.categoryId !in locked[ContentType.SERIES].orEmpty() }.let(::addAll)
+            if (SearchKind.CHANNELS in scope) db.channels().suggest(pid, q).filter { it.categoryId !in locked[ContentType.LIVE].orEmpty() }.let(::addAll)
+        }
+        // titres qui commencent par la saisie d'abord, puis l'ordre du catalogue (les plus récents)
+        val typed = SyncEngine.searchable(trimmed)
+        return rows.map { it.title.trim() }
+            .filter { SyncEngine.searchable(it) != typed }
+            .distinctBy { SyncEngine.searchable(it) }
+            .sortedBy { if (SyncEngine.searchable(it).startsWith(typed)) 0 else 1 }
+            .take(limit)
+    }
+
+    // Groupes verrouillés : invisibles dans la recherche tant que le code n'a pas été saisi
+    private suspend fun lockedSets(pid: Long, scope: Set<SearchKind>): Map<ContentType, Set<String>> {
+        if (parental.isOpen()) return emptyMap()
+        val types = scope.map { it.type }.toSet()
+        return types.associateWith { db.categories().observeLocked(pid, it).first().toSet() }
     }
 
     companion object {

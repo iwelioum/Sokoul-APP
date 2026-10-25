@@ -80,6 +80,7 @@ class ShellUiTest {
     private fun setUp() {
         // sortir de la fenêtre anti-double-appui de navigateOnce laissée par un test précédent
         org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(2))
+        com.sokoul.iptv.ui.nav.resetNavigationDebounce()
         rule.mainClock.autoAdvance = false
         rule.setContent {
             CompositionLocalProvider(LocalLayout provides computeLayout(960, 540, isTv = true), LocalReducedMotion provides true) {

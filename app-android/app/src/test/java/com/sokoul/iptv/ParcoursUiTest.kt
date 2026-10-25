@@ -68,6 +68,7 @@ class ParcoursUiTest {
     @Before fun clock() {
         // sortir de la fenêtre anti-double-appui laissée par un test précédent
         ShadowSystemClock.advanceBy(Duration.ofSeconds(2))
+        com.sokoul.iptv.ui.nav.resetNavigationDebounce()
     }
 
     // --- lecteur ------------------------------------------------------------------------------------

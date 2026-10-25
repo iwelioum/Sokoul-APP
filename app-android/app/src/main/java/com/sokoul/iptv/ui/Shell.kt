@@ -72,6 +72,7 @@ import com.sokoul.iptv.ui.nav.LiveRoute
 import com.sokoul.iptv.ui.nav.MoviesRoute
 import com.sokoul.iptv.ui.nav.RecordingsRoute
 import com.sokoul.iptv.ui.nav.SearchRoute
+import com.sokoul.iptv.ui.nav.navigateOnce
 import com.sokoul.iptv.ui.nav.SeriesRoute
 import com.sokoul.iptv.ui.nav.MyListRoute
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -83,7 +84,7 @@ import com.sokoul.iptv.ui.theme.WindowClass
 
 /** Rubriques principales, dans l'ordre du menu (recherche en tête, comme sur les plateformes). */
 enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
-    SEARCH("Recherche", Icons.Default.Search, SearchRoute),
+    SEARCH("Recherche", Icons.Default.Search, SearchRoute()),
     HOME("Accueil", Icons.Default.Home, HomeRoute),
     MOVIES("Films", Icons.Default.Movie, MoviesRoute),
     SERIES("Séries", Icons.Default.VideoLibrary, SeriesRoute),
@@ -93,6 +94,18 @@ enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
     RECORDINGS("Enregistrements", Icons.Default.FiberManualRecord, RecordingsRoute),
     SETTINGS("Réglages", Icons.Default.Settings, SettingsRoute),
 }
+
+/** Page d'origine de la recherche, pour son périmètre de départ. */
+fun Dest.searchOrigin(): String = when (this) {
+    Dest.HOME, Dest.MY_LIST -> com.sokoul.iptv.data.repo.SearchOrigin.HOME
+    Dest.MOVIES -> com.sokoul.iptv.data.repo.SearchOrigin.MOVIES
+    Dest.SERIES -> com.sokoul.iptv.data.repo.SearchOrigin.SERIES
+    Dest.LIVE, Dest.GUIDE, Dest.RECORDINGS -> com.sokoul.iptv.data.repo.SearchOrigin.TV
+    else -> com.sokoul.iptv.data.repo.SearchOrigin.ALL
+}
+
+/** Recherche contextuelle : empilée au-dessus de la page d'origine (Retour y ramène, focus compris). */
+fun NavHostController.openSearch(origin: String) = navigateOnce(SearchRoute(origin))
 
 fun NavHostController.goTo(dest: Dest) {
     navigate(dest.route) {

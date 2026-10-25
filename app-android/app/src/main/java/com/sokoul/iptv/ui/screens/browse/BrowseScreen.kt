@@ -79,6 +79,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.sokoul.iptv.data.db.ContentType
 import com.sokoul.iptv.data.repo.BrowseKind
+import com.sokoul.iptv.data.repo.SearchOrigin
 import com.sokoul.iptv.data.repo.BrowseRow
 import com.sokoul.iptv.data.repo.GridSpec
 import com.sokoul.iptv.data.repo.Platform
@@ -576,7 +577,9 @@ private fun TopBar(title: String, firstIndex: Int, offset: Int, heroPx: Float, k
             val type = if (kind == BrowseKind.SERIES) ContentType.SERIES else ContentType.MOVIE
             TopIcon(Icons.AutoMirrored.Filled.List, "Catégories") { nav.navigate(AllCategoriesRoute(type.name)) }
         }
-        TopIcon(Icons.Default.Search, "Recherche") { nav.navigate(SearchRoute) }
+        TopIcon(Icons.Default.Search, "Recherche") {
+            nav.navigate(SearchRoute(when (kind) { BrowseKind.MOVIES -> SearchOrigin.MOVIES; BrowseKind.SERIES -> SearchOrigin.SERIES; else -> SearchOrigin.HOME }))
+        }
     }
 }
 

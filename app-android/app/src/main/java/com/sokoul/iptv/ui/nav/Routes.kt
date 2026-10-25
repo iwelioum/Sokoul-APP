@@ -10,7 +10,8 @@ import kotlinx.serialization.Serializable
 @Serializable object MyListRoute
 /** Univers TV : ouvre la dernière chaîne en plein écran (écran de passage, hors historique). */
 @Serializable object TvRoute
-@Serializable object SearchRoute
+/** Recherche ; [origin] (SearchOrigin) fixe le périmètre proposé au départ. */
+@Serializable data class SearchRoute(val origin: String = "all")
 @Serializable object RecordingsRoute
 @Serializable object SettingsRoute
 @Serializable object MultiviewRoute

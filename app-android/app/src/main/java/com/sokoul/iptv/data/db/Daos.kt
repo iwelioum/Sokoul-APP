@@ -158,6 +158,9 @@ interface ChannelDao {
     @Query("SELECT * FROM channels WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ESCAPE '\\' ORDER BY position LIMIT :limit")
     suspend fun search(pid: Long, q: String, limit: Int = 60): List<ChannelEntity>
 
+    @Query("SELECT name AS title, categoryId FROM channels WHERE playlistId = :pid AND (searchName LIKE :q || '%' ESCAPE '\\' OR searchName LIKE '% ' || :q || '%' ESCAPE '\\') ORDER BY position LIMIT :limit")
+    suspend fun suggest(pid: Long, q: String, limit: Int = 12): List<SuggestRow>
+
     @Query("SELECT * FROM channels WHERE playlistId = :pid AND categoryId = :cat ORDER BY position")
     suspend fun listByCategory(pid: Long, cat: String): List<ChannelEntity>
 
@@ -242,6 +245,9 @@ interface MovieDao {
     @Query("SELECT * FROM movies WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ESCAPE '\\' ORDER BY added DESC LIMIT :limit")
     suspend fun search(pid: Long, q: String, limit: Int = 60): List<MovieEntity>
 
+    @Query("SELECT title, categoryId FROM movies WHERE playlistId = :pid AND (searchName LIKE :q || '%' ESCAPE '\\' OR searchName LIKE '% ' || :q || '%' ESCAPE '\\') ORDER BY added DESC LIMIT :limit")
+    suspend fun suggest(pid: Long, q: String, limit: Int = 12): List<SuggestRow>
+
     @Upsert
     suspend fun upsert(items: List<MovieEntity>)
 
@@ -286,6 +292,9 @@ interface SeriesDao {
 
     @Query("SELECT * FROM series WHERE playlistId = :pid AND searchName LIKE '%' || :q || '%' ESCAPE '\\' ORDER BY lastModified DESC LIMIT :limit")
     suspend fun search(pid: Long, q: String, limit: Int = 60): List<SeriesEntity>
+
+    @Query("SELECT title, categoryId FROM series WHERE playlistId = :pid AND (searchName LIKE :q || '%' ESCAPE '\\' OR searchName LIKE '% ' || :q || '%' ESCAPE '\\') ORDER BY lastModified DESC LIMIT :limit")
+    suspend fun suggest(pid: Long, q: String, limit: Int = 12): List<SuggestRow>
 
     @Upsert
     suspend fun upsert(items: List<SeriesEntity>)
@@ -701,3 +710,6 @@ interface BrowseDao {
 }
 /** Chaîne sans logo : de quoi lui trouver un logo de secours. */
 data class ChannelLogoRef(val id: String, val tvgId: String?, val nameKey: String)
+
+/** Suggestion de complétion : titre affiché et groupe (pour masquer les groupes verrouillés). */
+data class SuggestRow(val title: String, val categoryId: String)

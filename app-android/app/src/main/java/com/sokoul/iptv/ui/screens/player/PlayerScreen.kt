@@ -615,7 +615,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     add(MenuOption("Guide TV", Icons.Default.CalendarViewWeek) { nav.navigate(com.sokoul.iptv.ui.nav.GuideRoute) })
                     add(MenuOption("Enregistrer", Icons.Default.FiberManualRecord) { scope.launch { delay(50); menu = Menu.RECORD } })
                     add(MenuOption(if (ui.isFavorite) "Retirer des favoris" else "Ajouter aux favoris", if (ui.isFavorite) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite() })
-                    add(MenuOption("Rechercher une chaîne", Icons.Default.Search) { nav.navigate(com.sokoul.iptv.ui.nav.SearchRoute) })
+                    add(MenuOption("Rechercher une chaîne", Icons.Default.Search) { nav.navigate(com.sokoul.iptv.ui.nav.SearchRoute(com.sokoul.iptv.data.repo.SearchOrigin.TV)) })
                     add(MenuOption("Enregistrements", Icons.Default.VideoLibrary) { nav.navigate(com.sokoul.iptv.ui.nav.RecordingsRoute) })
                     if (ui.canCatchup && ui.nowNext?.now != null) add(MenuOption("Revoir depuis le début du programme", Icons.Default.History) { vm.restartCurrentProgram() })
                     add(MenuOption("Audio et sous-titres", Icons.Default.ClosedCaption) { tracksVisible = true })

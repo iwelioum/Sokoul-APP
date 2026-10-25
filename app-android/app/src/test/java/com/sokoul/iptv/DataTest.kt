@@ -18,6 +18,8 @@ import com.sokoul.iptv.data.db.PlaylistType
 import com.sokoul.iptv.data.repo.BackupManager
 import com.sokoul.iptv.data.repo.BackupPassphraseException
 import com.sokoul.iptv.data.repo.CatalogRepository
+import com.sokoul.iptv.data.repo.SearchKind
+import com.sokoul.iptv.data.repo.SearchOrigin
 import com.sokoul.iptv.ui.ParentalGate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -121,6 +123,37 @@ class DataTest {
         assertEquals(listOf("10"), repo.search(pid, "le_film").movies.map { it.id })
         gate.tryUnlock("2580")
         assertEquals(setOf("1", "3"), repo.search(pid, "100%").channels.map { it.id }.toSet())
+    }
+
+    @Test fun `recherche contextuelle - depuis Films ni chaines ni programmes`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        db.channels().upsert(listOf(channel(pid, "1", "a", "Matrix TV")))
+        db.movies().upsert(listOf(movie(pid, "10", "Matrix")))
+        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate)
+        val films = repo.search(pid, "matrix", SearchKind.forOrigin(SearchOrigin.MOVIES))
+        assertEquals(listOf("10"), films.movies.map { it.id })
+        assertTrue(films.channels.isEmpty() && films.programs.isEmpty() && films.series.isEmpty())
+        val tv = repo.search(pid, "matrix", SearchKind.forOrigin(SearchOrigin.TV))
+        assertEquals(listOf("1"), tv.channels.map { it.id })
+        assertTrue(tv.movies.isEmpty())
+        assertEquals(SearchKind.ALL, SearchKind.forOrigin(SearchOrigin.ALL))
+    }
+
+    @Test fun `suggestions par prefixe de mot - 3 au plus, debut de titre puis plus recents, sans verrouilles`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        db.movies().upsert(listOf(
+            movie(pid, "1", "Le Parrain II").copy(added = 1), movie(pid, "2", "Le Parrain").copy(added = 4), movie(pid, "3", "Parasite").copy(added = 5),
+            movie(pid, "4", "Paris, Texas").copy(added = 3), movie(pid, "5", "Comparaison").copy(added = 9), movie(pid, "6", "Le Parrain").copy(added = 2),
+        ))
+        db.channels().upsert(listOf(channel(pid, "7", "adult", "Paradise")))
+        db.categories().upsertPref(CategoryPrefEntity(pid, ContentType.LIVE, "adult", locked = true))
+        gate.setPin("2580")
+        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate)
+        val s = repo.suggest(pid, "par", SearchKind.ALL)
+        // « Comparaison » : « par » au milieu d'un mot, pas proposé ; doublons regroupés ; chaîne verrouillée absente
+        assertEquals(listOf("Parasite", "Paris, Texas", "Le Parrain"), s)
+        assertTrue(repo.suggest(pid, "p", SearchKind.ALL).isEmpty())
+        assertTrue(repo.suggest(pid, "par", setOf(SearchKind.SERIES)).isEmpty())
     }
 
     @Test fun `listes transverses sans les groupes verrouilles`() = runBlocking {

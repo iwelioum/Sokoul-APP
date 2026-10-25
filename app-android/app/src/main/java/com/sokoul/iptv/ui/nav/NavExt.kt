@@ -21,3 +21,7 @@ fun NavController.navigateOnce(route: Any) {
     lastNavigationAt = now
     navigate(route)
 }
+
+/** Tests : l'horloge de Robolectric repart de zéro à chaque test, pas ce délai mémorisé. */
+@androidx.annotation.VisibleForTesting
+fun resetNavigationDebounce() { lastNavigationAt = 0L }
