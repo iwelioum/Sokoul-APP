@@ -1,5 +1,8 @@
 package com.sokoul.iptv.ui.screens.settings
 
+import com.sokoul.iptv.ui.theme.LocalLayout
+import com.sokoul.iptv.ui.components.ScreenHeader
+import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.Radius
 import android.content.Context
 import android.net.Uri
@@ -263,8 +266,8 @@ fun SettingsScreen(nav: NavHostController) {
         else vm.exportToFolder(pass, toast)
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        item { Text("Réglages", style = MaterialTheme.typography.headlineMedium) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = LocalLayout.current.margin, end = LocalLayout.current.margin, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item { ScreenHeader("Réglages") }
 
         section("Playlists")
         items(playlists, key = { it.id }) { p ->
@@ -554,7 +557,7 @@ private fun SettingRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    FocusSurface(onClick = onClick, modifier = modifier.fillMaxWidth().widthIn(max = 900.dp), color = SokoulColors.Surface, focusScale = 1.01f) { _ ->
+    FocusSurface(style = FocusStyle.Row, onClick = onClick, modifier = modifier.fillMaxWidth().widthIn(max = 900.dp), color = SokoulColors.Surface) { _ ->
         Row(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) Icon(icon, null, Modifier.padding(end = 14.dp).size(22.dp), tint = SokoulColors.TextSecondary)
             Column(Modifier.weight(1f)) {
@@ -572,7 +575,7 @@ private fun ToggleRow(title: String, value: Boolean, onChange: (Boolean) -> Unit
 
 @Composable
 private fun PlaylistRow(p: PlaylistEntity, active: Boolean, status: SyncStatus?, epg: SyncStatus?, modifier: Modifier, onClick: () -> Unit) {
-    FocusSurface(onClick = onClick, modifier = modifier.fillMaxWidth().widthIn(max = 900.dp), color = if (active) SokoulColors.AccentSoft else SokoulColors.Surface, focusScale = 1.01f) { _ ->
+    FocusSurface(style = FocusStyle.Row, onClick = onClick, modifier = modifier.fillMaxWidth().widthIn(max = 900.dp), color = if (active) SokoulColors.AccentTint else SokoulColors.Surface) { _ ->
         Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(p.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)

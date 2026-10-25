@@ -22,6 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -124,9 +126,6 @@ fun FocusSurface(
         FocusStyle.Row -> SokoulColors.SurfaceHigher
         FocusStyle.Chip -> SokoulColors.Focus
     },
-    /** Obsolète (phase 9) : ignoré, le [style] décide. À retirer quand tous les appels sont migrés. */
-    @Suppress("UNUSED_PARAMETER") focusScale: Float? = null,
-    @Suppress("UNUSED_PARAMETER") borderWidth: Dp? = null,
     onFocus: (() -> Unit)? = null,
     content: @Composable (focused: Boolean) -> Unit,
 ) {
@@ -153,13 +152,11 @@ fun FocusSurface(
             }
             .drawWithCache {
                 val outline = shape.createOutline(size, layoutDirection, this)
-                val stroke = Stroke(style.border.toPx())
                 val bar = FocusBarWidth.toPx()
                 onDrawBehind {
                     val p = progress.value.coerceIn(0f, 1f)
                     drawOutline(outline, androidx.compose.ui.graphics.lerp(bg, fbg, p))
                     if (p > 0.01f) {
-                        if (style.border.value > 0f) drawOutline(outline, SokoulColors.Focus.copy(alpha = p), style = stroke)
                         if (style.accentBar) drawRect(
                             SokoulColors.Accent.copy(alpha = p),
                             topLeft = androidx.compose.ui.geometry.Offset(0f, size.height * 0.2f),
@@ -169,6 +166,7 @@ fun FocusSurface(
                 }
             }
             .clip(shape)
+            .then(if (style.border.value > 0f) Modifier.focusRing(shape, style.border) { progress.value } else Modifier)
             .dpadClickable(onClick, onLongClick)
     ) {
         content(focused)
@@ -176,6 +174,41 @@ fun FocusSurface(
 }
 
 private val FocusBarWidth = 3.dp
+
+/**
+ * Anneau de focus des cartes, dessiné PAR-DESSUS le contenu (l'image ne le recouvre pas) :
+ * contour en dégradé blanc → violet à 135° et filet sombre intérieur de 1 dp, pour rester
+ * visible même sur une affiche à bord blanc.
+ */
+private fun Modifier.focusRing(shape: Shape, width: Dp, progress: () -> Float): Modifier = drawWithCache {
+    val w = width.toPx()
+    val inner = 1.dp.toPx()
+    val outline = shape.createOutline(size, layoutDirection, this)
+    val brush = androidx.compose.ui.graphics.Brush.linearGradient(
+        listOf(SokoulColors.Focus, SokoulColors.AccentEnd.copy(alpha = 0.85f)),
+        start = androidx.compose.ui.geometry.Offset.Zero,
+        end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+    )
+    onDrawWithContent {
+        drawContent()
+        val p = progress().coerceIn(0f, 1f)
+        if (p > 0.01f) {
+            // le contour est centré sur le bord : moitié intérieure visible sur l'image
+            drawOutline(outline, SokoulColors.black(0.6f), alpha = p, style = Stroke(w + inner * 2))
+            drawOutline(outline, brush, alpha = p, style = Stroke(w))
+        }
+    }
+}
+
+/**
+ * Met l'élément focalisé (ou qui contient le focus) au premier plan parmi ses voisins :
+ * une carte agrandie n'est jamais recouverte par la suivante. À poser sur la racine d'un
+ * élément de rangée ou de grille.
+ */
+fun Modifier.focusOnTop(): Modifier = composed {
+    var inside by remember { mutableStateOf(false) }
+    this.onFocusChanged { inside = it.hasFocus }.zIndex(if (inside) 1f else 0f)
+}
 
 /** Couleur du texte et des icônes posés sur une surface [FocusStyle.Chip]. */
 fun onChip(focused: Boolean, enabled: Boolean = true): Color = when {

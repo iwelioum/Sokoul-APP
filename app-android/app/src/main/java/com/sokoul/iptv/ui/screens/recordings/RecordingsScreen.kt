@@ -1,5 +1,8 @@
 package com.sokoul.iptv.ui.screens.recordings
 
+import com.sokoul.iptv.ui.theme.LocalLayout
+import com.sokoul.iptv.ui.components.ScreenHeader
+import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.layout.Arrangement
@@ -51,7 +54,6 @@ import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.nav.PlayKind
 import com.sokoul.iptv.ui.nav.PlayerRoute
-import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.util.formatDateTime
 import com.sokoul.iptv.ui.util.formatRange
 import com.sokoul.iptv.ui.util.formatSize
@@ -91,17 +93,17 @@ fun RecordingsScreen(nav: NavHostController) {
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Text("Enregistrements", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 8.dp)) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = LocalLayout.current.margin, end = LocalLayout.current.margin, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { ScreenHeader("Enregistrements", subtitle = if (recordings.isEmpty()) null else "${recordings.size} enregistrement" + if (recordings.size > 1) "s" else "") }
         items(recordings, key = { it.id }) { r ->
-            FocusSurface(
+            FocusSurface(style = FocusStyle.Row, 
                 onClick = {
                     if (r.status == RecordingStatus.COMPLETED || r.status == RecordingStatus.RECORDING) nav.navigateOnce(PlayerRoute(PlayKind.RECORDING, r.playlistId, r.id.toString()))
                     else menu = r
                 },
                 onLongClick = { menu = r },
                 modifier = Modifier.fillMaxWidth().widthIn(max = 1000.dp),
-                color = SokoulColors.Surface, focusScale = 1.01f,
+                color = SokoulColors.Surface, 
             ) { _ ->
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     val (icon, tint, label) = when (r.status) {
@@ -127,7 +129,7 @@ fun RecordingsScreen(nav: NavHostController) {
         if (reminders.isNotEmpty()) {
             item { Text("Rappels", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 20.dp, bottom = 4.dp)) }
             items(reminders, key = { "${it.playlistId}|${it.channelId}|${it.start}" }) { r ->
-                FocusSurface(onClick = { reminderMenu = r }, modifier = Modifier.fillMaxWidth().widthIn(max = 1000.dp), color = SokoulColors.Surface, focusScale = 1.01f) { _ ->
+                FocusSurface(style = FocusStyle.Row, onClick = { reminderMenu = r }, modifier = Modifier.fillMaxWidth().widthIn(max = 1000.dp), color = SokoulColors.Surface) { _ ->
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.NotificationsActive, null, tint = SokoulColors.Warning)
                         Column(Modifier.padding(start = 16.dp)) {

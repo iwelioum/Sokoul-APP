@@ -4,7 +4,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,7 +25,7 @@ object Radius {
     /** Pastilles, onglets, boutons arrondis. */
     val Pill = RoundedCornerShape(50)
     /** Aucun arrondi (bords d'écran, pistes pleine largeur). */
-    val None = RectangleShape
+    val None = RoundedCornerShape(0.dp)
 }
 
 /** Espacements : multiples de 4. Les marges d'écran passent par `LocalLayout.margin`. */

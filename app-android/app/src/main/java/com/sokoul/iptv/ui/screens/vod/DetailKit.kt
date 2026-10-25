@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.vod
 
+import com.sokoul.iptv.ui.components.FocusStyle
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -488,10 +489,9 @@ private fun Badge(text: String, filled: Boolean) {
 @Composable
 fun DetailPrimaryButton(a: PrimaryAction, modifier: Modifier = Modifier) {
     val l = LocalLayout.current
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip,
         onClick = a.onClick, modifier = modifier.semantics { contentDescription = listOfNotNull(a.label, a.detail).joinToString(", ") },
         shape = Radius.Card, color = if (l.isTv) SokoulColors.GlassHeavy else Color.White, focusedColor = Color.White,
-        focusScale = 1.06f, borderWidth = 0.dp,
     ) { focused ->
         val c = if (!l.isTv || focused) SokoulColors.OnLight else Color.White
         Row(
@@ -524,9 +524,9 @@ fun DetailPrimaryButton(a: PrimaryAction, modifier: Modifier = Modifier) {
  */
 @Composable
 fun DetailActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip,
         onClick = a.onClick, modifier = modifier.semantics { contentDescription = a.label }, shape = Radius.Pill,
-        color = SokoulColors.GlassLight, focusedColor = Color.White, focusScale = 1.06f, borderWidth = 0.dp,
+        color = SokoulColors.GlassLight, focusedColor = Color.White,
     ) { focused ->
         val c = if (focused) SokoulColors.OnLight else Color.White
         Row(
@@ -544,7 +544,7 @@ fun DetailActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
 /** Action secondaire téléphone : icône au-dessus du libellé, comme les applis de streaming mobiles. */
 @Composable
 private fun PhoneActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
-    FocusSurface(onClick = a.onClick, modifier = modifier.widthIn(min = 72.dp), shape = Radius.Card, color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigh, focusScale = 1f, borderWidth = 0.dp) { _ ->
+    FocusSurface(style = FocusStyle.Chip, onClick = a.onClick, modifier = modifier.widthIn(min = 72.dp), shape = Radius.Card, color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigh) { _ ->
         Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             MorphIcon(a.icon, Color.White, 26)
             Text(a.label, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextSecondary, maxLines = 1)
@@ -680,10 +680,10 @@ fun SeasonTabs(
         itemsIndexed(seasons, key = { _, n -> n }) { _, n ->
             val selected = n == current
             val line by animateDpAsState(if (selected) 28.dp else 0.dp, Motion.enter(), label = "tab")
-            FocusSurface(
+            FocusSurface(style = FocusStyle.Chip,
                 onClick = { onSelect(n) }, onLongClick = { onLongClick(n) },
                 modifier = Modifier.focusMemory(memory, "season:$n").onFocusChanged { if (it.isFocused) focusedTab = n },
-                shape = Radius.Pill, color = Color.Transparent, focusedColor = Color.White, focusScale = 1.05f, borderWidth = 0.dp,
+                shape = Radius.Pill, color = Color.Transparent, focusedColor = Color.White,
             ) { focused ->
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -775,7 +775,7 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
     Column(Modifier.width(w)) {
         FocusSurface(
             onClick = onClick, onLongClick = onLongClick, modifier = modifier.fillMaxWidth().aspectRatio(16f / 9f).semantics { contentDescription = "Épisode ${ev.entity.episode} : ${ev.title}" + if (watched) ", vu" else "" },
-            shape = Radius.Card, color = SokoulColors.SurfaceHigher, focusScale = 1.07f, borderWidth = 3.dp,
+            shape = Radius.Card, color = SokoulColors.SurfaceHigher,
         ) { focused ->
             Box(Modifier.fillMaxSize()) {
                 NetImage(tmdbSized(ev.image, "w500"), null, Modifier.fillMaxSize().graphicsLayer { alpha = if (watched && !focused) 0.5f else 1f }) {
@@ -827,7 +827,7 @@ fun SynopsisDialog(title: String, text: String, onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge, color = SokoulColors.TextPrimary.copy(alpha = 0.92f),
             )
             Spacer(Modifier.height(20.dp))
-            FocusSurface(onClick = onDismiss, modifier = Modifier.focusRequester(close), shape = Radius.Card, color = SokoulColors.GlassLight, focusedColor = Color.White, borderWidth = 0.dp) { f ->
+            FocusSurface(style = FocusStyle.Chip, onClick = onDismiss, modifier = Modifier.focusRequester(close), shape = Radius.Card, color = SokoulColors.GlassLight, focusedColor = Color.White) { f ->
                 Text("Fermer", Modifier.padding(horizontal = 22.dp, vertical = 12.dp), color = if (f) SokoulColors.OnLight else Color.White, fontWeight = FontWeight.Bold)
             }
         }

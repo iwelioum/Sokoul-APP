@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.playlist
 
+import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Radius
 import android.content.Context
@@ -69,7 +70,6 @@ import com.sokoul.iptv.ui.components.FormField
 import com.sokoul.iptv.ui.nav.HomeRoute
 import com.sokoul.iptv.ui.nav.PlaylistEditRoute
 import com.sokoul.iptv.ui.nav.SyncRoute
-import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.util.hasDocumentPicker
 import com.sokoul.iptv.work.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -260,12 +260,10 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
 
 @Composable
 private fun TypeChoice(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Row,
         onClick = onClick,
         modifier = modifier,
-        color = if (selected) SokoulColors.AccentSoft else SokoulColors.Surface,
-        focusedColor = if (selected) SokoulColors.AccentSoft else SokoulColors.SurfaceHigher,
-        focusScale = 1.03f,
+        color = if (selected) SokoulColors.AccentTint else SokoulColors.Surface,
     ) { _ ->
         Text(
             label, Modifier.fillMaxWidth().padding(16.dp), textAlign = TextAlign.Center,

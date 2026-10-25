@@ -51,7 +51,6 @@ import com.sokoul.iptv.ui.nav.PlayerRoute
 import com.sokoul.iptv.ui.screens.browse.openWork
 import com.sokoul.iptv.ui.screens.home.ChannelCard
 import com.sokoul.iptv.ui.theme.LocalLayout
-import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.util.dayLabel
 import com.sokoul.iptv.ui.util.formatRange
 import dagger.hilt.android.lifecycle.HiltViewModel

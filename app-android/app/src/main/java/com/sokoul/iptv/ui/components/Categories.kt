@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.components
 
+import com.sokoul.iptv.ui.theme.Space
+import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.foundation.background
@@ -43,7 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sokoul.iptv.data.db.CategoryWithPrefs
 import com.sokoul.iptv.data.repo.SpecialCategory
-import com.sokoul.iptv.ui.theme.SokoulColors
 
 data class CategoryItem(val id: String, val name: String, val locked: Boolean = false)
 
@@ -76,15 +77,12 @@ fun CategoryColumn(
     ) {
         items(items, key = { it.id }) { c ->
             val isSel = c.id == selected
-            FocusSurface(
+            FocusSurface(style = FocusStyle.Row,
                 onClick = { onSelect(c) },
                 onLongClick = onLongClick?.let { { it(c) } },
                 modifier = Modifier.fillMaxWidth(),
-                color = if (isSel) SokoulColors.AccentSoft else Color.Transparent,
-                focusedColor = SokoulColors.SurfaceHigher,
+                color = if (isSel) SokoulColors.AccentTint else Color.Transparent,
                 shape = Radius.Card,
-                focusScale = 1.02f,
-                borderWidth = 2.dp,
             ) { _ ->
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -120,13 +118,10 @@ fun CategoryPickerButton(
                 LazyColumn(Modifier.heightIn(max = 480.dp), state = state, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     itemsIndexed(items, key = { _, c -> c.id }) { i, c ->
                         val isSel = c.id == selected
-                        FocusSurface(
+                        FocusSurface(style = FocusStyle.Row,
                             onClick = { open = false; onSelect(c) },
                             modifier = Modifier.fillMaxWidth().then(if (i == start) Modifier.focusRequester(focus) else Modifier),
-                            color = if (isSel) SokoulColors.AccentSoft else Color.Transparent,
-                            focusedColor = SokoulColors.SurfaceHigher,
-                            focusScale = 1.02f,
-                            borderWidth = 2.dp,
+                            color = if (isSel) SokoulColors.AccentTint else Color.Transparent,
                         ) { _ ->
                             Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(c.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (isSel) SokoulColors.Accent else SokoulColors.TextPrimary)
@@ -150,22 +145,13 @@ fun CategoryChips(
     modifier: Modifier = Modifier,
     onLongClick: ((CategoryItem) -> Unit)? = null,
 ) {
-    LazyRow(modifier, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyRow(modifier, contentPadding = PaddingValues(horizontal = LocalLayout.current.margin, vertical = Space.s), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
         items(items, key = { it.id }) { c ->
             val isSel = c.id == selected
-            FocusSurface(
-                onClick = { onSelect(c) },
+            SokoulChip(
+                c.name, { onSelect(c) }, icon = if (c.locked) Icons.Default.Lock else null, selected = isSel,
                 onLongClick = onLongClick?.let { { it(c) } },
-                color = if (isSel) SokoulColors.Accent else SokoulColors.SurfaceHigh,
-                focusedColor = if (isSel) SokoulColors.Accent else SokoulColors.SurfaceHigher,
-                shape = Radius.Pill,
-                focusScale = 1.04f,
-            ) { _ ->
-                Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (c.locked) Icon(Icons.Default.Lock, null, Modifier.size(13.dp).padding(end = 2.dp), tint = Color.White)
-                    Text(c.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, color = Color.White)
-                }
-            }
+            )
         }
     }
 }

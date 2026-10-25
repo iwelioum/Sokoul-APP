@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.live
 
+import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
@@ -81,7 +82,6 @@ import com.sokoul.iptv.ui.components.buildCategoryItems
 import com.sokoul.iptv.ui.nav.MultiviewRoute
 import com.sokoul.iptv.ui.nav.PlayKind
 import com.sokoul.iptv.ui.nav.PlayerRoute
-import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.useSideRail
 import com.sokoul.iptv.ui.util.formatClock
 import com.sokoul.iptv.ui.util.formatRange
@@ -344,10 +344,10 @@ private fun ChannelRow(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Row,
         onClick = onClick, onLongClick = onLongClick, onFocus = onFocus,
-        modifier = modifier.fillMaxWidth(), color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigher,
-        shape = Radius.Card, focusScale = 1.015f, borderWidth = 2.dp,
+        modifier = modifier.fillMaxWidth(), color = Color.Transparent,
+        shape = Radius.Card,
     ) { focused ->
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(

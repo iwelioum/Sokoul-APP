@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.components
 
+import androidx.compose.ui.unit.isSpecified
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.animation.core.LinearEasing
@@ -68,7 +69,6 @@ import com.sokoul.iptv.data.repo.Work
 import com.sokoul.iptv.data.repo.tmdbSized
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.Motion
-import com.sokoul.iptv.ui.theme.SokoulColors
 
 // --- chargement -------------------------------------------------------------------------------
 
@@ -141,8 +141,8 @@ fun <T> CardRow(items: List<T>, key: (T) -> Any, modifier: Modifier = Modifier, 
         contentPadding = PaddingValues(horizontal = l.margin, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(l.gutter),
     ) {
-        items.forEachIndexed { i, t -> item(key(t)) { content(i, t) } }
-        if (trailing != null) item("__see_all") { trailing() }
+        items.forEachIndexed { i, t -> item(key(t)) { Box(Modifier.focusOnTop()) { content(i, t) } } }
+        if (trailing != null) item("__see_all") { Box(Modifier.focusOnTop()) { trailing() } }
     }
 }
 
@@ -205,28 +205,52 @@ fun WorkCard(
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val corner = work.quality?.takeIf { it.contains("4K", true) || it.contains("UHD", true) }?.let { "4K" }
+        ?: if (work.versions > 1) "${work.versions} VERSIONS" else null
+    PosterTile(
+        title = work.title, image = tmdbSized(work.poster, "w342"), onClick = onClick, modifier = modifier, width = width,
+        meta = work.subtitle ?: work.metaLine(), corner = corner, progress = work.progress,
+        platform = work.platform.takeIf { showPlatform }, onFocus = onFocus, onLongClick = onLongClick,
+    )
+}
+
+/**
+ * La seule affiche 2:3 de l'app (rangées, grilles, catalogue, recherche) : image, repli titré,
+ * badges, progression, titre et ligne d'infos. Sur TV, le titre n'apparaît qu'au focus.
+ */
+@Composable
+fun PosterTile(
+    title: String,
+    image: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Dp = LocalLayout.current.poster,
+    meta: String? = null,
+    corner: String? = null,
+    progress: Float? = null,
+    platform: Platform? = null,
+    onFocus: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+) {
     val l = LocalLayout.current
     var focusedState by remember { mutableStateOf(false) }
-    Column(modifier.width(width)) {
+    // focusOnTop : la carte agrandie passe devant ses voisines (rangée comme grille)
+    Column(modifier.focusOnTop().then(if (width.isSpecified) Modifier.width(width) else Modifier.fillMaxWidth())) {
         FocusSurface(
             onClick = onClick, onLongClick = onLongClick, onFocus = onFocus,
             modifier = Modifier.onFocusChanged { focusedState = it.isFocused },
-            shape = Radius.Card, focusScale = 1.08f, borderWidth = 2.dp, color = SokoulColors.SurfaceHigh,
         ) { _ ->
             Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
-                NetImage(tmdbSized(work.poster, "w342"), work.title, Modifier.fillMaxSize()) { PosterFallback(work.title) }
-                if (showPlatform && work.platform != null) PlatformBadge(work.platform, Modifier.align(Alignment.TopStart).padding(6.dp))
-                val corner = work.quality?.takeIf { it.contains("4K", true) || it.contains("UHD", true) }?.let { "4K" }
-                    ?: if (work.versions > 1) "${work.versions} VERSIONS" else null
+                NetImage(image, title, Modifier.fillMaxSize()) { PosterFallback(title) }
+                if (platform != null) PlatformBadge(platform, Modifier.align(Alignment.TopStart).padding(6.dp))
                 if (corner != null) CornerBadge(corner, Modifier.align(Alignment.TopEnd).padding(6.dp))
-                if (work.progress != null && work.progress > 0f) ProgressLine(work.progress, Modifier.align(Alignment.BottomStart))
+                if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomStart))
             }
         }
         val alpha by animateFloatAsState(if (l.isTouch || focusedState) 1f else 0f, tween(Motion.FAST), label = "title")
         Column(Modifier.graphicsLayer { this.alpha = alpha }.padding(top = 7.dp, start = 2.dp, end = 2.dp)) {
-            Text(work.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val meta = work.subtitle ?: work.metaLine()
-            if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!meta.isNullOrEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -251,7 +275,7 @@ fun LandscapeCard(
     onLongClick: (() -> Unit)? = null,
 ) {
     Column(modifier.width(width)) {
-        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card, focusScale = 1.06f, borderWidth = 2.dp) { focused ->
+        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card) { focused ->
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 val img = image ?: tmdbSized(work.backdrop, "w780")
                 if (img != null) NetImage(img, work.title, Modifier.fillMaxSize()) { PosterFallback(work.title) }
@@ -308,7 +332,7 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = M
 @Composable
 fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null) {
     val l = LocalLayout.current
-    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(l.landscape), shape = Radius.Card, focusScale = 1.06f, borderWidth = 2.dp) { _ ->
+    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(l.landscape), shape = Radius.Card) { _ ->
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             NetImage(tmdbSized(saga.backdrop, "w780") ?: tmdbSized(saga.poster, "w342"), saga.name, Modifier.fillMaxSize()) { PosterFallback(saga.name) }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.3f to SokoulColors.black(0.13f), 1f to SokoulColors.black(0.94f))))
@@ -326,7 +350,7 @@ fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null)
 fun PlatformTileView(tile: PlatformTile, onClick: () -> Unit, onFocus: (() -> Unit)? = null) {
     val l = LocalLayout.current
     val w = if (l.isCompact) 132.dp else (l.landscape * 0.72f)
-    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(w), shape = Radius.Card, focusScale = 1.07f, borderWidth = 2.dp) { focused ->
+    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(w), shape = Radius.Card) { focused ->
         val p = tile.platform
         Box(
             Modifier.fillMaxWidth().aspectRatio(16f / 9f)
@@ -349,7 +373,7 @@ fun SeeAllCard(onClick: () -> Unit, landscape: Boolean = false) {
     val l = LocalLayout.current
     FocusSurface(
         onClick = onClick, modifier = Modifier.width(if (landscape) l.landscape * 0.6f else l.poster),
-        shape = Radius.Card, color = SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher, focusScale = 1.08f, borderWidth = 2.dp,
+        shape = Radius.Card, color = SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher, 
     ) { focused ->
         Column(
             Modifier.fillMaxWidth().aspectRatio(if (landscape) 1.2f else 2f / 3f),

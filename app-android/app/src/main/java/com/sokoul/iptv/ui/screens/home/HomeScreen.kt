@@ -31,7 +31,6 @@ import com.sokoul.iptv.ui.nav.PlayerRoute
 import com.sokoul.iptv.ui.screens.browse.BrowseScreen
 import com.sokoul.iptv.ui.screens.browse.HomeBrowseViewModel
 import com.sokoul.iptv.ui.theme.LocalLayout
-import com.sokoul.iptv.ui.theme.SokoulColors
 
 /** Accueil : héros du moment, reprise, chaînes favorites, Top 10, nouveautés, sagas… */
 @Composable
@@ -49,7 +48,7 @@ fun resumeRoute(pid: Long, p: ProgressEntity): Any = when (p.type) {
 fun ChannelCard(c: ChannelEntity, now: ProgramEntity?, onClick: () -> Unit) {
     val w = (LocalLayout.current.landscape * 0.72f)
     Column(Modifier.width(w)) {
-        FocusSurface(onClick = onClick, focusScale = 1.06f, borderWidth = 2.dp) { _ ->
+        FocusSurface(onClick = onClick) { _ ->
             Column {
                 Box(Modifier.fillMaxWidth().height(w * 0.5f).background(SokoulColors.SurfaceHigher), contentAlignment = Alignment.Center) {
                     ChannelLogo(c.logo, c.name, Modifier.size(w * 0.7f, w * 0.36f))

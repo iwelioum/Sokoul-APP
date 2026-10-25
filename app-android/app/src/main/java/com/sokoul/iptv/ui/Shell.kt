@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui
 
+import com.sokoul.iptv.ui.components.SokoulMark
+import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
@@ -153,10 +155,7 @@ private fun TvRail(current: Dest, onSelect: (Dest) -> Unit) {
         ) {
             // monogramme / logo
             Row(Modifier.height(40.dp).padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(32.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, SokoulColors.AccentEnd)), Radius.Card),
-                    contentAlignment = Alignment.Center,
-                ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp) }
+                SokoulMark(size = 32.dp)
                 AnimatedVisibility(open, enter = fadeIn(tween(Motion.MEDIUM)), exit = fadeOut(tween(Motion.FAST))) {
                     Text(
                         "SOKOUL", Modifier.padding(start = 12.dp), color = SokoulColors.TextPrimary,
@@ -168,14 +167,12 @@ private fun TvRail(current: Dest, onSelect: (Dest) -> Unit) {
             Dest.entries.forEach { d ->
                 val selected = d == current
                 if (d == Dest.RECORDINGS) Spacer(Modifier.weight(1f))
-                FocusSurface(
+                FocusSurface(style = FocusStyle.Chip,
                     onClick = { onSelect(d) },
                     modifier = Modifier.fillMaxWidth().height(44.dp).then(if (selected) Modifier.focusRequester(selectedFocus) else Modifier),
                     color = Color.Transparent,
                     focusedColor = Color.White,
                     shape = Radius.Card,
-                    focusScale = 1f,
-                    borderWidth = 0.dp,
                 ) { focused ->
                     Row(Modifier.fillMaxSize().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         val tint = when {
@@ -210,21 +207,15 @@ private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(
-            Modifier.padding(bottom = 10.dp).size(36.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, SokoulColors.AccentEnd)), Radius.Card),
-            contentAlignment = Alignment.Center,
-        ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp) }
+        SokoulMark(Modifier.padding(bottom = 10.dp), size = 36.dp)
         Dest.entries.forEach { d ->
             val selected = d == current
             if (d == Dest.RECORDINGS) Spacer(Modifier.weight(1f))
-            FocusSurface(
+            FocusSurface(style = FocusStyle.Row,
                 onClick = { onSelect(d) },
                 modifier = Modifier.size(76.dp, 58.dp),
                 color = Color.Transparent,
-                focusedColor = SokoulColors.SurfaceHigher,
                 shape = Radius.Card,
-                focusScale = 1f,
-                borderWidth = 0.dp,
             ) { focused ->
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(

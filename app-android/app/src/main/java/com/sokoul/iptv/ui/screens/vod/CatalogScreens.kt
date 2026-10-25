@@ -1,5 +1,8 @@
 package com.sokoul.iptv.ui.screens.vod
 
+import com.sokoul.iptv.ui.components.ScreenHeader
+import com.sokoul.iptv.ui.theme.LocalLayout
+import androidx.compose.ui.unit.Dp
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.background
@@ -63,11 +66,10 @@ import com.sokoul.iptv.ui.components.LoadingBox
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.components.PinDialog
-import com.sokoul.iptv.ui.components.PosterCard
+import com.sokoul.iptv.ui.components.PosterTile
 import com.sokoul.iptv.ui.components.buildCategoryItems
 import com.sokoul.iptv.ui.nav.MovieDetailRoute
 import com.sokoul.iptv.ui.nav.SeriesDetailRoute
-import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.useSideRail
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -208,11 +210,11 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
 
     val grid: @Composable (Modifier) -> Unit = { mod ->
         Column(mod) {
-            Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(categories.firstOrNull { it.id == selected }?.name ?: title, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, maxLines = 1)
-                items?.let { Text("${it.size} titres", Modifier.padding(end = 12.dp), color = SokoulColors.TextMuted) }
-                AppButton(sort.label, { sortMenu = true }, icon = Icons.AutoMirrored.Filled.Sort)
-            }
+            ScreenHeader(
+                categories.firstOrNull { it.id == selected }?.name ?: title,
+                Modifier.padding(horizontal = LocalLayout.current.margin),
+                subtitle = items?.let { "${it.size} titres" },
+            ) { AppButton(sort.label, { sortMenu = true }, icon = Icons.AutoMirrored.Filled.Sort) }
             val list = items
             when {
                 list == null -> LoadingBox()
@@ -238,18 +240,18 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
                     }
                     LazyVerticalGrid(
                         // ~5 affiches par ligne sur TV (comme TiviMate), 3 sur téléphone
-                        columns = GridCells.Adaptive(if (wide) 104.dp else 104.dp),
+                        columns = GridCells.Adaptive(LocalLayout.current.gridCell),
                         state = state,
                         modifier = Modifier.fillMaxSize().focusRestorer(),
-                        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp, top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(start = LocalLayout.current.margin, end = LocalLayout.current.margin, bottom = 32.dp, top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(LocalLayout.current.gutter),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         items(list, key = { it.id }) { item ->
-                            PosterCard(
+                            PosterTile(
                                 item.title, item.poster, { vm.lastOpened = item.id; onOpen(item) },
-                                Modifier.fillMaxWidth().then(if (item.id == vm.lastOpened) Modifier.focusRequester(restore) else Modifier),
-                                badge = item.badge, subtitle = item.subtitle,
+                                Modifier.then(if (item.id == vm.lastOpened) Modifier.focusRequester(restore) else Modifier),
+                                width = Dp.Unspecified, corner = item.badge, meta = item.subtitle,
                             )
                         }
                     }

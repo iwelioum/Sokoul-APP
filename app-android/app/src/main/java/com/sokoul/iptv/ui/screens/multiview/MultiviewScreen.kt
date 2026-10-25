@@ -62,7 +62,6 @@ import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.nav.PlayKind
 import com.sokoul.iptv.ui.nav.PlayerRoute
-import com.sokoul.iptv.ui.theme.SokoulColors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -192,8 +191,8 @@ fun MultiviewScreen(nav: NavHostController) {
                         modifier = Modifier.weight(1f).fillMaxSize().then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier),
                         color = SokoulColors.Surface,
                         shape = Radius.Card,
-                        focusScale = 1f,
-                        borderWidth = 3.dp,
+                        
+                        
                     ) { _ ->
                         SlotView(slot, audio == i)
                     }

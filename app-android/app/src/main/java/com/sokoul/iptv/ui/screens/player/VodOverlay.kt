@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.player
 
+import com.sokoul.iptv.ui.components.onChip
+import com.sokoul.iptv.ui.components.FocusStyle
 import android.view.KeyEvent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
@@ -238,12 +240,12 @@ private fun RoundButton(
     label: String, size: Dp, upFocus: FocusRequester?, modifier: Modifier = Modifier, primary: Boolean = false,
     onClick: () -> Unit, icon: @Composable (Color) -> Unit,
 ) {
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip,
         onClick = onClick,
         modifier = modifier.then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier)
             .size(size).semantics { contentDescription = label },
         shape = CircleShape, color = if (primary) SokoulColors.GlassHeavy else SokoulColors.GlassLight,
-        focusedColor = Color.White, focusScale = 1.12f, borderWidth = 0.dp,
+        focusedColor = Color.White,
     ) { focused ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon(if (focused) SokoulColors.OnLight else Color.White) }
     }
@@ -252,11 +254,11 @@ private fun RoundButton(
 /** Pastille icône + texte (toujours lisible, sans attendre le focus). */
 @Composable
 fun PillButton(a: PlayerAction, modifier: Modifier = Modifier, upFocus: FocusRequester? = null) {
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip,
         onClick = a.onClick,
         modifier = modifier.then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier)
             .semantics { contentDescription = a.label },
-        shape = Radius.Pill, color = SokoulColors.GlassLight, focusedColor = Color.White, focusScale = 1.06f, borderWidth = 0.dp,
+        shape = Radius.Pill, color = SokoulColors.GlassLight, focusedColor = Color.White,
     ) { focused ->
         val fg = if (focused) SokoulColors.OnLight else Color.White
         Row(Modifier.height(44.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -361,10 +363,10 @@ private fun TouchScrubber(position: Long, duration: Long, onSeekTo: (Long) -> Un
 @Composable
 fun PlayerButton(a: PlayerAction, modifier: Modifier = Modifier, compact: Boolean = false) {
     val l = LocalLayout.current
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip,
         onClick = a.onClick, modifier = modifier.semantics { contentDescription = a.label },
         shape = Radius.Pill, color = if (a.primary) SokoulColors.GlassHeavy else SokoulColors.GlassLight,
-        focusedColor = Color.White, focusScale = 1.08f, borderWidth = 0.dp,
+        focusedColor = Color.White,
     ) { focused ->
         val fg = if (focused) SokoulColors.OnLight else Color.White
         Row(
@@ -564,9 +566,9 @@ fun NextUpCard(
 @Composable
 private fun CountdownButton(label: String, fraction: Float?, focus: FocusRequester, onClick: () -> Unit) {
     val fill by animateFloatAsState((fraction ?: 0f).coerceIn(0f, 1f), tween(1_000, easing = LinearEasing), label = "countdown")
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip,
         onClick = onClick, modifier = Modifier.focusRequester(focus).semantics { contentDescription = label },
-        shape = Radius.Pill, color = SokoulColors.GlassHeavy, focusedColor = Color.White, focusScale = 1.06f, borderWidth = 0.dp,
+        shape = Radius.Pill, color = SokoulColors.GlassHeavy, focusedColor = Color.White,
     ) { focused ->
         val fg = if (focused) SokoulColors.OnLight else Color.White
         Row(
@@ -605,12 +607,12 @@ fun EpisodesPanel(
         if (seasons.size > 1) {
             LazyRow(Modifier.padding(top = 12.dp), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(seasons) { n ->
-                    FocusSurface(
-                        onClick = { season = n }, shape = Radius.Pill, focusScale = 1.06f, borderWidth = 2.dp,
-                        color = if (n == season) Color.White else SokoulColors.SurfaceHigh, focusedColor = if (n == season) Color.White else SokoulColors.SurfaceHigher,
+                    FocusSurface(style = FocusStyle.Chip,
+                        onClick = { season = n }, shape = Radius.Pill,
+                        color = if (n == season) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh,
                         onFocus = { season = n },
-                    ) { _ ->
-                        Text("Saison $n", Modifier.padding(horizontal = 14.dp, vertical = 7.dp), color = if (n == season) SokoulColors.OnLight else SokoulColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
+                    ) { focused ->
+                        Text("Saison $n", Modifier.padding(horizontal = 14.dp, vertical = 7.dp), color = onChip(focused), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -620,7 +622,7 @@ fun EpisodesPanel(
                 val isCurrent = current == (e.season to e.episode)
                 val view = EpisodeMerge.merge(e, tmdb[e.season to e.episode], null)
                 val title = view.title
-                FocusSurface(
+                FocusSurface(style = FocusStyle.Row,
                     onClick = { onPick(e) },
                     modifier = Modifier.fillMaxWidth().then(
                         when {
@@ -629,7 +631,7 @@ fun EpisodesPanel(
                             else -> Modifier
                         }
                     ).semantics { contentDescription = "Épisode ${e.episode} : $title" + if (isCurrent) ", en cours" else "" },
-                    color = if (isCurrent) SokoulColors.AccentSoft else Color.Transparent, focusedColor = SokoulColors.SurfaceHigher, focusScale = 1.02f, borderWidth = 2.dp,
+                    color = if (isCurrent) SokoulColors.AccentTint else Color.Transparent,
                 ) { _ ->
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.width(120.dp).aspectRatio(16f / 9f).clip(Radius.Card).background(SokoulColors.SurfaceHigher)) {

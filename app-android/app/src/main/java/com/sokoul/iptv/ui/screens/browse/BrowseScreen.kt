@@ -1,5 +1,9 @@
 package com.sokoul.iptv.ui.screens.browse
 
+import com.sokoul.iptv.ui.components.SokoulMark
+import com.sokoul.iptv.ui.components.SokoulChip
+import com.sokoul.iptv.ui.components.onChip
+import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.animation.AnimatedContent
@@ -425,15 +429,7 @@ private fun RowView(
 
 @Composable
 private fun Chip(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, accent: Boolean = false, onFocus: () -> Unit = {}, onClick: () -> Unit) {
-    FocusSurface(
-        onClick = onClick, onFocus = onFocus, shape = Radius.Pill, focusScale = 1.06f, borderWidth = 2.dp,
-        color = if (accent) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher,
-    ) { _ ->
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) Icon(icon, null, Modifier.padding(end = 8.dp).size(18.dp), tint = SokoulColors.Accent)
-            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-        }
-    }
+    SokoulChip(text, onClick, icon = icon, selected = accent, onFocus = onFocus)
 }
 
 /** Panneau TV : fond de l'œuvre à droite, logo/titre, méta et résumé à gauche. */
@@ -523,10 +519,7 @@ private fun TopBar(title: String, firstIndex: Int, offset: Int, heroPx: Float, k
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // le rail latéral (tablette) porte déjà le logo
-        if (l.isCompact) Box(
-            Modifier.padding(end = 12.dp).size(30.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, SokoulColors.AccentEnd)), Radius.Card),
-            contentAlignment = Alignment.Center,
-        ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp) }
+        if (l.isCompact) SokoulMark(Modifier.padding(end = 12.dp), size = 30.dp)
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1)
         if (kind != BrowseKind.HOME) {
             val type = if (kind == BrowseKind.SERIES) ContentType.SERIES else ContentType.MOVIE

@@ -79,7 +79,6 @@ import com.sokoul.iptv.ui.components.shimmer
 import com.sokoul.iptv.ui.nav.navigateOnce
 import com.sokoul.iptv.ui.screens.vod.Pill
 import com.sokoul.iptv.ui.theme.LocalLayout
-import com.sokoul.iptv.ui.theme.SokoulColors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview

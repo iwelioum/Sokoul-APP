@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.vod
 
+import com.sokoul.iptv.ui.components.onChip
+import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
 import android.content.ActivityNotFoundException
@@ -807,27 +809,27 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>) {
 @Composable
 /** Pastille sélectionnable (saisons, versions, tris). */
 fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    FocusSurface(
-        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Pill, focusScale = 1.06f, borderWidth = 2.dp,
-        color = if (selected) Color.White else SokoulColors.SurfaceHigh, focusedColor = if (selected) Color.White else SokoulColors.SurfaceHigher,
-    ) { _ ->
+    FocusSurface(style = FocusStyle.Chip,
+        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Pill,
+        color = if (selected) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh,
+    ) { focused ->
         Text(
             text, Modifier.padding(horizontal = 18.dp, vertical = 9.dp), style = MaterialTheme.typography.labelLarge,
-            color = if (selected) SokoulColors.OnLight else SokoulColors.TextPrimary, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = onChip(focused), fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         )
     }
 }
 
 @Composable
 private fun VersionChip(label: String, detail: String?, preferred: Boolean, first: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
-    FocusSurface(
-        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Card, focusScale = 1.05f, borderWidth = 2.dp,
-        color = if (first) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher,
-    ) { _ ->
+    FocusSurface(style = FocusStyle.Chip,
+        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Card,
+        color = if (first) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh,
+    ) { focused ->
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (preferred) Icons.Default.Star else Icons.Default.PlayArrow, null, Modifier.size(18.dp), tint = if (preferred) SokoulColors.Gold else SokoulColors.TextSecondary)
+            Icon(if (preferred) Icons.Default.Star else Icons.Default.PlayArrow, null, Modifier.size(18.dp), tint = if (preferred) SokoulColors.Gold else if (focused) SokoulColors.OnLight else SokoulColors.TextSecondary)
             Column(Modifier.padding(start = 8.dp).widthIn(max = 220.dp)) {
-                Text(label + if (first) " · lancée par Lecture" else "", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(label + if (first) " · lancée par Lecture" else "", style = MaterialTheme.typography.titleSmall, color = onChip(focused), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (!detail.isNullOrBlank()) Text(detail, style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -841,9 +843,9 @@ private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boo
     val thumbW = if (l.isCompact) 136.dp else (l.landscape * 0.9f)
     val watched = progress?.finished == true
     Box(Modifier.padding(horizontal = l.margin, vertical = 5.dp)) {
-        FocusSurface(
+        FocusSurface(style = FocusStyle.Row,
             onClick = onClick, onLongClick = onLongClick, modifier = modifier.fillMaxWidth().widthIn(max = 1100.dp),
-            color = if (current) SokoulColors.AccentTint else Color.Transparent, focusedColor = SokoulColors.SurfaceHigh, focusScale = 1.015f, borderWidth = 2.dp, shape = Radius.Card,
+            color = if (current) SokoulColors.AccentTint else Color.Transparent, shape = Radius.Card,
         ) { focused ->
             Column(Modifier.padding(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

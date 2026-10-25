@@ -94,7 +94,6 @@ import com.sokoul.iptv.ui.nav.PlayKind
 import com.sokoul.iptv.ui.nav.PlayerRoute
 import com.sokoul.iptv.ui.screens.live.ChannelActions
 import com.sokoul.iptv.ui.theme.LocalIsTv
-import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.util.dayLabel
 import com.sokoul.iptv.ui.util.formatClock
 import com.sokoul.iptv.ui.util.formatRange

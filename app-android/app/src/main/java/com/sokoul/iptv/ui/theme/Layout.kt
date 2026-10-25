@@ -41,6 +41,8 @@ data class AppLayout(
     val gridCell: Dp,
     /** Espace entre deux rangées. */
     val rowSpacing: Dp,
+    /** Marge haute de sécurité (téléviseurs qui rognent les bords). */
+    val safeTop: Dp = 0.dp,
 ) {
     val isTv get() = window == WindowClass.TV
     val isCompact get() = window == WindowClass.COMPACT
@@ -82,11 +84,13 @@ fun computeLayout(widthDp: Int, heightDp: Int, isTv: Boolean): AppLayout {
         )
         // TV (960×540 dp sur une box 1080p) : 7 affiches par rangée, le héros laisse dépasser la 1re rangée
         WindowClass.TV -> AppLayout(
-            window, widthDp, heightDp, margin = 44.dp, gutter = 14.dp,
-            poster = ((w - 44 - 72 - 6 * 14) / 6.6f).coerceIn(108f, 170f).dp,
-            landscape = ((w - 44 - 72 - 3 * 14) / 3.6f).coerceIn(196f, 320f).dp,
+            window, widthDp, heightDp, margin = 48.dp, gutter = 14.dp,
+            poster = ((w - 48 - 72 - 6 * 14) / 6.6f).coerceIn(108f, 170f).dp,
+            landscape = ((w - 48 - 72 - 3 * 14) / 3.6f).coerceIn(196f, 320f).dp,
             heroHeight = (h * 0.70f).dp,
             heroTitle = 38.sp, heroTextWidth = (w * 0.48f).dp, gridCell = 112.dp, rowSpacing = 18.dp,
+            // zone de sécurité Android TV : 48 dp sur les côtés, 27 dp en haut
+            safeTop = 27.dp,
         )
     }
 }

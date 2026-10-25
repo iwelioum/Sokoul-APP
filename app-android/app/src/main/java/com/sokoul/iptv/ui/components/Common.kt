@@ -72,7 +72,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.SubcomposeAsyncImage
-import com.sokoul.iptv.ui.theme.SokoulColors
 
 @Composable
 fun NetImage(
@@ -120,70 +119,6 @@ fun initials(name: String): String {
     }
 }
 
-@Composable
-fun PosterCard(
-    title: String,
-    image: String?,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    width: Dp = 140.dp,
-    subtitle: String? = null,
-    badge: String? = null,
-    progress: Float? = null,
-    landscape: Boolean = false,
-    onLongClick: (() -> Unit)? = null,
-    onFocus: (() -> Unit)? = null,
-) {
-    Column(modifier.width(width)) {
-        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card) { _ ->
-            Box(Modifier.fillMaxWidth().aspectRatio(if (landscape) 16f / 9f else 2f / 3f)) {
-                NetImage(image, title, Modifier.fillMaxSize()) {
-                    Text(
-                        title, Modifier.padding(10.dp), textAlign = TextAlign.Center, color = SokoulColors.TextSecondary,
-                        style = MaterialTheme.typography.titleSmall, maxLines = 4, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (badge != null) {
-                    Text(
-                        badge, Modifier.align(Alignment.TopEnd).padding(6.dp)
-                            .background(SokoulColors.black(0.8f), Radius.Tiny).padding(horizontal = 6.dp, vertical = 2.dp),
-                        color = Color.White, style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-                if (progress != null && progress > 0f) {
-                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(SokoulColors.black(0.4f))) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(SokoulColors.Accent))
-                    }
-                }
-            }
-        }
-        Text(
-            title, Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), style = MaterialTheme.typography.titleSmall,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, color = SokoulColors.TextPrimary,
-        )
-        if (subtitle != null) {
-            Text(subtitle, Modifier.padding(horizontal = 2.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
-fun <T> ContentRow(
-    title: String,
-    items: List<T>,
-    modifier: Modifier = Modifier,
-    key: ((T) -> Any)? = null,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 24.dp),
-    itemContent: @Composable (Int, T) -> Unit,
-) {
-    if (items.isEmpty()) return
-    Column(modifier.padding(vertical = 8.dp)) {
-        Text(title, Modifier.padding(start = 24.dp, bottom = 10.dp), style = MaterialTheme.typography.titleLarge)
-        LazyRow(contentPadding = contentPadding, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            itemsIndexed(items, key = key?.let { k -> { _: Int, item: T -> k(item) } }) { i, item -> itemContent(i, item) }
-        }
-    }
-}
 
 @Composable
 fun AppButton(
@@ -195,24 +130,22 @@ fun AppButton(
     enabled: Boolean = true,
     focusRequester: FocusRequester? = null,
 ) {
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip,
         onClick = { if (enabled) onClick() },
         modifier = modifier.then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
         shape = Radius.Pill,
         color = if (primary) SokoulColors.Accent else SokoulColors.SurfaceHigher,
-        focusedColor = if (primary) SokoulColors.Accent else SokoulColors.SurfaceHigher,
-        focusScale = 1.05f,
-    ) { _ ->
+    ) { focused ->
         Row(
             Modifier.heightIn(min = 44.dp).padding(horizontal = 20.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
             if (icon != null) {
-                Icon(icon, null, Modifier.size(20.dp), tint = if (enabled) Color.White else SokoulColors.TextMuted)
+                Icon(icon, null, Modifier.size(20.dp), tint = onChip(focused, enabled))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, style = MaterialTheme.typography.labelLarge, color = if (enabled) Color.White else SokoulColors.TextMuted)
+            Text(text, style = MaterialTheme.typography.labelLarge, color = onChip(focused, enabled))
         }
     }
 }
@@ -327,12 +260,10 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
             Spacer(Modifier.height(14.dp))
             LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 itemsIndexed(options) { i, o ->
-                    FocusSurface(
+                    FocusSurface(style = FocusStyle.Row,
                         onClick = { o.onClick(); onDismiss() },
                         modifier = Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(first) else Modifier),
-                        color = if (o.selected) SokoulColors.AccentSoft else Color.Transparent,
-                        focusedColor = SokoulColors.SurfaceHigher,
-                        focusScale = 1.02f,
+                        color = if (o.selected) SokoulColors.AccentTint else Color.Transparent,
                     ) { _ ->
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             if (o.icon != null) {
@@ -405,7 +336,7 @@ fun PinDialog(title: String, onResult: (String) -> Unit, onDismiss: () -> Unit, 
             keys.chunked(3).forEachIndexed { rowIndex, row ->
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEachIndexed { colIndex, k ->
-                        FocusSurface(
+                        FocusSurface(style = FocusStyle.Chip,
                             onClick = {
                                 when (k) {
                                     "⌫" -> pin = pin.dropLast(1)
@@ -418,8 +349,8 @@ fun PinDialog(title: String, onResult: (String) -> Unit, onDismiss: () -> Unit, 
                             },
                             modifier = Modifier.size(64.dp, 52.dp).then(if (rowIndex == 0 && colIndex == 0) Modifier.focusRequester(first) else Modifier),
                             color = SokoulColors.SurfaceHigher,
-                        ) { _ ->
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(k, style = MaterialTheme.typography.titleLarge) }
+                        ) { focused ->
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(k, style = MaterialTheme.typography.titleLarge, color = onChip(focused)) }
                         }
                     }
                 }

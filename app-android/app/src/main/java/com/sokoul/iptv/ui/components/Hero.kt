@@ -69,7 +69,6 @@ import com.sokoul.iptv.data.repo.overviewFr
 import com.sokoul.iptv.data.repo.tmdbSized
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.Motion
-import com.sokoul.iptv.ui.theme.SokoulColors
 import kotlinx.coroutines.launch
 
 /** Durée lisible : 135 → « 2 h 15 ». */
@@ -291,12 +290,12 @@ private fun HeroTitle(title: String, compact: Boolean) {
 @Composable
 fun HeroButton(text: String, icon: ImageVector, primary: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val l = LocalLayout.current
-    FocusSurface(
+    FocusSurface(style = FocusStyle.Chip, 
         onClick = onClick, modifier = modifier, shape = Radius.Card,
         // TV : seul l'élément focalisé est blanc (sinon le bouton principal semble sélectionné à la place du focus)
         color = if (primary && !l.isTv) Color.White else if (primary) SokoulColors.white(0.45f) else SokoulColors.white(0.35f),
         focusedColor = if (primary || l.isTv) Color.White else SokoulColors.white(0.55f),
-        focusScale = 1.08f, borderWidth = if (primary || l.isTv) 0.dp else 2.dp,
+        
     ) { focused ->
         Row(
             Modifier.height(if (l.isCompact) 42.dp else 44.dp).padding(horizontal = if (l.isCompact) 18.dp else 22.dp),

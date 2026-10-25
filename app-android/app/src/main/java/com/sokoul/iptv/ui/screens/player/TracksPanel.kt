@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.player
 
+import com.sokoul.iptv.ui.components.FocusStyle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -88,15 +89,15 @@ private fun TrackColumn(title: String, icon: ImageVector, options: List<TrackOpt
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             itemsIndexed(options) { i, o ->
-                FocusSurface(
+                FocusSurface(style = FocusStyle.Row,
                     onClick = { onPick(o) },
                     modifier = Modifier.fillMaxWidth().then(if (i == selectedIndex) Modifier.focusRequester(entry) else Modifier)
                         .semantics { contentDescription = o.label + if (o.selected) ", sélectionné" else "" },
-                    shape = Radius.Card, color = Color.Transparent, focusedColor = Color.White, focusScale = 1.03f, borderWidth = 0.dp,
+                    shape = Radius.Card, color = Color.Transparent,
                 ) { focused ->
-                    val fg = if (focused) SokoulColors.OnLight else if (o.selected) SokoulColors.TextPrimary else SokoulColors.TextSecondary
+                    val fg = if (focused || o.selected) SokoulColors.TextPrimary else SokoulColors.TextSecondary
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (o.selected) Icon(Icons.Default.Check, null, Modifier.size(20.dp), tint = if (focused) SokoulColors.OnLight else SokoulColors.Accent)
+                        if (o.selected) Icon(Icons.Default.Check, null, Modifier.size(20.dp), tint = SokoulColors.Accent)
                         else Spacer(Modifier.width(20.dp))
                         Text(
                             o.label, Modifier.padding(start = 10.dp), color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis,
