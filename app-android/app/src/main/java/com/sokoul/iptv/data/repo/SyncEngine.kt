@@ -373,7 +373,8 @@ class SyncEngine @Inject constructor(
 
     suspend fun syncEpg(id: Long) = lock(-id - 1).withLock {
         val p = playlists.get(id) ?: return@withLock
-        val sources = epgSources(p)
+        // guide complémentaire xmltv.fr (option des réglages) : rapproché des chaînes par nom, comme les autres sources
+        val sources = (epgSources(p) + if (settings.current().epgXmltvFr) listOf(XMLTVFR_URL) else emptyList()).distinct()
         if (sources.isEmpty()) {
             setStatus(_epgStatus, id, SyncStatus(error = "Aucune source EPG : ajoutez une URL XMLTV dans la playlist", finishedAt = System.currentTimeMillis()))
             return@withLock
@@ -491,6 +492,8 @@ class SyncEngine @Inject constructor(
         setStatus(_playlistStatus, pid, SyncStatus(running = true, step = step, count = count))
 
     companion object {
+        /** Guide TV France (xmltv.fr, gratuit, sans clé), activable dans Réglages. */
+        const val XMLTVFR_URL = "https://xmltvfr.fr/xmltv/xmltv_fr.xml.gz"
         const val UNCATEGORIZED = "__none"
         const val CATCHUP_XTREAM = "xtream"
         private const val BATCH = 1000

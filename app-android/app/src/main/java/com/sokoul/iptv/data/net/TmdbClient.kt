@@ -42,6 +42,11 @@ data class TmdbInfo(
     val collectionName: String? = null,
     val certification: String? = null,
     val seasons: Int? = null,
+    /** Identifiants IMDb (« tt0816692 ») et TheTVDB : ponts vers les autres sources de données. */
+    val imdbId: String? = null,
+    val tvdbId: Int? = null,
+    /** Série en cours de diffusion (TMDB « Returning Series »). */
+    val inProduction: Boolean = false,
 )
 
 /** Résultat de liste TMDB (tendances, recommandations, collection). */
@@ -115,7 +120,7 @@ class TmdbClient @Inject constructor(
         if (apiKey.isBlank()) return null
         return safe {
             val ratings = if (kind == "movie") "release_dates" else "content_ratings"
-            val append = if (full) "credits,videos,images,$ratings" else "images,$ratings"
+            val append = if (full) "credits,videos,images,external_ids,$ratings" else "images,$ratings"
             val o = get(apiKey, "/3/$kind/$id", mapOf("append_to_response" to append, "include_image_language" to "fr,en,null"))
                 ?: return@safe null
             var info = parse(kind, o)
@@ -270,6 +275,9 @@ class TmdbClient @Inject constructor(
             collectionName = collection?.str("name"),
             certification = certification(kind, o),
             seasons = o.int("number_of_seasons"),
+            imdbId = (o.str("imdb_id") ?: (o["external_ids"] as? JsonObject)?.str("imdb_id"))?.takeIf { it.startsWith("tt") },
+            tvdbId = (o["external_ids"] as? JsonObject)?.int("tvdb_id"),
+            inProduction = o["in_production"]?.toString() == "true",
         )
     }
 

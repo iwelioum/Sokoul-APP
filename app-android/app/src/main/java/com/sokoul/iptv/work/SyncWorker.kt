@@ -32,6 +32,7 @@ class SyncWorker @AssistedInject constructor(
     private val sync: SyncEngine,
     private val db: AppDatabase,
     private val settings: SettingsStore,
+    private val channelDb: com.sokoul.iptv.data.net.providers.ChannelDbClient,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -42,8 +43,9 @@ class SyncWorker @AssistedInject constructor(
                 MODE_PLAYLIST -> {
                     sync.syncPlaylist(id)
                     if (inputData.getBoolean(KEY_WITH_EPG, false)) runCatching { sync.syncEpg(id) }
+                    fillLogos(id)
                 }
-                MODE_EPG -> sync.syncEpg(id)
+                MODE_EPG -> { sync.syncEpg(id); fillLogos(id) }
                 else -> periodic()
             }
             Result.success()
@@ -55,6 +57,13 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
+    /** Logos de secours (guide TV, puis iptv-org) pour les chaînes livrées sans logo ; jamais bloquant. */
+    private suspend fun fillLogos(pid: Long) {
+        runCatching { channelDb.fillMissingLogos(pid) }
+            .onSuccess { if (it > 0) Timber.i("%d logos de chaînes ajoutés", it) }
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+    }
+
     private suspend fun periodic() {
         val s = settings.current()
         val now = System.currentTimeMillis()
@@ -63,6 +72,7 @@ class SyncWorker @AssistedInject constructor(
         for (p in db.playlists().getAll()) {
             if (now - p.lastSync > s.playlistRefreshHours * 3600_000L) runCatching { sync.syncPlaylist(p.id) }
             if (now - p.lastEpgSync > s.epgRefreshHours * 3600_000L) runCatching { sync.syncEpg(p.id) }
+            fillLogos(p.id)
         }
     }
 

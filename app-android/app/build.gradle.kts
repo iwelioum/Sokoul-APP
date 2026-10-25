@@ -21,6 +21,16 @@ android {
         versionCode = 2
         versionName = "2.0.0"
         vectorDrawables.useSupportLibrary = true
+
+        // Clés des services de données (TheTVDB, fanart.tv…) : local.properties, jamais versionné.
+        // Absentes → chaîne vide → le service reste simplement inactif. Modifiables ensuite dans Réglages.
+        val localProps = Properties().also { p ->
+            rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { p.load(it) }
+        }
+        listOf("tvdb", "fanart", "motn", "watchmode", "tastedive", "omdb", "opensubtitles", "subdl").forEach { k ->
+            val v = localProps.getProperty("sokoul.key.$k").orEmpty().trim().filter { it.isLetterOrDigit() || it in "._-" }
+            buildConfigField("String", "KEY_${k.uppercase()}", "\"$v\"")
+        }
     }
 
     // Signature release : keystore.properties (non versionné) à la racine d'app-android :

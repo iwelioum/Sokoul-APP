@@ -96,6 +96,26 @@ interface CategoryDao {
 
 @Dao
 interface ChannelDao {
+    /** Chaînes sans logo du fournisseur (id, identifiant EPG, nom normalisé), pour les logos de secours. */
+    @Query("SELECT id, tvgId, nameKey FROM channels WHERE playlistId = :pid AND (logo IS NULL OR logo = '')")
+    suspend fun withoutLogo(pid: Long): List<ChannelLogoRef>
+
+    /** Logo de secours n° 1 : l'icône du guide TV de la même chaîne (déjà téléchargée avec le guide). */
+    @Query(
+        """
+        UPDATE channels SET logo = (
+            SELECT e.icon FROM epg_channels e
+            WHERE e.playlistId = :pid AND e.id = channels.epgKey AND e.icon IS NOT NULL AND e.icon != '' LIMIT 1
+        )
+        WHERE playlistId = :pid AND (logo IS NULL OR logo = '') AND epgKey IS NOT NULL
+          AND EXISTS (SELECT 1 FROM epg_channels e WHERE e.playlistId = :pid AND e.id = channels.epgKey AND e.icon IS NOT NULL AND e.icon != '')
+        """
+    )
+    suspend fun fillLogosFromEpg(pid: Long): Int
+
+    @Query("UPDATE channels SET logo = :logo WHERE playlistId = :pid AND id = :id AND (logo IS NULL OR logo = '')")
+    suspend fun setFallbackLogo(pid: Long, id: String, logo: String)
+
     @Query("SELECT * FROM channels WHERE playlistId = :pid AND categoryId = :cat ORDER BY position")
     fun observeByCategory(pid: Long, cat: String): Flow<List<ChannelEntity>>
 
@@ -679,3 +699,5 @@ interface BrowseDao {
     @Query("DELETE FROM tmdb_match WHERE playlistId = :pid")
     suspend fun deleteMatches(pid: Long)
 }
+/** Chaîne sans logo : de quoi lui trouver un logo de secours. */
+data class ChannelLogoRef(val id: String, val tvgId: String?, val nameKey: String)

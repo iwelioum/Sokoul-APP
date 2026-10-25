@@ -43,6 +43,10 @@ data class AppSettings(
     val vodLanguages: String = DEFAULT_VOD_LANGUAGES,
     /** Format d'image du lecteur (0 = adapter, 1 = rogner, 2 = étirer), mémorisé d'une lecture à l'autre. */
     val resizeMode: Int = 0,
+    /** Clés saisies dans Réglages pour les services de données (id du service → clé) ; vide = clé du build. */
+    val apiKeys: Map<String, String> = emptyMap(),
+    /** Guide TV complémentaire xmltv.fr (France, Belgique, Suisse) : gros fichier, désactivé par défaut. */
+    val epgXmltvFr: Boolean = false,
 ) {
     /** Bornes appliquées à chaque écriture : une valeur aberrante (import, bug d'UI) ne doit pas casser l'app. */
     fun sanitized(): AppSettings = copy(
@@ -53,7 +57,8 @@ data class AppSettings(
         playlistRefreshHours = playlistRefreshHours.coerceIn(1, 168),
         epgRefreshHours = epgRefreshHours.coerceIn(1, 168),
         parentalPin = parentalPin.takeIf { PinHasher.isValidStored(it) } ?: "",
-        tmdbApiKey = tmdbApiKey.trim().take(256).filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' },
+        tmdbApiKey = cleanKey(tmdbApiKey),
+        apiKeys = apiKeys.filterKeys { it.matches(Regex("[a-z0-9]{2,20}")) }.mapValues { cleanKey(it.value) }.filterValues { it.isNotEmpty() },
         lastChannelId = lastChannelId.take(64),
         vodLanguages = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(vodLanguages).joinToString(","),
         resizeMode = resizeMode.coerceIn(0, 2),
@@ -63,6 +68,9 @@ data class AppSettings(
         const val DEFAULT_USER_AGENT = "SokoulTV/2.0 (Linux; Android) ExoPlayer"
         const val MAX_USER_AGENT = 256
         const val DEFAULT_VOD_LANGUAGES = "VF,MULTI,VOSTFR,VO"
+
+        /** Une clé d'API ne contient que lettres, chiffres, « . _ - » (pas d'espace, pas de saut de ligne collé). */
+        fun cleanKey(k: String): String = k.trim().take(256).filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
     }
 }
 
@@ -92,7 +100,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val numbers = booleanPreferencesKey("channel_numbers")
         val group = booleanPreferencesKey("group_duplicates")
         val vodLangs = stringPreferencesKey("vod_languages")
+        val xmltvFr = booleanPreferencesKey("epg_xmltv_fr")
     }
+
+    private val API_KEY_PREFIX = "api_key_"
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
 
@@ -119,6 +130,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         channelNumbers = this[K.numbers] ?: true,
         groupDuplicates = this[K.group] ?: true,
         vodLanguages = this[K.vodLangs] ?: AppSettings.DEFAULT_VOD_LANGUAGES,
+        apiKeys = asMap().entries.mapNotNull { (k, v) ->
+            if (k.name.startsWith(API_KEY_PREFIX) && v is String) k.name.removePrefix(API_KEY_PREFIX) to v else null
+        }.toMap(),
+        epgXmltvFr = this[K.xmltvFr] ?: false,
     )
 
     private inline fun <reified T : Enum<T>> enumOr(v: String?, default: T): T =
@@ -173,6 +188,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.numbers] = s.channelNumbers
             prefs[K.group] = s.groupDuplicates
             prefs[K.vodLangs] = s.vodLanguages
+            prefs[K.xmltvFr] = s.epgXmltvFr
+            // clés des services : une préférence par service ; clé effacée → préférence retirée
+            prefs.asMap().keys.filter { it.name.startsWith(API_KEY_PREFIX) }.forEach { prefs.remove(it) }
+            s.apiKeys.forEach { (id, key) -> prefs[stringPreferencesKey(API_KEY_PREFIX + id)] = key }
         }
     }
 }
