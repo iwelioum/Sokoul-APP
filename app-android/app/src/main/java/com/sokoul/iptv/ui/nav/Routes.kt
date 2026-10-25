@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 @Serializable object GuideRoute
 @Serializable object MoviesRoute
 @Serializable object SeriesRoute
+@Serializable object MyListRoute
 @Serializable object SearchRoute
 @Serializable object RecordingsRoute
 @Serializable object SettingsRoute

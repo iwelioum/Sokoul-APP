@@ -218,13 +218,14 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
             } else if (w.logo != null) {
                 NetImage(
                     tmdbSized(w.logo, "w500"), w.title,
-                    Modifier.heightIn(max = if (compact) 96.dp else (l.heroHeight * 0.26f).coerceAtMost(130.dp)).widthIn(max = if (compact) 260.dp else l.heroTextWidth * 0.8f),
+                    Modifier.heightIn(max = if (compact) 96.dp else (l.heroHeight * 0.26f).coerceAtMost(if (l.isTv) 110.dp else 130.dp)).widthIn(max = if (compact) 260.dp else l.heroTextWidth * 0.8f),
                     ContentScale.Fit, alignment = if (compact) Alignment.BottomCenter else Alignment.BottomStart,
                 ) { HeroTitle(w.title, compact) }
             } else {
                 HeroTitle(w.title, compact)
             }
-            if (!compact && w.tagline != null) {
+            // TV : accroche seulement sans résumé (sinon le texte remonte jusqu'aux onglets)
+            if (!compact && w.tagline != null && !(l.isTv && w.overviewFr != null)) {
                 Text(
                     w.tagline, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.titleMedium, fontStyle = FontStyle.Italic,
                     color = SokoulColors.TextPrimary.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis,

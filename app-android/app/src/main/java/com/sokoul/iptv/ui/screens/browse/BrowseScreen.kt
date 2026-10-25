@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import com.sokoul.iptv.ui.LocalTopBar
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -86,6 +87,9 @@ import com.sokoul.iptv.data.repo.SpecialCategory
 import com.sokoul.iptv.data.repo.Work
 import com.sokoul.iptv.data.repo.overviewFr
 import com.sokoul.iptv.data.repo.tmdbSized
+import com.sokoul.iptv.ui.components.rememberAmbient
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.CardRow
 import com.sokoul.iptv.ui.components.EmptyState
@@ -150,11 +154,22 @@ private data class Spot(
     val platform: Platform? = null,
     val rating: Double? = null,
     val tagline: String? = null,
+    /** Détails affichés une fois le curseur posé (genres, qualité, versions). */
+    val details: String? = null,
 )
 
-private fun Work.toSpot() = Spot(
-    title, logo, metaLine().ifEmpty { null }, overviewFr, backdrop ?: poster, platform, rating, tagline,
-)
+private fun Work.toSpot(): Spot {
+    val meta = metaLine()
+    // détails = seulement ce que la ligne d'infos ne dit pas déjà
+    val extra = (genres.take(3) + listOfNotNull(quality)).filter { !meta.contains(it, ignoreCase = true) }
+    return Spot(
+        title, logo, meta.ifEmpty { null }, overviewFr, backdrop ?: poster, platform, rating, tagline,
+        details = extra.joinToString(" · ").ifEmpty { null },
+    )
+}
+
+/** Délai d'arrêt avant d'afficher les détails du panneau d'aperçu. */
+private const val SPOT_DETAILS_MS = 700L
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -189,6 +204,26 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     // états lus seulement par des composables enfants : un déplacement du focus ne recompose pas tout l'écran
     val spot = remember { mutableStateOf<Spot?>(null) }
     var inRows by remember { mutableStateOf(false) }
+    // TV : onglets du haut (univers Streaming) — effacés dans les rangées, Retour remonte au héros
+    val bar = LocalTopBar.current
+    if (bar != null) {
+        LaunchedEffect(inRows) { bar.deep = inRows }
+        bar.backToTop = {
+            // le héros, hors écran, n'est pas composé : on remonte d'abord, puis focus sur « Lecture »
+            scope.launch {
+                listState.scrollToItem(0)
+                repeat(8) {
+                    androidx.compose.runtime.withFrameNanos { }
+                    if (runCatching { playFocus.requestFocus() }.getOrDefault(false)) return@launch
+                }
+            }
+            true
+        }
+        // focus sur les onglets : la page quitte l'état « rangées » (plus de panneau d'aperçu dessous)
+        LaunchedEffect(bar.tabsFocused) {
+            if (bar.tabsFocused && inRows) { inRows = false; listState.scrollToItem(0) }
+        }
+    }
     var menuFor by remember { mutableStateOf<Work?>(null) }
     // carte d'où l'on est parti (fiche, grille, lecteur) : le focus y revient au retour
     val memory = rememberFocusMemory()
@@ -208,6 +243,8 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
         if (withImage.size >= 3) withImage else ui.hero.filter { it.backdrop != null || it.poster != null }
     }
     val rows = ui.rows.filter { !it.isEmpty }
+    // ▼ depuis les onglets : « Lecture » du héros (s'il est affiché)
+    bar?.down = { if (hero.isNotEmpty() && listState.firstVisibleItemIndex == 0) playFocus else null }
 
     val play: (Work) -> Unit = { w -> scope.launch { nav.navigateOnce(vm.playRoute(w)) } }
     val open: (Work) -> Unit = { w -> nav.openWork(w) }
@@ -330,6 +367,8 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     // TV : focus initial sur « Lecture » une seule fois ; au retour, sur la carte d'où l'on vient
     LaunchedEffect(hero.isNotEmpty(), rows.isNotEmpty()) {
         if (!l.isTv) return@LaunchedEffect
+        // ouverte depuis un onglet : le focus reste sur les onglets
+        if (bar?.arrivedByTab == true) return@LaunchedEffect
         if (memory.last != null) {
             // la rangée peut se recomposer juste après le retour (progression mise à jour) : on insiste,
             // puis on se rabat sur une autre carte de la même rangée plutôt que de laisser le menu latéral
@@ -439,13 +478,24 @@ private fun Chip(text: String, icon: androidx.compose.ui.graphics.vector.ImageVe
  */
 @Composable
 private fun AmbientBackdrop(spot: State<Spot?>, inRows: Boolean, spotHeight: androidx.compose.ui.unit.Dp) {
-    val image = spot.value?.image
+    // image et teinte de l'œuvre publiées ensemble, une fois le curseur posé (pas de fondu de couleur :
+    // chaque image intermédiaire redessinerait le fond plein écran — mesuré : +12 points d'images saccadées)
+    val amb = rememberAmbient(spot.value?.image, { tmdbSized(it, "w780") ?: it }, SokoulColors.Background)
+    val image = amb.value.first
     val ambient = animateFloatAsState(if (inRows && image != null) 1f else 0f, tween(Motion.SLOW), label = "ambient")
     if (ambient.value <= 0f) return
     // une seule image (pas de fondu enchaîné entre deux images plein écran : mesuré, c'était ~5 points
     // d'images saccadées sur la box) ; à 22 % d'opacité derrière les rangées, le changement reste doux
-    Box(Modifier.fillMaxSize().padding(top = spotHeight - 1.dp).graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }) {
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = ambient.value * 0.22f }) {
+    // lueur dans la même texture en cache que l'image : un seul calque plein écran à composer,
+    // recalculé seulement quand l'œuvre (ou sa teinte) change
+    Box(Modifier.fillMaxSize().padding(top = spotHeight - 1.dp).graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen; alpha = ambient.value }) {
+        Box(
+            Modifier.fillMaxSize().drawBehind {
+                val glow = amb.value.second
+                drawRect(Brush.radialGradient(listOf(glow, glow.copy(alpha = 0.35f), Color.Transparent), center = Offset(size.width * 0.25f, size.height * 0.3f), radius = size.width * 0.75f))
+            }
+        )
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.22f }) {
             NetImage(tmdbSized(image, "w780"), null, Modifier.fillMaxSize())
         }
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to SokoulColors.Background, 0.45f to Color.Transparent)))
@@ -489,6 +539,7 @@ private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier
                             if (s.rating != null && s.rating >= com.sokoul.iptv.ui.components.MIN_RATING) RatingChip(s.rating)
                             if (s.meta != null) Text(s.meta, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary, maxLines = 1)
                         }
+                        if (s.details != null) SpotDetails(s.details)
                         val text = s.overview ?: s.tagline
                         if (text != null) {
                             Text(text, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium, color = SokoulColors.TextSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -552,4 +603,16 @@ private fun ExpiryBanner(expiresAt: Long) {
             Modifier.padding(start = 10.dp), color = SokoulColors.Warning, style = MaterialTheme.typography.labelLarge,
         )
     }
+}
+
+/** Ligne de détails : apparaît en fondu une fois le curseur posé, pour ne rien charger en traversant. */
+@Composable
+private fun SpotDetails(text: String) {
+    var shown by remember(text) { mutableStateOf(false) }
+    LaunchedEffect(text) { delay(SPOT_DETAILS_MS); shown = true }
+    val alpha by animateFloatAsState(if (shown) 1f else 0f, tween(Motion.MEDIUM), label = "details")
+    Text(
+        text, Modifier.padding(top = 6.dp).graphicsLayer { this.alpha = alpha },
+        style = com.sokoul.iptv.ui.theme.Type.Meta, color = SokoulColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
 }

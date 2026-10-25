@@ -28,6 +28,8 @@ import com.sokoul.iptv.ui.nav.HomeRoute
 import com.sokoul.iptv.ui.nav.LiveRoute
 import com.sokoul.iptv.ui.nav.MovieDetailRoute
 import com.sokoul.iptv.ui.nav.MoviesRoute
+import com.sokoul.iptv.ui.nav.MyListRoute
+import com.sokoul.iptv.data.repo.GridSpec
 import com.sokoul.iptv.ui.nav.MultiviewRoute
 import com.sokoul.iptv.ui.nav.PlayKind
 import com.sokoul.iptv.ui.nav.PlayerRoute
@@ -104,15 +106,29 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
 
 @Composable
 private fun AppNavHost(nav: NavHostController, start: Any) {
-    NavHost(nav, startDestination = start) {
+    // fondu court : la page suivante répond tout de suite et deux pages lourdes ne se superposent pas longtemps
+    NavHost(
+        nav, startDestination = start,
+        enterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(PAGE_FADE_MS)) },
+        exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(PAGE_FADE_MS)) },
+    ) {
         composable<HomeRoute> { Shell(nav, Dest.HOME, edgeToEdge = true) { HomeScreen(nav) } }
         composable<LiveRoute> { Shell(nav, Dest.LIVE) { LiveScreen(nav) } }
         composable<GuideRoute> { Shell(nav, Dest.GUIDE) { GuideScreen(nav) } }
         composable<MoviesRoute> { Shell(nav, Dest.MOVIES, edgeToEdge = true) { BrowseScreen(nav, hiltViewModel<MoviesBrowseViewModel>(), "Films") } }
         composable<SeriesRoute> { Shell(nav, Dest.SERIES, edgeToEdge = true) { BrowseScreen(nav, hiltViewModel<SeriesBrowseViewModel>(), "Séries") } }
+        composable<MyListRoute> {
+            Shell(nav, Dest.MY_LIST, edgeToEdge = true) {
+                BrowseGridScreen(
+                    nav, "Ma liste", remember { GridSpec.Favorites(null).encode() },
+                    emptyTitle = "Votre liste est vide",
+                    emptyText = "Sur la fiche d'un film ou d'une série, choisissez « Ma liste » pour le retrouver ici.",
+                )
+            }
+        }
         composable<AllCategoriesRoute> {
             val movies = it.toRoute<AllCategoriesRoute>().type == "MOVIE"
-            Shell(nav, if (movies) Dest.MOVIES else Dest.SERIES) { if (movies) MoviesScreen(nav) else SeriesScreen(nav) }
+            Shell(nav, if (movies) Dest.MOVIES else Dest.SERIES, bare = true) { if (movies) MoviesScreen(nav) else SeriesScreen(nav) }
         }
         composable<BrowseGridRoute> { val r = it.toRoute<BrowseGridRoute>(); BrowseGridScreen(nav, r.title, r.spec) }
         composable<SearchRoute> { Shell(nav, Dest.SEARCH) { SearchScreen(nav) } }
@@ -126,3 +142,6 @@ private fun AppNavHost(nav: NavHostController, start: Any) {
         composable<SyncRoute> { SyncScreen(nav, it.toRoute<SyncRoute>().playlistId) }
     }
 }
+
+/** Durée du fondu entre deux pages. */
+private const val PAGE_FADE_MS = 220

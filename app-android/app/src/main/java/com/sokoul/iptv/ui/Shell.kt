@@ -73,6 +73,8 @@ import com.sokoul.iptv.ui.nav.MoviesRoute
 import com.sokoul.iptv.ui.nav.RecordingsRoute
 import com.sokoul.iptv.ui.nav.SearchRoute
 import com.sokoul.iptv.ui.nav.SeriesRoute
+import com.sokoul.iptv.ui.nav.MyListRoute
+import androidx.compose.material.icons.filled.BookmarkBorder
 import com.sokoul.iptv.ui.nav.SettingsRoute
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.Motion
@@ -85,6 +87,7 @@ enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
     HOME("Accueil", Icons.Default.Home, HomeRoute),
     MOVIES("Films", Icons.Default.Movie, MoviesRoute),
     SERIES("Séries", Icons.Default.VideoLibrary, SeriesRoute),
+    MY_LIST("Ma liste", Icons.Default.BookmarkBorder, MyListRoute),
     LIVE("Direct", Icons.Default.LiveTv, LiveRoute),
     GUIDE("Guide TV", Icons.Default.CalendarViewWeek, GuideRoute),
     RECORDINGS("Enregistrements", Icons.Default.FiberManualRecord, RecordingsRoute),
@@ -107,13 +110,20 @@ fun useSideRail(): Boolean = LocalLayout.current.window != WindowClass.COMPACT
 val TvRailCollapsed = 72.dp
 private val TvRailExpanded = 236.dp
 
+/** [bare] : page secondaire d'une rubrique (catégories du fournisseur) — sur TV, ni onglets ni menu. */
 @Composable
-fun Shell(nav: NavHostController, current: Dest, edgeToEdge: Boolean = false, content: @Composable () -> Unit) {
+fun Shell(nav: NavHostController, current: Dest, edgeToEdge: Boolean = false, bare: Boolean = false, content: @Composable () -> Unit) {
     val layout = LocalLayout.current
     when (layout.window) {
-        WindowClass.TV -> Box(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().padding(start = TvRailCollapsed)) { content() }
-            TvRail(current) { nav.goTo(it) }
+        // TV : univers Streaming = onglets en haut ; recherche et réglages = plein écran, Retour ramène
+        WindowClass.TV -> when (current) {
+            in StreamingDests -> if (bare) Box(Modifier.fillMaxSize()) { content() } else StreamingShell(nav, current, content)
+            Dest.SEARCH, Dest.SETTINGS -> Box(Modifier.fillMaxSize()) { content() }
+            // univers TV : le menu reste jusqu'à l'écran TV plein écran (étape 3)
+            else -> Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().padding(start = TvRailCollapsed)) { content() }
+                TvRail(current) { nav.goTo(it) }
+            }
         }
         WindowClass.MEDIUM, WindowClass.EXPANDED -> Row(Modifier.fillMaxSize()) {
             TabletRail(current) { nav.goTo(it) }

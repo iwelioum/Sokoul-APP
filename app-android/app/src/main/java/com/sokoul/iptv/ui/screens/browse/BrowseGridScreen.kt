@@ -22,7 +22,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import com.sokoul.iptv.ui.LocalTopBar
+import com.sokoul.iptv.ui.TopTabsHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -120,10 +121,12 @@ class BrowseGridViewModel @Inject constructor(
 
     fun load(s: String, force: Boolean = false) {
         if (spec == s && !force) return
+        // même grille rechargée (Ma liste au retour) : on garde l'affichage pendant la mise à jour
+        val silent = spec == s && !ui.value.loading && !ui.value.failed
         spec = s
         job?.cancel()
         val sort = ui.value.sort
-        ui.value = GridUi(sort = sort)
+        if (!silent) ui.value = GridUi(sort = sort)
         job = viewModelScope.launch {
             val p = playlists.activeNow() ?: run { ui.value = GridUi(loading = false, sort = sort); return@launch }
             pid = p.id
@@ -157,21 +160,33 @@ class BrowseGridViewModel @Inject constructor(
 
     suspend fun playRoute(w: Work): Any = actions.playRoute(pid, w)
 
-    fun toggleList(w: Work) = viewModelScope.launch { pid?.let { actions.toggleList(it, w) } }
+    fun toggleList(w: Work) = viewModelScope.launch {
+        pid?.let { actions.toggleList(it, w) }
+        if (spec?.startsWith("fav") == true) retry()
+    }
 }
 
 /** Grille « Tout voir » : rangée complète, plateforme, saga, catégorie. */
 @Composable
-fun BrowseGridScreen(nav: NavHostController, title: String, spec: String) {
+fun BrowseGridScreen(
+    nav: NavHostController,
+    title: String,
+    spec: String,
+    emptyTitle: String = "Rien à afficher",
+    emptyText: String = "Aucun titre de cette sélection n'est disponible dans votre abonnement.",
+) {
+    val bar = LocalTopBar.current
     val vm: BrowseGridViewModel = hiltViewModel()
     val ui by vm.ui.collectAsStateWithLifecycle()
     val l = LocalLayout.current
     val scope = rememberCoroutineScope()
     val grid = rememberLazyGridState()
     val memory = rememberFocusMemory()
-    var initialFocusDone by rememberSaveable { mutableStateOf(false) }
+    // ouverte depuis un onglet : le focus reste sur les onglets
+    var initialFocusDone by rememberSaveable { mutableStateOf(bar?.arrivedByTab == true) }
     var menuFor by remember { mutableStateOf<Work?>(null) }
-    LaunchedEffect(spec) { vm.load(spec) }
+    // Ma liste change ailleurs (fiches) : rechargée à chaque retour sur la page
+    LaunchedEffect(spec) { vm.load(spec, force = spec.startsWith("fav")) }
     val header = ui.header
     val works = ui.sorted
     val open: (Work) -> Unit = { w -> nav.openWork(w) }
@@ -186,7 +201,7 @@ fun BrowseGridScreen(nav: NavHostController, title: String, spec: String) {
             horizontalArrangement = Arrangement.spacedBy(l.gutter),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            item("banner", span = { GridItemSpan(maxLineSpan) }) { GridBanner(title, header, ui.works.size, ui.loading, ui.truncated) }
+            item("banner", span = { GridItemSpan(maxLineSpan) }) { GridBanner(title, header, ui.works.size, ui.loading, ui.truncated, underTabs = bar != null) }
             // tri : inutile pour une saga (ordre chronologique) ou une liste trop courte
             val saga = header?.backdrop != null && header.platform == null
             if (!ui.loading && ui.works.size > 8 && !saga) {
@@ -209,7 +224,7 @@ fun BrowseGridScreen(nav: NavHostController, title: String, spec: String) {
                     }
                 }
                 works.isEmpty() -> item("empty", span = { GridItemSpan(maxLineSpan) }) {
-                    EmptyState(Icons.Default.Movie, "Rien à afficher", "Aucun titre de cette sélection n'est disponible dans votre abonnement.", Modifier.height(320.dp))
+                    EmptyState(Icons.Default.Movie, emptyTitle, emptyText, Modifier.height(320.dp))
                 }
                 else -> items(works, key = { it.uid }) { w ->
                     WorkCard(
@@ -241,6 +256,22 @@ fun BrowseGridScreen(nav: NavHostController, title: String, spec: String) {
         )
     }
 
+    // sous les onglets : ils s'effacent dès que la grille défile ; Retour remonte en haut
+    if (bar != null) {
+        LaunchedEffect(grid) {
+            snapshotFlow { grid.firstVisibleItemIndex > 0 || grid.firstVisibleItemScrollOffset > 48 }
+                .distinctUntilChanged().collect { bar.deep = it }
+        }
+        // ▼ depuis les onglets : première carte
+        bar.down = { works.firstOrNull()?.let { memory.requester(it.uid) } }
+        bar.backToTop = {
+            scope.launch {
+                grid.scrollToItem(0)
+                works.firstOrNull()?.let { runCatching { memory.requester(it.uid).requestFocus() } }
+            }
+            true
+        }
+    }
     // enrichissement TMDB des cartes qui défilent (pas seulement des 60 premières)
     LaunchedEffect(grid) {
         snapshotFlow { grid.firstVisibleItemIndex }.distinctUntilChanged().collect { i ->
@@ -267,12 +298,12 @@ fun BrowseGridScreen(nav: NavHostController, title: String, spec: String) {
 }
 
 @Composable
-private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: Boolean, truncated: Boolean) {
+private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: Boolean, truncated: Boolean, underTabs: Boolean = false) {
     val countText = if (truncated) "Les $count premiers titres" else "$count titres"
     val l = LocalLayout.current
     val rich = header?.backdrop != null || header?.platform != null
     if (!rich) {
-        Column(Modifier.statusBarsPadding().padding(top = if (l.isTouch) 56.dp else 28.dp, bottom = 8.dp)) {
+        Column(Modifier.statusBarsPadding().padding(top = when { underTabs -> TopTabsHeight + l.safeTop; l.isTouch -> 56.dp; else -> 28.dp }, bottom = 8.dp)) {
             Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val sub = header?.subtitle ?: if (!loading) countText else null
             if (sub != null) Text(sub, Modifier.padding(top = 4.dp), color = SokoulColors.TextSecondary)

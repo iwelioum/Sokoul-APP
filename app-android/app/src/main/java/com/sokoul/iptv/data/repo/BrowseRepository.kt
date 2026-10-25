@@ -35,7 +35,8 @@ sealed interface GridSpec {
     data class Plat(val type: ContentType?, val platform: Platform) : GridSpec
     data class Themed(val type: ContentType, val theme: Theme) : GridSpec
     data class Saga(val id: Int) : GridSpec
-    data class Favorites(val type: ContentType) : GridSpec
+    /** « Ma liste » : un type, ou films et séries mêlés ([type] null), du plus récent ajout au plus ancien. */
+    data class Favorites(val type: ContentType?) : GridSpec
 
     fun encode(): String = when (this) {
         is Cats -> join("cats", type.name, if (byPosition) "p" else "a", *ids.toTypedArray())
@@ -44,7 +45,7 @@ sealed interface GridSpec {
         is Plat -> join("plat", type?.name ?: "ALL", platform.name)
         is Themed -> join("theme", type.name, theme.name)
         is Saga -> join("saga", id.toString())
-        is Favorites -> join("fav", type.name)
+        is Favorites -> join("fav", type?.name ?: "ALL")
     }
 
     companion object {
@@ -61,7 +62,7 @@ sealed interface GridSpec {
                 "plat" -> Plat(if (p[1] == "ALL") null else type(1), Platform.valueOf(p[2]))
                 "theme" -> Themed(type(1), Theme.valueOf(p[2]))
                 "saga" -> Saga(p[1].toInt())
-                "fav" -> Favorites(type(1))
+                "fav" -> Favorites(if (p[1] == "ALL") null else type(1))
                 else -> null
             }
         }.getOrNull()
@@ -564,9 +565,13 @@ class BrowseRepository @Inject constructor(
                 else GridHeader(col.name, "${col.parts.size} films", col.overview, col.backdrop) to ctx(pid, ContentType.MOVIE).matchItems(col.parts, 50)
             }
             is GridSpec.Favorites -> {
-                val c = ctx(pid, spec.type)
-                val favs = db.library().allFavorites(pid).filter { it.type == spec.type }.sortedByDescending { it.addedAt }.map { it.itemId }
-                null to c.byIds(favs)
+                val types = spec.type?.let { listOf(it) } ?: listOf(ContentType.MOVIE, ContentType.SERIES)
+                val favs = db.library().allFavorites(pid).filter { it.type in types }.sortedByDescending { it.addedAt }
+                val byType = types.associateWith { t -> ctx(pid, t).byIds(favs.filter { it.type == t }.map { it.itemId }) }
+                // ordre d'ajout conservé quand films et séries sont mêlés
+                val rank = favs.withIndex().associate { (i, f) -> (f.type to f.itemId) to i }
+                null to byType.flatMap { (t, ws) -> ws.map { t to it } }
+                    .sortedBy { (t, w) -> rank[t to w.id] ?: Int.MAX_VALUE }.map { it.second }
             }
         }
     }
