@@ -53,7 +53,8 @@ class StreamingClient @Inject constructor(private val api: ApiHttp, private val 
                     color = src.str("themeColorCode")?.removePrefix("#")?.takeIf { it.length == 6 }?.toLongOrNull(16)?.let { 0xFF000000 or it },
                 )
             }
-            return list.groupBy { it.serviceId }.values.map { offers -> offers.minBy { it.type.rank } }.sortedBy { it.type.rank }
+            // même service sous deux identifiants (« HBO Max » direct et en option Prime Video) : une seule ligne
+            return list.groupBy { it.service.lowercase() }.values.map { offers -> offers.minBy { it.type.rank } }.sortedBy { it.type.rank }
         }
     }
 }
