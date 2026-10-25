@@ -597,7 +597,7 @@ class PlayerViewModel @Inject constructor(
 
     private fun trackOptions(type: Int): List<TrackOption> = _tracks.value.groups.filter { it.type == type }.flatMap { g ->
         (0 until g.length).filter { g.isTrackSupported(it) }.map { i -> TrackOption(describe(g.getTrackFormat(i), type), g, i, g.isTrackSelected(i)) }
-    }
+    }.let(::numberDuplicates)
 
     /**
      * Choix de piste : appliqué tout de suite et retenu par **langue**, pour que l'épisode
@@ -619,15 +619,8 @@ class PlayerViewModel @Inject constructor(
         exo.trackSelectionParameters = builder.build()
     }
 
-    private fun describe(f: Format, type: Int): String {
-        val lang = trackLanguageName(f.language)
-        val parts = listOfNotNull(
-            f.label?.takeIf { it.isNotBlank() } ?: lang ?: if (type == C.TRACK_TYPE_AUDIO) "Piste principale" else "Sous-titres",
-            if (type == C.TRACK_TYPE_AUDIO) when (f.channelCount) { 1 -> "mono"; 2 -> "stéréo"; 6 -> "5.1"; 8 -> "7.1"; else -> null } else null,
-            f.sampleMimeType?.substringAfter('/')?.uppercase()?.replace("MP4A-LATM", "AAC"),
-        )
-        return parts.joinToString(" · ")
-    }
+    private fun describe(f: Format, type: Int): String =
+        trackLabel(f.language, f.label, if (type == C.TRACK_TYPE_AUDIO) f.channelCount else 0, if (type == C.TRACK_TYPE_AUDIO) f.sampleMimeType else null, type == C.TRACK_TYPE_AUDIO)
 
     private fun updateVideoInfo() {
         val exo = _player.value?.player ?: return
@@ -690,3 +683,51 @@ internal fun trackLanguageName(code: String?): String? {
 /** « S1 · É3 · Titre », sans répéter « Épisode 3 » quand l'épisode n'a pas de vrai titre. */
 internal fun seLabel(season: Int, episode: Int, title: String): String =
     if (title == "Épisode $episode") "S$season · É$episode" else "S$season · É$episode · $title"
+
+private val TRACK_FLAGS = listOf(
+    Regex("""\b(simplified|simplifié|hans)\b""", RegexOption.IGNORE_CASE) to "simplifié",
+    Regex("""\b(traditional|traditionnel|hant)\b""", RegexOption.IGNORE_CASE) to "traditionnel",
+    Regex("""\b(brazil(ian)?|brésil|pt-br)\b""", RegexOption.IGNORE_CASE) to "Brésil",
+    Regex("""\b(canadian|canada|québec|quebec|fr-ca)\b""", RegexOption.IGNORE_CASE) to "Canada",
+    Regex("""\b(latin( american)?|latam|latino|es-419)\b""", RegexOption.IGNORE_CASE) to "Amérique latine",
+    Regex("""\b(sdh|cc|malentendants?)\b""", RegexOption.IGNORE_CASE) to "SDH",
+    Regex("""\b(forced|forcés?)\b""", RegexOption.IGNORE_CASE) to "forcés",
+    Regex("""\b(commentary|commentaires?)\b""", RegexOption.IGNORE_CASE) to "commentaire",
+    Regex("""\b(audio ?description|ad)\b""", RegexOption.IGNORE_CASE) to "audiodescription",
+)
+
+/**
+ * Libellé lisible d'une piste : « Anglais · SDH », « Français · 5.1 · Dolby Digital+ ».
+ * Le libellé brut du fichier (« GalaxyTV - small excellence! », « X-MEDIA3-CUES ») n'est jamais affiché tel quel :
+ * il sert seulement à repérer SDH / forcés / commentaire, ou de nom quand la langue est inconnue et qu'il est court.
+ */
+internal fun trackLabel(language: String?, label: String?, channels: Int, mime: String?, audio: Boolean): String {
+    val raw = label?.trim().orEmpty()
+    val flags = TRACK_FLAGS.filter { (re, _) -> re.containsMatchIn(raw) }.map { it.second }
+    val name = trackLanguageName(language)
+        ?: raw.takeIf { it.isNotEmpty() && it.length <= 20 && " - " !in it && !it.contains("x-media3", ignoreCase = true) && flags.isEmpty() }
+        ?: if (audio) "Piste principale" else "Sous-titres"
+    val ch = when (channels) { 1 -> "mono"; 2 -> "stéréo"; 6 -> "5.1"; 8 -> "7.1"; else -> null }
+    val codec = when (mime?.lowercase()) {
+        "audio/mp4a-latm", "audio/aac" -> "AAC"
+        "audio/ac3" -> "Dolby Digital"
+        "audio/eac3" -> "Dolby Digital+"
+        "audio/eac3-joc" -> "Dolby Atmos"
+        "audio/vnd.dts", "audio/vnd.dts.hd" -> "DTS"
+        "audio/true-hd" -> "Dolby TrueHD"
+        "audio/opus" -> "Opus"
+        "audio/mpeg" -> "MP3"
+        "audio/flac" -> "FLAC"
+        else -> null
+    }
+    return (listOf(name) + flags + listOfNotNull(ch, codec)).joinToString(" · ")
+}
+
+/** Pistes au libellé identique (« Anglais », « Anglais ») : numérotées pour rester distinguables. */
+internal fun numberDuplicates(options: List<TrackOption>): List<TrackOption> {
+    val counts = options.groupingBy { it.label }.eachCount()
+    val seen = HashMap<String, Int>()
+    return options.map { o ->
+        if ((counts[o.label] ?: 0) < 2) o else o.copy(label = "${o.label} (${seen.merge(o.label, 1, Int::plus)})")
+    }
+}

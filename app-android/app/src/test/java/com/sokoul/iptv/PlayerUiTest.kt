@@ -25,6 +25,7 @@ import com.sokoul.iptv.ui.screens.player.VodControls
 import com.sokoul.iptv.ui.screens.player.clampSeek
 import com.sokoul.iptv.ui.screens.player.seekDeltaLabel
 import com.sokoul.iptv.ui.screens.player.vodPills
+import com.sokoul.iptv.ui.screens.player.trackLabel
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.LocalReducedMotion
 import com.sokoul.iptv.ui.theme.computeLayout
@@ -66,6 +67,21 @@ class PlayerUiTest {
         assertEquals(null, com.sokoul.iptv.ui.screens.player.trackLanguageName("und"))
         assertEquals(null, com.sokoul.iptv.ui.screens.player.trackLanguageName(""))
         assertEquals(null, com.sokoul.iptv.ui.screens.player.trackLanguageName("xyz"))
+    }
+
+    @Test fun `libelle de piste lisible jamais de nom d'encodeur ni de format interne`() {
+        val label = ::trackLabel
+        assertEquals("Piste principale · stéréo · AAC", label("und", "GalaxyTV - small excellence!", 2, "audio/mp4a-latm", true))
+        assertEquals("Français · 5.1 · Dolby Digital+", label("fre", null, 6, "audio/eac3", true))
+        assertEquals("Anglais · SDH", label("en", "English [SDH]", 0, null, false))
+        assertEquals("Français · forcés", label("fr", "Forced", 0, null, false))
+        assertEquals("Sous-titres", label(null, "X-MEDIA3-CUES", 0, null, false))
+        assertEquals("Chinois · traditionnel", label("zh", "Chinese Traditional", 0, null, false))
+        assertEquals("Portugais · Brésil", label("pt", "Portuguese (Brazil)", 0, null, false))
+        val dup = com.sokoul.iptv.ui.screens.player.numberDuplicates(
+            listOf(TrackOption("Anglais", null, 0, false), TrackOption("Arabe", null, 1, false), TrackOption("Anglais", null, 2, false)),
+        ).map { it.label }
+        assertEquals(listOf("Anglais (1)", "Arabe", "Anglais (2)"), dup)
     }
 
     @Test fun `libelle episode sans repetition`() {
