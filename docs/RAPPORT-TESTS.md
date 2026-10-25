@@ -333,3 +333,63 @@ Causes trouvées et corrigées :
 - Quand TMDB n'a pas de titre français pour un épisode, il s'appelle « Épisode N ». Les titres TVDB arriveront avec la phase 8.
 - Le résumé affiché sur l'écran de pause vient du fournisseur (souvent en anglais) quand TMDB n'en a pas en français.
 - Un film (version AR, puis VF en secours) a renvoyé « Format de flux non reconnu » pendant une séquence de touches involontaire. Le fournisseur semble avoir renvoyé autre chose qu'une vidéo. Ce cas n'a pas été reproduit volontairement, pour respecter la limite d'une connexion.
+
+## 10. Phase 8 — Sources de données externes (25/10/2026)
+
+**Principe : rien ne casse.**
+- TMDB reste la source principale. Chaque nouveau service est un complément facultatif :
+  - sans clé, il ne fait aucun appel ;
+  - en cas d'erreur, il ne renvoie rien et la fiche garde son affichage habituel.
+- Pas de nouvelle table ni de migration : le cache réutilise la table `tmdb_cache`, avec un préfixe par service et **sans la clé** dans la clé de cache.
+- Disjoncteur par service :
+  - 401/403 coupent le service 24 h, et 429 le coupent 1 h, sans rafale de requêtes ;
+  - 2 requêtes au plus en même temps par service.
+- Les clés sont dans `local.properties` (ignoré par git) et peuvent être remplacées dans Réglages. Elles ne sont jamais écrites dans le dépôt ni dans les journaux : `redact()` est étendu, et le logcat de la box a été vérifié (0 clé sur 2 109 lignes).
+
+### État des services (vérifié sur la box, Réglages › Sources de données › Tester)
+| Service | État | Ce que ça apporte dans l'app |
+|---|---|---|
+| TheTVDB v4 | ✅ OK (62 épisodes de Breaking Bad) | Titres, résumés et vignettes d'épisodes en français quand TMDB n'en a pas (ordre : TMDB → TVDB → fournisseur → fond de la série) |
+| fanart.tv | ✅ OK (logo et fond) | Logo HD et fond de secours sur la fiche |
+| TVmaze (sans clé) | ✅ OK | « Prochain épisode : S1 · É5 le mardi 27 octobre » (VisionQuest) |
+| Movie of the Night | ✅ OK | « Aussi sur ● Prime Video » (Masterplan), « Aussi sur ● Disney+ » (Bleach, VisionQuest) |
+| TasteDive | ✅ OK (5 titres similaires) | Complète « Vous aimerez aussi » quand TMDB donne moins de 6 titres disponibles |
+| xmltv.fr (sans clé) | ✅ OK (guide de 8 Mo) | Guide TV FR/BE/CH en complément, à activer dans Réglages |
+| iptv-org (sans clé) | Prêt | Logos de chaînes manquants (icône du guide d'abord), après chaque synchronisation |
+| OMDb | ⚠️ Clé manquante | Notes IMDb / RT / MC à côté de ★ (code prêt, inactif) |
+| OpenSubtitles | ⚠️ Clé manquante | Sous-titres en ligne dans le panneau Audio et sous-titres (code prêt, inactif) |
+| Subdl | ⚠️ Clé manquante | Repli d'OpenSubtitles (code prêt, inactif) |
+| Watchmode | Non utilisé | L'offre gratuite n'inclut pas la France |
+| ThePosterDB, Mediux, Addic7ed | Abandonnés | Pas d'API publique (404, jeton de compte privé, ou scraping fragile) |
+
+### Pour activer les 3 services restants (inscription gratuite, à faire vous-même)
+1. **OMDb** : https://www.omdbapi.com/apikey.aspx → choisir « FREE » (1 000 appels par jour) → valider le lien reçu par e-mail.
+2. **OpenSubtitles** : créer un compte sur https://www.opensubtitles.com, puis https://www.opensubtitles.com/consumers → « New consumer » → copier l'« API key ».
+3. **Subdl** : créer un compte sur https://subdl.com, puis https://subdl.com/panel/api → copier la clé.
+
+Ensuite, deux façons de donner la clé :
+- dans l'app : Réglages › Sources de données › le service › « Saisir une clé… », puis « Tester » ;
+- dans `app-android/local.properties` : `sokoul.key.omdb=…`, `sokoul.key.opensubtitles=…`, `sokoul.key.subdl=…`, puis reconstruire l'APK.
+
+### Sous-titres en ligne (lecteur)
+- La recherche part à l'ouverture du panneau Audio et sous-titres, une fois par œuvre ou épisode.
+- Le fichier est téléchargé **seulement quand on le choisit**, pour respecter les quotas.
+- Le texte s'affiche par-dessus la vidéo, sans relancer le flux. C'est important avec la limite d'une connexion du fournisseur.
+- Choisir une piste du flux ou « Désactivés » retire le sous-titre en ligne. L'épisode suivant repart de zéro.
+
+### Tests
+- `ProvidersTest` (16 tests) :
+  - formats réels des services ;
+  - cache sans clé ;
+  - disjoncteur 401 et 429 ;
+  - 404 mémorisé ;
+  - aucun appel sans clé ;
+  - masquage des clés dans les journaux.
+- `ExtrasTest` (6 tests) :
+  - une source en panne ne bloque pas les autres ;
+  - prochain épisode uniquement pour une série en cours ;
+  - ordre des replis d'épisodes ;
+  - libellés (notes, services, dates) ;
+  - le bouton « Tester » ignore le cache (une clé refusée n'est pas masquée) et ne fait aucun appel sans clé.
+- `ApiLiveCheck` : vrais appels avec les clés lues dans l'environnement (`SOKOUL_LIVE_API=1`). Ce test est ignoré sinon.
+- Suite complète : 158 tests app et 18 tests parser verts, `lintRelease` OK.

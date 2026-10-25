@@ -407,7 +407,8 @@ private fun AvailabilityLine(services: List<Pair<String, Long?>>, modifier: Modi
                 Modifier.background(SokoulColors.GlassLight.copy(alpha = 0.12f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(8.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, CircleShape))
+                // contour clair : une couleur de marque sombre (Disney+) reste visible sur le fond
+                Box(Modifier.size(9.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, CircleShape).border(1.dp, Color.White.copy(alpha = 0.55f), CircleShape))
                 Text(name, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextPrimary, maxLines = 1)
             }
         }

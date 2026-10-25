@@ -402,7 +402,7 @@ fun SettingsScreen(nav: NavHostController) {
             ) { sourceMenu = svc }
         }
         item {
-            SettingRow("Guide TV xmltv.fr", if (s.epgXmltvFr) "Activé" else "Désactivé", "Chaînes françaises, belges et suisses en complément du guide du fournisseur (fichier de 16 Mo, à chaque mise à jour du guide)") {
+            SettingRow("Guide TV xmltv.fr", if (s.epgXmltvFr) "Activé" else "Désactivé", "Chaînes françaises, belges et suisses en complément du guide du fournisseur (fichier d'environ 8 Mo téléchargé à chaque mise à jour du guide)") {
                 vm.update { it.copy(epgXmltvFr = !it.epgXmltvFr) }
             }
         }
