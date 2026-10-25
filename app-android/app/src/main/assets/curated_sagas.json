@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "verified": "2026-10-25, identifiants relevés sur themoviedb.org (titre et année)",
+  "sagas": [
+    {
+      "key": "star-wars",
+      "name": "Star Wars",
+      "collectionIds": [10],
+      "extraMovieIds": [330459, 348350],
+      "chronologicalOrderIds": [1893, 1894, 1895, 348350, 330459, 11, 1891, 1892, 140607, 181808, 181812],
+      "relatedSeriesTmdbIds": [4194, 83867, 82856, 114461]
+    },
+    {
+      "key": "wizarding-world",
+      "name": "Le monde des sorciers",
+      "collectionIds": [1241, 435259],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [259316, 338952, 338953, 671, 672, 673, 674, 675, 767, 12444, 12445],
+      "relatedSeriesTmdbIds": []
+    },
+    {
+      "key": "middle-earth",
+      "name": "La Terre du Milieu",
+      "collectionIds": [119, 121938],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [49051, 57158, 122917, 120, 121, 122],
+      "relatedSeriesTmdbIds": [84773]
+    },
+    {
+      "key": "fast-furious",
+      "name": "Fast & Furious",
+      "collectionIds": [9485],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [9799, 584, 13804, 51497, 82992, 9615, 168259, 337339, 384018, 385128, 385687],
+      "relatedSeriesTmdbIds": []
+    },
+    {
+      "key": "alien",
+      "name": "Alien",
+      "collectionIds": [8091, 135416],
+      "extraMovieIds": [945961],
+      "chronologicalOrderIds": [70981, 126889, 348, 945961, 679, 8077, 8078],
+      "relatedSeriesTmdbIds": [157239]
+    },
+    {
+      "key": "hunger-games",
+      "name": "Hunger Games",
+      "collectionIds": [131635],
+      "extraMovieIds": [695721],
+      "chronologicalOrderIds": [695721, 70160, 101299, 131631, 131634],
+      "relatedSeriesTmdbIds": []
+    },
+    {
+      "key": "jurassic",
+      "name": "Jurassic Park",
+      "collectionIds": [328],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [],
+      "relatedSeriesTmdbIds": [93741]
+    },
+    {
+      "key": "dune",
+      "name": "Dune",
+      "collectionIds": [726871],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [],
+      "relatedSeriesTmdbIds": [90228]
+    }
+  ]
+}

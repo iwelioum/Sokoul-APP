@@ -45,13 +45,26 @@ data class Work(
     val progress: Float? = null,
     val resume: ProgressEntity? = null,
     val subtitle: String? = null,
+    /** Faux : œuvre connue de TMDB mais absente du catalogue (saga, Ma liste) : affichée grisée, non lisible. */
+    val available: Boolean = true,
 ) {
     /** Clé unique dans une liste mélangeant films et séries. */
     val uid get() = "${type.name}|$key"
 }
 
+/** Carte « hors catalogue » d'une œuvre TMDB (clé et identifiant « tmdb:N »). */
+fun com.sokoul.iptv.data.net.TmdbItem.offCatalog(type: ContentType) = Work(
+    type, "tmdb:$id", "tmdb:$id", title, year, poster, backdrop, providerTitle = title, overview = overview, rating = rating,
+    tmdbId = id, available = false,
+)
+
+/** Résumé de liste d'une fiche complète. */
+fun TmdbInfo.toItem() = com.sokoul.iptv.data.net.TmdbItem(
+    id, title, originalTitle, year, poster, backdrop, rating, overview, genreIds, originalLanguage, voteCount,
+)
+
 @Immutable
-data class SagaCard(val id: Int, val name: String, val backdrop: String?, val poster: String?, val count: Int)
+data class SagaCard(val id: Int, val name: String, val backdrop: String?, val poster: String?, val count: Int, val curated: Boolean = false)
 
 @Immutable
 data class PlatformTile(val platform: Platform, val type: ContentType?, val titles: Int)
@@ -199,3 +212,8 @@ fun looksFrench(text: String?): Boolean {
 
 /** Résumé affichable sur les écrans de navigation : seulement en français. */
 val Work.overviewFr: String? get() = overview?.takeIf { looksFrench(it) }
+/** Résumé de liste d'une fiche enregistrée. */
+fun TmdbMetaEntity.toItem() = com.sokoul.iptv.data.net.TmdbItem(
+    tmdbId, title, originalTitle, year, poster, backdrop, rating, overview,
+    genreIds?.split(',')?.mapNotNull { it.toIntOrNull() }.orEmpty(), originalLanguage, voteCount,
+)

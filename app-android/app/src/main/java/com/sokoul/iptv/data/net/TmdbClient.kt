@@ -20,6 +20,10 @@ import javax.inject.Singleton
 
 data class TmdbPerson(val name: String, val role: String?, val photo: String?)
 
+/** Personne d'un générique : [role] = personnage (distribution) ou poste (« Director »…), [order] = rang au générique. */
+data class TmdbCredit(val id: Int, val name: String, val role: String?, val photo: String?, val order: Int)
+data class TmdbCredits(val movieId: Int, val cast: List<TmdbCredit>, val crew: List<TmdbCredit>)
+
 data class TmdbInfo(
     val id: Int,
     val title: String,
@@ -194,6 +198,25 @@ class TmdbClient @Inject constructor(
                 )
             }
         } ?: emptyList()
+    }
+
+    /** Générique complet d'un film (sagas : visages récurrents, réalisation, musique, production). Cache 7 jours. */
+    suspend fun credits(apiKey: String, movieId: Int): TmdbCredits? {
+        if (apiKey.isBlank()) return null
+        return safe {
+            val o = get(apiKey, "/3/movie/$movieId/credits", emptyMap()) ?: return@safe null
+            val cast = (o["cast"] as? JsonArray).orEmpty().mapNotNull { e ->
+                val c = e as? JsonObject ?: return@mapNotNull null
+                TmdbCredit(c.int("id") ?: return@mapNotNull null, c.str("name") ?: return@mapNotNull null, c.str("character"),
+                    c.str("profile_path")?.let { "$IMG/w185$it" }, c.int("order") ?: 99)
+            }
+            val crew = (o["crew"] as? JsonArray).orEmpty().mapNotNull { e ->
+                val c = e as? JsonObject ?: return@mapNotNull null
+                TmdbCredit(c.int("id") ?: return@mapNotNull null, c.str("name") ?: return@mapNotNull null, c.str("job"),
+                    c.str("profile_path")?.let { "$IMG/w185$it" }, 99)
+            }
+            TmdbCredits(movieId, cast, crew)
+        }
     }
 
     /** Œuvre portant exactement ce titre (français ou original), la plus populaire : sert à rapprocher un nom (TasteDive). */

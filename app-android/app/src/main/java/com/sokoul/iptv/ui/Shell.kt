@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewWeek
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LiveTv
@@ -75,6 +76,7 @@ import com.sokoul.iptv.ui.nav.SearchRoute
 import com.sokoul.iptv.ui.nav.navigateOnce
 import com.sokoul.iptv.ui.nav.SeriesRoute
 import com.sokoul.iptv.ui.nav.MyListRoute
+import com.sokoul.iptv.ui.nav.SagasRoute
 import androidx.compose.material.icons.filled.BookmarkBorder
 import com.sokoul.iptv.ui.nav.SettingsRoute
 import com.sokoul.iptv.ui.theme.LocalLayout
@@ -89,6 +91,7 @@ enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
     MOVIES("Films", Icons.Default.Movie, MoviesRoute),
     SERIES("Séries", Icons.Default.VideoLibrary, SeriesRoute),
     MY_LIST("Ma liste", Icons.Default.BookmarkBorder, MyListRoute),
+    SAGAS("Sagas", Icons.Default.CollectionsBookmark, SagasRoute),
     LIVE("Direct", Icons.Default.LiveTv, LiveRoute),
     GUIDE("Guide TV", Icons.Default.CalendarViewWeek, GuideRoute),
     RECORDINGS("Enregistrements", Icons.Default.FiberManualRecord, RecordingsRoute),
@@ -98,7 +101,7 @@ enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
 /** Page d'origine de la recherche, pour son périmètre de départ. */
 fun Dest.searchOrigin(): String = when (this) {
     Dest.HOME, Dest.MY_LIST -> com.sokoul.iptv.data.repo.SearchOrigin.HOME
-    Dest.MOVIES -> com.sokoul.iptv.data.repo.SearchOrigin.MOVIES
+    Dest.MOVIES, Dest.SAGAS -> com.sokoul.iptv.data.repo.SearchOrigin.MOVIES
     Dest.SERIES -> com.sokoul.iptv.data.repo.SearchOrigin.SERIES
     Dest.LIVE, Dest.GUIDE, Dest.RECORDINGS -> com.sokoul.iptv.data.repo.SearchOrigin.TV
     else -> com.sokoul.iptv.data.repo.SearchOrigin.ALL
@@ -203,7 +206,7 @@ private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolea
     if (more) {
         OptionsDialog(
             "Plus",
-            listOf(Dest.SEARCH, Dest.GUIDE, Dest.RECORDINGS, Dest.SETTINGS).map { d -> MenuOption(d.label, d.icon, d == current) { nav.goTo(d) } },
+            listOf(Dest.SEARCH, Dest.SAGAS, Dest.GUIDE, Dest.RECORDINGS, Dest.SETTINGS).map { d -> MenuOption(d.label, d.icon, d == current) { nav.goTo(d) } },
             onDismiss = { more = false },
         )
     }

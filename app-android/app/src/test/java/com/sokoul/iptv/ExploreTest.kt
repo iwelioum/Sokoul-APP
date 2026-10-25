@@ -152,7 +152,7 @@ class ExploreTest {
         catalog(movie("1", "Batman Begins", groupKey = "t:batman begins|2005") to meta(7, "Batman Begins", listOf(TmdbGenres.ACTION)))
         db.movies().upsert(listOf(movie("2", "Batman Begins", groupKey = "tmdb:7"), movie("3", "Batman Begins 4K", groupKey = "tmdb:7")))
         val (ix, enrich) = indexer()
-        val repo = com.sokoul.iptv.data.repo.BrowseRepository(db, VodRepository(db, settings, gate), enrich, TmdbClient(fakeTmdb(), HttpModule.json(), db.tmdb()), gate, settings)
+        val repo = com.sokoul.iptv.data.repo.BrowseRepository(db, VodRepository(db, settings, gate), enrich, TmdbClient(fakeTmdb(), HttpModule.json(), db.tmdb()), gate, settings, com.sokoul.iptv.data.repo.CuratedSagaStore(context))
         val works = repo.explore(pid, ContentType.MOVIE, ExploreFilter(genre = TmdbGenres.ACTION))
         assertEquals(1, works.size)
         assertEquals("tmdb:7", works.single().key)

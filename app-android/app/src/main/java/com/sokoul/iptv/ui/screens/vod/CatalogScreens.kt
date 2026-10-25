@@ -213,7 +213,7 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
             ScreenHeader(
                 categories.firstOrNull { it.id == selected }?.name ?: title,
                 Modifier.padding(horizontal = LocalLayout.current.margin),
-                subtitle = items?.let { "${it.size} titres" },
+                subtitle = items?.let { if (it.size <= 1) "${it.size} titre" else "${it.size} titres" },
             ) { AppButton(sort.label, { sortMenu = true }, icon = Icons.AutoMirrored.Filled.Sort) }
             val list = items
             when {

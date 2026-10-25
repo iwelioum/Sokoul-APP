@@ -35,7 +35,7 @@ import javax.inject.Singleton
         TmdbMetaEntity::class,
         TmdbMatchEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -151,5 +151,16 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    /**
+     * v6 : index sur le nom normalisé des films et séries : retrouver un titre publié sans année (sagas, Ma liste)
+     * sans parcourir tout le catalogue.
+     */
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_movies_playlistId_searchName` ON `movies` (`playlistId`, `searchName`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_series_playlistId_searchName` ON `series` (`playlistId`, `searchName`)")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 }

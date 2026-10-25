@@ -99,4 +99,15 @@ class MigrationTest {
         assertEquals(null, str("SELECT genreIds FROM tmdb_meta"))
         db.close()
     }
+
+    @Test fun `migration 5 vers 6 indexe le nom des films et series`() {
+        val name = dbName + "6"
+        helper.createDatabase(name, 5).close()
+        val db = helper.runMigrationsAndValidate(name, 6, true, *Migrations.ALL)
+        val plan = db.query("EXPLAIN QUERY PLAN SELECT id FROM movies WHERE playlistId = 1 AND searchName IN ('dune')").use { c ->
+            buildString { while (c.moveToNext()) append(c.getString(c.columnCount - 1)) }
+        }
+        assertTrue(plan, plan.contains("index_movies_playlistId_searchName"))
+        db.close()
+    }
 }

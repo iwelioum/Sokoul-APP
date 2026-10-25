@@ -72,7 +72,7 @@ val TopTabsHeight = 76.dp
 const val TAB_SETTLE_MS = 320L
 
 /** Pages de l'univers Streaming (TV) : elles ont les onglets en haut. */
-val StreamingDests = listOf(Dest.HOME, Dest.MOVIES, Dest.SERIES, Dest.MY_LIST)
+val StreamingDests = listOf(Dest.HOME, Dest.MOVIES, Dest.SERIES, Dest.MY_LIST, Dest.SAGAS)
 
 /**
  * Lien entre les onglets (Shell) et la page affichée :

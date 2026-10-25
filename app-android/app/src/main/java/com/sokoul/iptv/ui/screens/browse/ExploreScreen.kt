@@ -172,7 +172,7 @@ fun ExploreScreen(nav: NavHostController, typeName: String) {
                             ui.loading -> "Recherche…"
                             cov != null && !cov.complete ->
                                 "${ui.works.size} titres · Analyse du catalogue en cours (${cov.percent} %) · certains titres n'apparaissent pas encore"
-                            else -> "${ui.works.size} titres"
+                            else -> if (ui.works.size <= 1) "${ui.works.size} titre" else "${ui.works.size} titres"
                         },
                     )
                     // filtres : une pastille par critère, la valeur choisie s'y affiche

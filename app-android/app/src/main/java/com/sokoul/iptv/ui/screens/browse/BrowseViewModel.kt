@@ -128,8 +128,8 @@ abstract class BrowseViewModel(
                     enrich.request(p.id, priority(base))
                     var lastSagas = System.currentTimeMillis()
                     // nouvelles métadonnées TMDB → cartes redécorées (fonds, logos, titres français)
-                    enrich.updates.drop(1).debounce(900).collect {
-                        if (kind != BrowseKind.SERIES && System.currentTimeMillis() - lastSagas > 45_000) {
+                    enrich.updates.drop(1).debounce(4_000).collect {
+                        if (kind != BrowseKind.SERIES && System.currentTimeMillis() - lastSagas > 300_000) {
                             lastSagas = System.currentTimeMillis()
                             val sagas = runCatching { repo.sagas(p.id) }.getOrDefault(emptyList())
                             if (sagas.isNotEmpty()) base = base.copy(rows = base.rows.map { if (it.style == RowStyle.SAGAS) it.copy(sagas = sagas) else it })
@@ -163,7 +163,7 @@ abstract class BrowseViewModel(
 
         val favMovies: Flow<List<Work>> = if (ContentType.MOVIE in types) vod.movieCards(pid, catalog.favoriteMovies(pid)).map { l -> l.map { it.item.toWork(it.versions) } } else flowOf(emptyList())
         val favSeries: Flow<List<Work>> = if (ContentType.SERIES in types) vod.seriesCards(pid, catalog.favoriteSeries(pid)).map { l -> l.map { it.item.toWork(it.versions) } } else flowOf(emptyList())
-        val myList: Flow<BrowseRow?> = combine(favMovies, favSeries, enrich.updates.debounce(900).onStart { emit(0) }) { m, s, _ -> m + s }
+        val myList: Flow<BrowseRow?> = combine(favMovies, favSeries, enrich.updates.debounce(4_000).onStart { emit(0) }) { m, s, _ -> m + s }
             .mapLatest { works ->
                 if (works.isEmpty()) return@mapLatest null
                 enrich.request(pid, works)

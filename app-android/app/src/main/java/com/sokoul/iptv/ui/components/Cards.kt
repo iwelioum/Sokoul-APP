@@ -48,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -205,12 +207,13 @@ fun WorkCard(
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val corner = work.quality?.takeIf { it.contains("4K", true) || it.contains("UHD", true) }?.let { "4K" }
+    val corner = if (!work.available) "HORS CATALOGUE" else work.quality?.takeIf { it.contains("4K", true) || it.contains("UHD", true) }?.let { "4K" }
         ?: if (work.versions > 1) "${work.versions} VERSIONS" else null
     PosterTile(
         title = work.title, image = tmdbSized(work.poster, "w342"), onClick = onClick, modifier = modifier, width = width,
         meta = work.subtitle ?: work.metaLine(), corner = corner, progress = work.progress,
         platform = work.platform.takeIf { showPlatform }, onFocus = onFocus, onLongClick = onLongClick,
+        dimmed = !work.available,
     )
 }
 
@@ -231,6 +234,8 @@ fun PosterTile(
     platform: Platform? = null,
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    /** Œuvre hors catalogue : image en niveaux de gris, atténuée. */
+    dimmed: Boolean = false,
 ) {
     val l = LocalLayout.current
     var focusedState by remember { mutableStateOf(false) }
@@ -241,7 +246,7 @@ fun PosterTile(
             modifier = Modifier.onFocusChanged { focusedState = it.isFocused },
         ) { _ ->
             Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
-                NetImage(image, title, Modifier.fillMaxSize()) { PosterFallback(title) }
+                NetImage(image, title, if (dimmed) Modifier.fillMaxSize().offCatalogLook() else Modifier.fillMaxSize()) { PosterFallback(title) }
                 if (platform != null) PlatformBadge(platform, Modifier.align(Alignment.TopStart).padding(6.dp))
                 if (corner != null) CornerBadge(corner, Modifier.align(Alignment.TopEnd).padding(6.dp))
                 if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomStart))
@@ -330,16 +335,15 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = M
 
 /** Saga : fond de la collection, nom et nombre de films disponibles. */
 @Composable
-fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null) {
-    val l = LocalLayout.current
-    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(l.landscape), shape = Radius.Card) { _ ->
+fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null, modifier: Modifier = Modifier, width: Dp = LocalLayout.current.landscape) {
+    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = if (width.isSpecified) modifier.width(width) else modifier.fillMaxWidth(), shape = Radius.Card) { _ ->
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             NetImage(tmdbSized(saga.backdrop, "w780") ?: tmdbSized(saga.poster, "w342"), saga.name, Modifier.fillMaxSize()) { PosterFallback(saga.name) }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.3f to SokoulColors.black(0.13f), 1f to SokoulColors.black(0.94f))))
             Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
                 Text("SAGA", color = SokoulColors.Gold, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
                 Text(saga.name.replace(" - Saga", "").replace(" (Collection)", ""), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${saga.count} films disponibles", style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary)
+                Text(if (saga.count > 1) "${saga.count} films au catalogue" else "1 film au catalogue", style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary)
             }
         }
     }
@@ -397,5 +401,19 @@ fun RatingChip(rating: Double, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Default.Star, null, Modifier.size(15.dp), tint = SokoulColors.Gold)
         Text(String.format(java.util.Locale.FRANCE, "%.1f", rating), Modifier.padding(start = 3.dp), style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+private val GrayPaint = androidx.compose.ui.graphics.Paint().apply {
+    colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) })
+    alpha = 0.55f
+}
+
+/** Œuvre hors catalogue : niveaux de gris et voile (calque logiciel, compatible avec toutes les versions d'Android). */
+fun Modifier.offCatalogLook(): Modifier = drawWithContent {
+    drawIntoCanvas { canvas ->
+        canvas.saveLayer(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height), GrayPaint)
+        drawContent()
+        canvas.restore()
     }
 }

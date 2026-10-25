@@ -86,6 +86,7 @@ class BrowseRepository @Inject constructor(
     private val tmdb: TmdbClient,
     private val parental: ParentalGate,
     private val settings: SettingsStore,
+    private val curated: CuratedSagaStore,
 ) {
     private data class CacheKey(val pid: Long, val kind: BrowseKind, val sync: Long, val open: Boolean, val grouping: Boolean)
     private val cache = ConcurrentHashMap<CacheKey, Pair<Long, BrowsePage>>()
@@ -107,7 +108,7 @@ class BrowseRepository @Inject constructor(
         return page
     }
 
-    fun invalidate() = cache.clear()
+    fun invalidate() { cache.clear(); hubCache.clear() }
 
     // --- contexte : catégories visibles d'un type ------------------------------------------------
 
@@ -220,27 +221,41 @@ class BrowseRepository @Inject constructor(
      * Œuvres du catalogue correspondant à une liste TMDB (même identifiant TMDB, ou même titre français/original
      * à un an près), dans l'ordre de la liste. Les correspondances sont mémorisées (affichage immédiat des fonds).
      */
-    private suspend fun Ctx.matchItems(items: List<TmdbItem>, limit: Int = 40): List<Work> {
+    private suspend fun Ctx.matchItems(items: List<TmdbItem>, limit: Int = 40): List<Work> = matchPairs(items, limit).map { it.second }
+
+    /** Comme [matchItems], en gardant l'élément TMDB de chaque œuvre trouvée. */
+    private suspend fun Ctx.matchPairs(items: List<TmdbItem>, limit: Int = 40, byName: Boolean = false): List<Pair<TmdbItem, Work>> {
         if (items.isEmpty()) return emptyList()
-        val keysPer = items.map { it to candidateKeys(it) }
-        val all = keysPer.flatMap { it.second }.distinct()
         val b = db.browse()
-        val works = all.chunked(500).flatMap { chunk ->
-            if (type == ContentType.MOVIE) movieWorks(b.moviesByKeys(pid, chunk)) else seriesWorks(b.seriesByKeys(pid, chunk))
+        // correspondances déjà établies (indexation, fiches) : seul moyen de retrouver un titre publié sans année
+        val linked = items.map { it.id }.chunked(500).flatMap { b.matchesOf(pid, type, it) }.groupBy({ it.tmdbId }, { it.workKey })
+        // [byName] : titres publiés sans année, retrouvés par leur nom exact (pages ponctuelles : parcours complet)
+        val named: Map<String, List<String>> = if (!byName) emptyMap() else {
+            val names = items.flatMap { listOfNotNull(it.title, it.originalTitle) }.map { SyncEngine.searchable(it) }.distinct()
+            names.chunked(400).flatMap { if (type == ContentType.MOVIE) b.moviesNamedNoYear(pid, it) else b.seriesNamedNoYear(pid, it) }
+                .groupBy({ it.searchName }, { it.workKey })
+        }
+        val keysPer = items.map { item ->
+            val byTitle = if (named.isEmpty()) emptyList() else listOfNotNull(item.title, item.originalTitle).flatMap { named[SyncEngine.searchable(it)].orEmpty() }
+            item to (candidateKeys(item) + linked[item.id].orEmpty() + byTitle)
+        }
+        val (direct, grouped) = keysPer.flatMap { it.second }.distinct().partition { it.startsWith("id:") }
+        val works = if (type == ContentType.MOVIE) {
+            movieWorks(grouped.chunked(500).flatMap { b.moviesByKeys(pid, it) } + direct.chunked(500).flatMap { c -> b.moviesByIds(pid, c.map { it.removePrefix("id:") }) })
+        } else {
+            seriesWorks(grouped.chunked(500).flatMap { b.seriesByKeys(pid, it) } + direct.chunked(500).flatMap { c -> b.seriesByIds(pid, c.map { it.removePrefix("id:") }) })
         }
         val byKey = HashMap<String, Work>()
         works.forEach { byKey.putIfAbsent(it.key, it) }
-        val out = ArrayList<Work>()
-        val pairs = ArrayList<Pair<TmdbItem, String>>()
+        val out = ArrayList<Pair<TmdbItem, Work>>()
         val seen = HashSet<String>()
         for ((item, keys) in keysPer) {
             val w = keys.firstNotNullOfOrNull { byKey[it] } ?: continue
             if (!seen.add(w.key)) continue
-            out += w
-            pairs += item to w.key
+            out += item to w.copy(tmdbId = w.tmdbId ?: item.id)
             if (out.size >= limit) break
         }
-        runCatching { enrich.remember(pid, type, pairs) }.onFailure { Timber.w(it, "Correspondances TMDB") }
+        runCatching { enrich.remember(pid, type, out.map { (item, w) -> item to w.key }) }.onFailure { Timber.w(it, "Correspondances TMDB") }
         return out
     }
 
@@ -275,22 +290,8 @@ class BrowseRepository @Inject constructor(
         )
     }
 
-    /** Sagas (collections TMDB) dont au moins deux films sont au catalogue. */
-    suspend fun sagas(pid: Long, limit: Int = 12): List<SagaCard> {
-        val api = enrich.apiKey()
-        if (api.isBlank()) return emptyList()
-        val c = ctx(pid, ContentType.MOVIE)
-        val cols = db.browse().collections(pid, 30)
-        return coroutineScope {
-            cols.map { col ->
-                async {
-                    val full = net.withPermit { tmdb.collection(api, col.collectionId) } ?: return@async null
-                    val present = c.matchItems(full.parts, 50)
-                    if (present.size >= 2) SagaCard(full.id, full.name, full.backdrop, full.poster ?: present.first().poster, present.size) else null
-                }
-            }.awaitAll()
-        }.filterNotNull().take(limit)
-    }
+    /** Rangée « Sagas cultes » : les premières sagas du hub (en cache 20 min, donc gratuit pendant l'indexation). */
+    suspend fun sagas(pid: Long, limit: Int = 12): List<SagaCard> = sagaHub(pid).take(limit)
 
     // --- construction des pages -------------------------------------------------------------------
 
@@ -537,6 +538,120 @@ class BrowseRepository @Inject constructor(
         return col.name to enrich.decorate(pid, works)
     }
 
+    // --- hub des sagas et page « musée » -------------------------------------------------------------
+
+    /**
+     * Toutes les sagas du catalogue : les grandes franchises éditorialisées d'abord (vérifiées sur TMDB, dès un film
+     * au catalogue), puis les collections TMDB repérées par l'analyse du catalogue (au moins 2 films).
+     */
+    suspend fun sagaHub(pid: Long, limit: Int = 60): List<SagaCard> = withContext(Dispatchers.Default) {
+        val api = enrich.apiKey()
+        if (api.isBlank()) return@withContext emptyList()
+        val key = pid to parental.canAccessLocked()
+        hubCache[key]?.let { (t, list) -> if (System.currentTimeMillis() - t < CACHE_MS) return@withContext list }
+        val c = ctx(pid, ContentType.MOVIE)
+        val counts = db.browse().collections(pid, 200)
+        val taken = curated.all.flatMap { it.collectionIds }.toSet()
+        val result = coroutineScope {
+            // grandes franchises : collections (en cache TMDB), puis une seule recherche au catalogue pour toutes
+            val cols = curated.all.flatMap { it.collectionIds }.distinct()
+                .map { id -> async { net.withPermit { tmdb.collection(api, id) } } }.awaitAll().filterNotNull().associateBy { it.id }
+            // films rattachés hors collection (Rogue One, Solo…) : comptés comme sur la page de la saga
+            val extras = curated.all.flatMap { it.extraMovieIds }.distinct()
+                .map { id -> async { net.withPermit { tmdb.details(api, "movie", id, full = false) }?.toItem() } }.awaitAll().filterNotNull()
+            val parts = (cols.values.flatMap { it.parts } + extras).distinctBy { it.id }
+            val present = c.matchPairs(parts, parts.size, byName = true).mapTo(HashSet()) { it.first.id }
+            val big = curated.all.mapNotNull { cs ->
+                val mine = cs.collectionIds.mapNotNull { cols[it] }
+                val first = mine.firstOrNull() ?: return@mapNotNull null
+                val n = (mine.flatMap { it.parts }.map { it.id } + cs.extraMovieIds).distinct().count { it in present }
+                if (n == 0) null else SagaCard(first.id, cs.name, first.backdrop, first.poster, n, curated = true)
+            }
+            val others = counts.filter { it.collectionId !in taken && it.works >= 2 }.take(limit).map { col ->
+                async {
+                    // sans image, une collection obscure (souvent d'une autre langue) n'a pas sa place dans le hub
+                    val full = net.withPermit { tmdb.collection(api, col.collectionId) } ?: return@async null
+                    if (full.backdrop == null) null
+                    else SagaCard(col.collectionId, SagaLogic.displayName(full.name), full.backdrop, full.poster, col.works)
+                }
+            }
+            big.sortedByDescending { it.count } + others.awaitAll().filterNotNull()
+        }.take(limit)
+        hubCache[key] = System.currentTimeMillis() to result
+        result
+    }
+
+    private val hubCache = ConcurrentHashMap<Pair<Long, Boolean>, Pair<Long, List<SagaCard>>>()
+
+    /** Page « musée » : tous les films de la saga (présents ou non), visages récurrents, coulisses, séries liées. */
+    suspend fun sagaPage(pid: Long, collectionId: Int, onPartial: (suspend (SagaPage) -> Unit)? = null): SagaPage? = withContext(Dispatchers.Default) {
+        val api = enrich.apiKey()
+        if (api.isBlank()) return@withContext null
+        val cs = curated.forCollection(collectionId)
+        val ids = cs?.collectionIds ?: listOf(collectionId)
+        coroutineScope {
+            val cols = ids.map { id -> async { net.withPermit { tmdb.collection(api, id) } } }.awaitAll().filterNotNull()
+            val main = cols.firstOrNull { it.id == collectionId } ?: cols.firstOrNull() ?: return@coroutineScope null
+            val extras = cs?.extraMovieIds.orEmpty().map { id -> async { net.withPermit { tmdb.details(api, "movie", id, full = false) }?.toItem() } }
+            val items = (cols.flatMap { it.parts } + extras.awaitAll().filterNotNull())
+                .distinctBy { it.id }
+                // films annoncés sans date : en fin de frise ; jamais de film à venir non daté en tête
+                .sortedBy { it.year ?: 9999 }
+            // générique (films sortis seulement : les annonces n'ont pas encore de distribution fiable) et séries liées,
+            // en parallèle de la recherche au catalogue
+            val creditsD = items.filter { it.year != null }.take(MAX_SAGA_CREDITS).map { m -> async { net.withPermit { tmdb.credits(api, m.id) } } }
+            val seriesD = async {
+                val list = cs?.relatedSeriesTmdbIds.orEmpty()
+                if (list.isEmpty()) return@async emptyList()
+                val tv = list.map { id -> async { net.withPermit { tmdb.details(api, "tv", id, full = false) }?.toItem() } }.awaitAll().filterNotNull()
+                val there = ctx(pid, ContentType.SERIES).matchPairs(tv, tv.size, byName = true).associate { it.first.id to it.second }
+                val dec = enrich.decorate(pid, there.values.toList()).associateBy { it.key }
+                tv.map { t -> there[t.id]?.let { dec[it.key] ?: it } ?: t.offCatalog(ContentType.SERIES) }
+            }
+            val movies = ctx(pid, ContentType.MOVIE)
+            val found = movies.matchPairs(items, items.size, byName = true).associate { it.first.id to it.second }
+            val dec = enrich.decorate(pid, found.values.toList()).associateBy { it.key }
+            val films = items.map { item -> found[item.id]?.let { dec[it.key] ?: it } ?: item.offCatalog(ContentType.MOVIE) }
+            val base = SagaPage(
+                id = main.id,
+                name = cs?.name ?: SagaLogic.displayName(main.name),
+                overview = main.overview?.takeIf { it.isNotBlank() },
+                backdrop = main.backdrop,
+                films = films,
+                story = cs?.chronologicalOrderIds?.takeIf { it.isNotEmpty() }?.let { SagaLogic.storyOrder(films, it) },
+                series = emptyList(),
+                faces = emptyList(),
+                crew = emptyList(),
+            )
+            // première visite : le générique (une requête par film) arrive après la frise, qui s'affiche aussitôt
+            if (onPartial != null && creditsD.any { !it.isCompleted }) onPartial(base.copy(series = if (seriesD.isCompleted) seriesD.await() else emptyList()))
+            val credits = creditsD.awaitAll().filterNotNull()
+            base.copy(series = seriesD.await(), faces = SagaLogic.faces(credits), crew = SagaLogic.crew(credits))
+        }
+    }
+
+    /** « Ma liste » pour une œuvre hors catalogue : retenue par son identifiant TMDB (« tmdb:N »). */
+    suspend fun toggleOffCatalog(pid: Long, w: Work): Boolean {
+        val id = w.tmdbId ?: tmdbIdOfKey(w.key) ?: return false
+        val key = "tmdb:$id"
+        val lib = db.library()
+        if (lib.observeIsFavorite(pid, w.type, key).first()) { lib.removeFavorite(pid, w.type, key); return false }
+        // fiche minimale pour afficher la carte dans Ma liste (complétée plus tard par l'enrichissement)
+        if (db.browse().meta(w.type, id) == null) {
+            db.browse().putMeta(
+                com.sokoul.iptv.data.db.TmdbMetaEntity(
+                    type = w.type, tmdbId = id, title = w.title, originalTitle = null, overview = w.overview, overviewLang = w.overview?.let { "fr" },
+                    tagline = null, genres = null, poster = w.poster, backdrop = w.backdrop, logo = null, rating = w.rating, year = w.year,
+                    runtimeMin = null, seasons = null, collectionId = null, collectionName = null, certification = null, fetchedAt = 0,
+                )
+            )
+        }
+        lib.addFavorite(com.sokoul.iptv.data.db.FavoriteEntity(pid, w.type, key))
+        return true
+    }
+
+    fun isOffCatalogFavorite(pid: Long, w: Work) = db.library().observeIsFavorite(pid, w.type, "tmdb:${w.tmdbId ?: tmdbIdOfKey(w.key)}")
+
     // --- rangées personnelles (reprise, ma liste) ----------------------------------------------------
 
     /** « Reprendre » : une carte par œuvre, avec le fond TMDB de la série/du film et le temps restant. */
@@ -637,11 +752,21 @@ class BrowseRepository @Inject constructor(
             is GridSpec.Favorites -> {
                 val types = spec.type?.let { listOf(it) } ?: listOf(ContentType.MOVIE, ContentType.SERIES)
                 val favs = db.library().allFavorites(pid).filter { it.type in types }.sortedByDescending { it.addedAt }
-                val byType = types.associateWith { t -> ctx(pid, t).byIds(favs.filter { it.type == t }.map { it.itemId }) }
                 // ordre d'ajout conservé quand films et séries sont mêlés
                 val rank = favs.withIndex().associate { (i, f) -> (f.type to f.itemId) to i }
-                null to byType.flatMap { (t, ws) -> ws.map { t to it } }
-                    .sortedBy { (t, w) -> rank[t to w.id] ?: Int.MAX_VALUE }.map { it.second }
+                val out = ArrayList<Pair<Int, Work>>()
+                for (t in types) {
+                    val c = ctx(pid, t)
+                    val (offIds, ids) = favs.filter { it.type == t }.map { it.itemId }.partition { it.startsWith("tmdb:") }
+                    c.byIds(ids).forEach { w -> out += (rank[t to w.id] ?: Int.MAX_VALUE) to w }
+                    // titres retenus hors catalogue (sagas) : lisibles dès qu'une version arrive au catalogue
+                    if (offIds.isNotEmpty()) {
+                        val items = db.browse().metaByIds(t, offIds.mapNotNull { tmdbIdOfKey(it) }).map { it.toItem() }
+                        val found = c.matchPairs(items, items.size, byName = true).associate { it.first.id to it.second }
+                        items.forEach { item -> out += (rank[t to "tmdb:${item.id}"] ?: Int.MAX_VALUE) to (found[item.id] ?: item.offCatalog(t)) }
+                    }
+                }
+                null to out.sortedBy { it.first }.map { it.second }.distinctBy { it.uid }
             }
         }
     }
@@ -661,6 +786,8 @@ class BrowseRepository @Inject constructor(
     companion object {
         const val HERO_SIZE = 6
         const val GRID_LIMIT = 300
+        /** Films dont le générique est lu pour une saga (une requête TMDB chacun, en cache 7 jours). */
+        private const val MAX_SAGA_CREDITS = 25
         private const val CACHE_MS = 20 * 60_000L
         // au-delà, la page s'affiche sans attendre TMDB ; TMDB a ensuite [TMDB_BUDGET_MS] pour compléter
         const val QUICK_MS = 1_500L

@@ -676,6 +676,17 @@ interface BrowseDao {
     @Query("SELECT * FROM tmdb_match WHERE playlistId = :pid AND type = :type AND workKey IN (:keys)")
     suspend fun matches(pid: Long, type: ContentType, keys: List<String>): List<TmdbMatchEntity>
 
+    /** Titres publiés sans année (sagas, Ma liste) : nom normalisé exact. Parcours complet, à réserver aux pages ponctuelles. */
+    @Query("SELECT playlistId, id, groupKey, searchName FROM movies WHERE playlistId = :pid AND year IS NULL AND searchName IN (:names)")
+    suspend fun moviesNamedNoYear(pid: Long, names: List<String>): List<NamedRow>
+
+    @Query("SELECT playlistId, id, groupKey, searchName FROM series WHERE playlistId = :pid AND year IS NULL AND searchName IN (:names)")
+    suspend fun seriesNamedNoYear(pid: Long, names: List<String>): List<NamedRow>
+
+    /** Œuvres déjà reliées à ces fiches TMDB (titres sans année, regroupés par identifiant « id:… »). */
+    @Query("SELECT * FROM tmdb_match WHERE playlistId = :pid AND type = :type AND tmdbId IN (:tmdbIds)")
+    suspend fun matchesOf(pid: Long, type: ContentType, tmdbIds: List<Int>): List<TmdbMatchEntity>
+
     @Query("SELECT workKey FROM tmdb_match WHERE playlistId = :pid AND type = :type AND tmdbId = :tmdbId")
     suspend fun keysForTmdb(pid: Long, type: ContentType, tmdbId: Int): List<String>
 
@@ -695,9 +706,13 @@ interface BrowseDao {
     suspend fun putMeta(m: TmdbMetaEntity)
 
     @Query(
-        "SELECT t.collectionId AS collectionId, MIN(t.collectionName) AS collectionName, COUNT(DISTINCT m.workKey) AS works " +
-            "FROM tmdb_match m JOIN tmdb_meta t ON t.type = m.type AND t.tmdbId = m.tmdbId " +
-            "WHERE m.playlistId = :pid AND m.type = 'MOVIE' AND t.collectionId IS NOT NULL " +
+        // films reliés par l'app (tmdb_match) ou par le fournisseur (clé « tmdb:N ») ; un film compte une fois
+        "SELECT t.collectionId AS collectionId, MIN(t.collectionName) AS collectionName, COUNT(DISTINCT t.tmdbId) AS works " +
+            "FROM (SELECT tmdbId FROM tmdb_match WHERE playlistId = :pid AND type = 'MOVIE' AND tmdbId IS NOT NULL " +
+            "UNION SELECT DISTINCT CAST(substr(groupKey, 6) AS INTEGER) FROM movies " +
+            "WHERE playlistId = :pid AND groupKey >= 'tmdb:' AND groupKey < 'tmdb;') w " +
+            "JOIN tmdb_meta t ON t.type = 'MOVIE' AND t.tmdbId = w.tmdbId " +
+            "WHERE t.collectionId IS NOT NULL " +
             "GROUP BY t.collectionId ORDER BY works DESC, MAX(t.rating) DESC LIMIT :limit"
     )
     suspend fun collections(pid: Long, limit: Int): List<CollectionCount>
@@ -731,3 +746,8 @@ data class SuggestRow(val title: String, val categoryId: String)
 
 /** Œuvre à indexer : clé de regroupement et une version représentative (titre, année). */
 data class IndexCandidate(val workKey: String, val id: String, val title: String, val year: Int?)
+
+/** Version repérée par son nom (titre sans année). */
+data class NamedRow(val playlistId: Long, val id: String, val groupKey: String?, val searchName: String) {
+    val workKey get() = groupKey ?: "id:$id"
+}

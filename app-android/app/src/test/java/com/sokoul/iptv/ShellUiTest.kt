@@ -115,11 +115,11 @@ class ShellUiTest {
     @Test fun `traverser la barre jusqu'aux reglages n'ouvre aucune page intermediaire`() {
         setUp()
         focusTabsFromHome()
-        // Films, Séries, Ma liste, TV, Réglages : appuis plus rapides que le délai d'arrêt
-        repeat(5) { key(Key.DirectionRight, wait = TAB_SETTLE_MS / 3) }
+        // Films, Séries, Ma liste, Sagas, TV, Réglages : appuis plus rapides que le délai d'arrêt
+        repeat(6) { key(Key.DirectionRight, wait = TAB_SETTLE_MS / 3) }
         rule.onNodeWithContentDescription("Réglages").assertIsFocused()
         rule.mainClock.advanceTimeBy(1_000)
-        assertEquals("aucune page traversée ne s'ouvre", null, opened[Dest.MOVIES] ?: opened[Dest.SERIES] ?: opened[Dest.MY_LIST])
+        assertEquals("aucune page traversée ne s'ouvre", null, opened[Dest.MOVIES] ?: opened[Dest.SERIES] ?: opened[Dest.MY_LIST] ?: opened[Dest.SAGAS])
         rule.onNodeWithText("Page réglages").assertDoesNotExist()
         // ⚙ est un bouton : OK l'ouvre
         key(Key.DirectionCenter, wait = 1_200)
@@ -142,7 +142,7 @@ class ShellUiTest {
     @Test fun `le bouton TV exige OK`() {
         setUp()
         focusTabsFromHome()
-        repeat(4) { key(Key.DirectionRight, wait = TAB_SETTLE_MS / 3) }
+        repeat(5) { key(Key.DirectionRight, wait = TAB_SETTLE_MS / 3) }
         rule.onNodeWithContentDescription("Passer à la TV en direct").assertIsFocused()
         rule.mainClock.advanceTimeBy(2_000)
         assertEquals("jamais de bascule en TV au simple passage", null, opened[Dest.LIVE])

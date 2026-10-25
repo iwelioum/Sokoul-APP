@@ -8,6 +8,10 @@ import kotlinx.serialization.Serializable
 @Serializable object MoviesRoute
 @Serializable object SeriesRoute
 @Serializable object MyListRoute
+/** Hub des sagas (onglet de l'univers Streaming). */
+@Serializable object SagasRoute
+/** Page « musée » d'une saga (identifiant de collection TMDB). */
+@Serializable data class SagaRoute(val id: Int)
 /** Univers TV : ouvre la dernière chaîne en plein écran (écran de passage, hors historique). */
 @Serializable object TvRoute
 /** Recherche ; [origin] (SearchOrigin) fixe le périmètre proposé au départ. */

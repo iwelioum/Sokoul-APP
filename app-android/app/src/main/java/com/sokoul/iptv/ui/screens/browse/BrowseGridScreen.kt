@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
@@ -142,7 +143,7 @@ class BrowseGridViewModel @Inject constructor(
             }
             ui.value = ui.value.copy(loading = false, header = header, works = enrich.decorate(p.id, base))
             enrich.request(p.id, base.take(60))
-            enrich.updates.drop(1).debounce(900).collect { ui.value = ui.value.copy(works = enrich.decorate(p.id, base)) }
+            enrich.updates.drop(1).debounce(4_000).collect { ui.value = ui.value.copy(works = enrich.decorate(p.id, base)) }
         }
     }
 
@@ -161,7 +162,7 @@ class BrowseGridViewModel @Inject constructor(
     suspend fun playRoute(w: Work): Any = actions.playRoute(pid, w)
 
     fun toggleList(w: Work) = viewModelScope.launch {
-        pid?.let { actions.toggleList(it, w) }
+        pid?.let { if (w.available) actions.toggleList(it, w) else repo.toggleOffCatalog(it, w) }
         if (spec?.startsWith("fav") == true) retry()
     }
 }
@@ -189,7 +190,8 @@ fun BrowseGridScreen(
     LaunchedEffect(spec) { vm.load(spec, force = spec.startsWith("fav")) }
     val header = ui.header
     val works = ui.sorted
-    val open: (Work) -> Unit = { w -> nav.openWork(w) }
+    // titre hors catalogue (retenu depuis une saga) : pas de fiche, seulement le retirer
+    val open: (Work) -> Unit = { w -> if (w.available) nav.openWork(w) else menuFor = w }
     val play: (Work) -> Unit = { w -> scope.launch { nav.navigateOnce(vm.playRoute(w)) } }
 
     Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
@@ -246,12 +248,13 @@ fun BrowseGridScreen(
     menuFor?.let { w ->
         OptionsDialog(
             w.title,
-            listOf(
+            if (!w.available) listOf(MenuOption("Retirer de Ma liste", Icons.Default.Remove) { vm.toggleList(w) })
+            else listOf(
                 MenuOption(if (w.resume != null) "Reprendre" else "Lecture", Icons.Default.PlayArrow) { play(w) },
                 MenuOption("Plus d'infos", Icons.Default.Info) { open(w) },
                 MenuOption("Ajouter à / retirer de ma liste", Icons.Default.Add) { vm.toggleList(w) },
             ),
-            subtitle = w.metaLine().ifEmpty { null },
+            subtitle = if (!w.available) "Hors catalogue : ce titre deviendra lisible dès qu'une source le proposera." else w.metaLine().ifEmpty { null },
             onDismiss = { menuFor = null },
         )
     }
@@ -299,7 +302,7 @@ fun BrowseGridScreen(
 
 @Composable
 private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: Boolean, truncated: Boolean, underTabs: Boolean = false) {
-    val countText = if (truncated) "Les $count premiers titres" else "$count titres"
+    val countText = if (truncated) "Les $count premiers titres" else if (count <= 1) "$count titre" else "$count titres"
     val l = LocalLayout.current
     val rich = header?.backdrop != null || header?.platform != null
     if (!rich) {

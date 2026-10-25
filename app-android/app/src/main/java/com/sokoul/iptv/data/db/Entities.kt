@@ -93,7 +93,7 @@ data class ChannelEntity(
 @Entity(
     tableName = "movies",
     primaryKeys = ["playlistId", "id"],
-    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "added"), Index("playlistId", "groupKey")],
+    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "added"), Index("playlistId", "groupKey"), Index("playlistId", "searchName")],
 )
 data class MovieEntity(
     val playlistId: Long,
@@ -120,7 +120,7 @@ data class MovieEntity(
 @Entity(
     tableName = "series",
     primaryKeys = ["playlistId", "id"],
-    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "lastModified"), Index("playlistId", "groupKey")],
+    indices = [Index("playlistId", "categoryId", "position"), Index("playlistId", "lastModified"), Index("playlistId", "groupKey"), Index("playlistId", "searchName")],
 )
 data class SeriesEntity(
     val playlistId: Long,

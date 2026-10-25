@@ -431,7 +431,7 @@ private fun RowView(
             }
             RowStyle.SAGAS -> CardRow(row.sagas, { it.id }) { _, s ->
                 Box(m(s.id)) { SagaTile(
-                    s, { nav.navigateOnce(BrowseGridRoute(s.name, GridSpec.Saga(s.id).encode())) },
+                    s, { nav.navigateOnce(com.sokoul.iptv.ui.nav.SagaRoute(s.id)) },
                     onFocus = { onSpot(Spot(s.name, meta = "Saga · ${s.count} films disponibles", image = s.backdrop)) },
                 ) }
             }

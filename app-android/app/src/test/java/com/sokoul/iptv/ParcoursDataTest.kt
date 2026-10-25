@@ -79,7 +79,7 @@ class ParcoursDataTest {
     private fun browse(http: OkHttpClient = OkHttpClient()): BrowseRepository {
         val tmdb = TmdbClient(http, HttpModule.json(), db.tmdb())
         val vod = VodRepository(db, settings, gate)
-        return BrowseRepository(db, vod, EnrichmentRepository(db, tmdb, settings, vod), tmdb, gate, settings)
+        return BrowseRepository(db, vod, EnrichmentRepository(db, tmdb, settings, vod), tmdb, gate, settings, com.sokoul.iptv.data.repo.CuratedSagaStore(context))
     }
 
     // --- « Reprendre la lecture » -------------------------------------------------------------------
