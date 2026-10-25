@@ -304,6 +304,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         numberBuffer.isNotEmpty() -> { numberBuffer = ""; true }
         seekPreview != null -> { seekPreview = null; true }
         infoVisible && !ui.isLive && isTv -> { infoVisible = false; true }
+        // erreur ou attente du fournisseur : sinon Retour retire seulement le focus du bouton (vu sur la box)
+        // et l'essai automatique repart → on quitte le lecteur tout de suite
+        errorShown -> { nav.popBackStack(); true }
         else -> false
     }
     BackHandler(enabled = pauseScreen || zapPending != null || groupsVisible || guideVisible || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }

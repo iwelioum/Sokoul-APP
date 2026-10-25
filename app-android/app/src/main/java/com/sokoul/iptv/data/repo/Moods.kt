@@ -175,11 +175,16 @@ object ExploreQuery {
         }
         f.language?.let { where += "t.originalLanguage = ?"; args += it }
         // 4K : qualité annoncée par le fournisseur ou nom d'une des versions (films seulement)
+        // filtre sur la clé de l'œuvre (appliqué après la jointure au catalogue)
+        val keyWhere = ArrayList<String>()
+        val keyArgs = ArrayList<Any>()
         if ((f.uhd || rules.any { it.uhd }) && type == ContentType.MOVIE) {
-            where += "EXISTS (SELECT 1 FROM movies q WHERE q.playlistId = ? " +
-                "AND (q.groupKey = w.workKey OR q.id = (CASE WHEN w.workKey LIKE 'id:%' THEN substr(w.workKey, 4) END)) " +
-                "AND (q.quality LIKE '%4K%' OR q.quality LIKE '%UHD%' OR q.quality LIKE '%2160%' OR q.name LIKE '%4K%' OR q.name LIKE '%UHD%'))"
-            args += pid
+            // deux recherches par index (regroupement, puis identifiant) : un « OU » dans une seule recherche
+            // empêchait l'index et parcourait tout le catalogue pour chaque titre (mesuré : plus de 20 s)
+            val uhd = "(q.quality LIKE '%4K%' OR q.quality LIKE '%UHD%' OR q.quality LIKE '%2160%' OR q.name LIKE '%4K%' OR q.name LIKE '%UHD%')"
+            keyWhere += "(EXISTS (SELECT 1 FROM movies q WHERE q.playlistId = ? AND q.groupKey = t.workKey AND $uhd) " +
+                "OR (t.workKey LIKE 'id:%' AND EXISTS (SELECT 1 FROM movies q WHERE q.playlistId = ? AND q.id = substr(t.workKey, 4) AND $uhd)))"
+            keyArgs += pid; keyArgs += pid
         }
         val kw = rules.flatMap { it.keywords }.distinct()
         val kwScore = kw.joinToString(" + ") { "(CASE WHEN t.keywords LIKE ? THEN 1 ELSE 0 END)" }
@@ -191,23 +196,32 @@ object ExploreQuery {
             // sélection : mots-clés recherchés d'abord, puis note pondérée par la notoriété
             GridSort.DEFAULT -> (if (kw.isEmpty()) "" else "($kwScore) DESC, ") + "(COALESCE(t.rating, 0) * (1 - 1.0 / (1 + COALESCE(t.voteCount, 0) / 50.0))) DESC"
         }
-        // œuvres reliées à TMDB : correspondances établies par l'app, plus les clés « tmdb:N » du fournisseur
-        // (on part des correspondances, indexées : pas de regroupement de tout le catalogue à chaque requête)
+        // 1. fiches TMDB qui répondent aux filtres (table des fiches seule : quelques dizaines de milliers de lignes) ;
+        // 2. pour chacune, ses œuvres au catalogue par les index : correspondances établies par l'app (type, tmdbId),
+        //    plus la clé « tmdb:N » du fournisseur (playlistId, groupKey).
+        // Partir des correspondances obligeait à dédoublonner tout le catalogue à chaque requête : ~1 s de calcul
+        // par ambiance sur la box, douze fois par page Films ou Séries.
+        // CROSS JOIN impose l'ordre (fiches d'abord) : sans lui, SQLite peut parcourir les correspondances et
+        // refiltrer toutes les fiches pour chacune (mesuré : 30 s). Pas de « WITH … MATERIALIZED » : SQLite trop
+        // ancien sur Android 7.
+        val metaFilter = where.joinToString("") { " AND $it" }
         val sql = """
-            SELECT w.workKey AS workKey, t.* FROM (
-                SELECT workKey, tmdbId FROM tmdb_match WHERE playlistId = ? AND type = ? AND tmdbId IS NOT NULL
+            SELECT * FROM (
+                SELECT m.workKey AS workKey, t.* FROM tmdb_meta t CROSS JOIN tmdb_match m
+                WHERE t.type = ?$metaFilter AND m.type = ? AND m.tmdbId = t.tmdbId AND m.playlistId = ?
                 UNION
-                SELECT DISTINCT groupKey AS workKey, CAST(substr(groupKey, 6) AS INTEGER) AS tmdbId FROM $table
-                WHERE playlistId = ? AND groupKey >= 'tmdb:' AND groupKey < 'tmdb;'
-            ) w
-            JOIN tmdb_meta t ON t.type = ? AND t.tmdbId = w.tmdbId
-            ${if (where.isEmpty()) "" else "WHERE " + where.joinToString(" AND ")}
+                SELECT 'tmdb:' || t.tmdbId AS workKey, t.* FROM tmdb_meta t
+                WHERE t.type = ?$metaFilter
+                AND EXISTS (SELECT 1 FROM $table v WHERE v.playlistId = ? AND v.groupKey = 'tmdb:' || t.tmdbId)
+            ) t
+            ${if (keyWhere.isEmpty()) "" else "WHERE " + keyWhere.joinToString(" AND ")}
             ORDER BY $order, t.year DESC
             LIMIT ?
         """.trimIndent()
         val all = ArrayList<Any>()
-        all += pid; all += type.name; all += pid; all += type.name
-        all.addAll(args)
+        all += type.name; all.addAll(args); all += type.name; all += pid
+        all += type.name; all.addAll(args); all += pid
+        all.addAll(keyArgs)
         if (sort == GridSort.DEFAULT) all.addAll(kwArgs)
         all += limit
         return SimpleSQLiteQuery(sql, all.toTypedArray())

@@ -338,10 +338,12 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = M
 /** Saga : fond de la collection, nom et nombre de films disponibles. */
 @Composable
 fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null, modifier: Modifier = Modifier, width: Dp = LocalLayout.current.landscape) {
-    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = if (width.isSpecified) modifier.width(width) else modifier.fillMaxWidth(), shape = Radius.Card) { _ ->
+    // fond transparent : l'image (ou son repli) couvre toute la tuile, inutile de peindre dessous
+    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = if (width.isSpecified) modifier.width(width) else modifier.fillMaxWidth(), shape = Radius.Card, color = Color.Transparent) { _ ->
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             NetImage(tmdbSized(saga.backdrop, "w780") ?: tmdbSized(saga.poster, "w342"), saga.name, Modifier.fillMaxSize()) { PosterFallback(saga.name) }
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.3f to SokoulColors.black(0.13f), 1f to SokoulColors.black(0.94f))))
+            // voile sur les 60 % du bas seulement (sous le texte) : la grille entière en fait une passe de moins
+            Box(Modifier.fillMaxWidth().fillMaxHeight(0.6f).align(Alignment.BottomStart).background(Brush.verticalGradient(0f to Color.Transparent, 1f to SokoulColors.black(0.94f))))
             Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
                 Text("SAGA", color = SokoulColors.Gold, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
                 Text(saga.name.replace(" - Saga", "").replace(" (Collection)", ""), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)

@@ -143,7 +143,8 @@ fun SagasHubScreen(nav: NavHostController) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(l.landscape),
         state = grid,
-        modifier = Modifier.fillMaxSize().background(SokoulColors.Background),
+        // pas de fond : celui de la fenêtre suffit (une passe plein écran de moins à chaque image)
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = l.margin, end = l.margin, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(l.gutter),
         verticalArrangement = Arrangement.spacedBy(l.gutter),

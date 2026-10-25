@@ -193,16 +193,19 @@ class BrowseRepository @Inject constructor(
         withContext(Dispatchers.Default) { ctx(pid, type).explore(filter, sort, limit) }
 
     /** Rangées d'ambiances et de micro-genres d'une page Films / Séries (au moins [MicroGenre.MIN_ROW] titres chacune). */
+    /** Ambiances : chaque requête parcourt la table des fiches (~1 s sur la box) ; deux à la fois laissent des cœurs à l'interface. */
+    private val moodGate = Semaphore(2)
+
     private suspend fun Ctx.moodRows(): List<BrowseRow> = coroutineScope {
         val moods = Mood.entries.map { m ->
             async {
-                val works = runCatching { explore(ExploreFilter(mood = m), GridSort.DEFAULT, 24) }.getOrDefault(emptyList())
+                val works = runCatching { moodGate.withPermit { explore(ExploreFilter(mood = m), GridSort.DEFAULT, 24) } }.getOrDefault(emptyList())
                 BrowseRow("mood-" + m.name, m.title(type), m.tagline, works = works, seeAll = GridSpec.Mooded(type, m, null).encode())
             }
         }
         val micros = MicroGenre.entries.filter { it != MicroGenre.SPECTACLE || DeviceCaps.supports4k }.map { g ->
             async {
-                val works = runCatching { explore(ExploreFilter(micro = g), GridSort.DEFAULT, 24) }.getOrDefault(emptyList())
+                val works = runCatching { moodGate.withPermit { explore(ExploreFilter(micro = g), GridSort.DEFAULT, 24) } }.getOrDefault(emptyList())
                 BrowseRow("micro-" + g.name, g.title, g.tagline, works = works, seeAll = GridSpec.Mooded(type, null, g).encode())
             }
         }

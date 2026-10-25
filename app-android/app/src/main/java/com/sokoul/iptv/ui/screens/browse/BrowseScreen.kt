@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.browse
 
+import com.sokoul.iptv.ui.components.AmbientBake
+import androidx.compose.ui.layout.onSizeChanged
 import com.sokoul.iptv.ui.components.SokoulMark
 import com.sokoul.iptv.ui.components.SokoulChip
 import com.sokoul.iptv.ui.components.onChip
@@ -509,22 +511,23 @@ private fun AmbientBackdrop(spot: State<Spot?>, inRows: Boolean, spotHeight: and
     val amb = rememberAmbient(spot.value?.image, { tmdbSized(it, "w780") ?: it }, SokoulColors.Background)
     val image = amb.value.first
     val ambient = animateFloatAsState(if (inRows && image != null) 1f else 0f, tween(Motion.SLOW), label = "ambient")
+    // une seule petite image « cuite » par œuvre (image à 22 %, lueur, dégradé), étirée en une passe :
+    // pas de fondu enchaîné, pas de calque plein écran à pleine définition (voir AmbientBake)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var aspect by remember { mutableStateOf(0f) }
+    val baked = remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(image, amb.value.second, aspect) {
+        if (image == null || aspect <= 0f) return@LaunchedEffect
+        AmbientBake.bake(context, tmdbSized(image, "w780") ?: image, amb.value.second, SokoulColors.Background, aspect)?.let { baked.value = it }
+    }
     if (ambient.value <= 0f) return
-    // une seule image (pas de fondu enchaîné entre deux images plein écran : mesuré, c'était ~5 points
-    // d'images saccadées sur la box) ; à 22 % d'opacité derrière les rangées, le changement reste doux
-    // lueur dans la même texture en cache que l'image : un seul calque plein écran à composer,
-    // recalculé seulement quand l'œuvre (ou sa teinte) change
-    Box(Modifier.fillMaxSize().padding(top = spotHeight - 1.dp).graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen; alpha = ambient.value }) {
-        Box(
-            Modifier.fillMaxSize().drawBehind {
-                val glow = amb.value.second
-                drawRect(Brush.radialGradient(listOf(glow, glow.copy(alpha = 0.35f), Color.Transparent), center = Offset(size.width * 0.25f, size.height * 0.3f), radius = size.width * 0.75f))
-            }
-        )
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.22f }) {
-            NetImage(tmdbSized(image, "w780"), null, Modifier.fillMaxSize())
+    Box(Modifier.fillMaxSize().padding(top = spotHeight - 1.dp).onSizeChanged { if (it.height > 0) aspect = it.width.toFloat() / it.height }) {
+        baked.value?.let { bmp ->
+            androidx.compose.foundation.Image(
+                bmp, null, Modifier.fillMaxSize().graphicsLayer { alpha = ambient.value },
+                contentScale = ContentScale.FillBounds, filterQuality = androidx.compose.ui.graphics.FilterQuality.Low,
+            )
         }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to SokoulColors.Background, 0.45f to Color.Transparent)))
     }
 }
 

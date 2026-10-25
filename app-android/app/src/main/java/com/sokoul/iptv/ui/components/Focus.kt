@@ -155,7 +155,8 @@ fun FocusSurface(
                 val bar = FocusBarWidth.toPx()
                 onDrawBehind {
                     val p = progress.value.coerceIn(0f, 1f)
-                    drawOutline(outline, androidx.compose.ui.graphics.lerp(bg, fbg, p))
+                    val fill = androidx.compose.ui.graphics.lerp(bg, fbg, p)
+                    if (fill.alpha > 0f) drawOutline(outline, fill)
                     if (p > 0.01f) {
                         if (style.accentBar) drawRect(
                             SokoulColors.Accent.copy(alpha = p),
