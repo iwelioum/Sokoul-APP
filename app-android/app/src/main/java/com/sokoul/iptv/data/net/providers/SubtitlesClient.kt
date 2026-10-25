@@ -51,7 +51,7 @@ class SubtitlesClient @Inject constructor(private val api: ApiHttp, private val 
 
     private fun osHeaders(key: String) = mapOf("Api-Key" to key, "User-Agent" to OS_UA, "Accept" to "application/json")
 
-    private suspend fun searchOpenSubtitles(q: SubtitleQuery): List<SubtitleResult> {
+    internal suspend fun searchOpenSubtitles(q: SubtitleQuery): List<SubtitleResult> {
         val key = keys.key(ApiService.OPENSUBTITLES).ifEmpty { return emptyList() }
         val url = "$OS_BASE/subtitles".toHttpUrl().newBuilder().apply {
             if (q.isMovie) addQueryParameter("tmdb_id", q.tmdbId.toString())
@@ -81,7 +81,7 @@ class SubtitlesClient @Inject constructor(private val api: ApiHttp, private val 
 
     // --- Subdl (api.subdl.com, clé en paramètre ; fichiers .zip sur dl.subdl.com) ---
 
-    private suspend fun searchSubdl(q: SubtitleQuery): List<SubtitleResult> {
+    internal suspend fun searchSubdl(q: SubtitleQuery): List<SubtitleResult> {
         val key = keys.key(ApiService.SUBDL).ifEmpty { return emptyList() }
         val url = "$SUBDL_BASE/subtitles".toHttpUrl().newBuilder().apply {
             addQueryParameter("api_key", key)

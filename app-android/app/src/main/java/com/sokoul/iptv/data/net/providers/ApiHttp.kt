@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -99,7 +102,8 @@ class ApiHttp @Inject constructor(
         val key = cacheKey(service, url, secret, body)
         val now = health.clock()
         val cached = runCatching { cache.get(key) }.getOrNull()
-        if (cached != null && now - cached.fetchedAt < ttlMs) return@withContext parse(cached.json)
+        val fresh = coroutineContext[FreshCall] != null
+        if (!fresh && cached != null && now - cached.fetchedAt < ttlMs) return@withContext parse(cached.json)
         if (health.isBlocked(service)) return@withContext cached?.let { parse(it.json) }
         try {
             gates.getValue(service).withPermit {
@@ -188,3 +192,14 @@ class ApiHttp @Inject constructor(
         const val DAY = 24 * HOUR
     }
 }
+
+/**
+ * Appel « frais » : le cache n'est pas lu (la réponse y est quand même enregistrée). Sert au bouton
+ * « Tester » des Réglages, pour qu'une clé refusée ne paraisse pas valide grâce à une réponse en cache.
+ */
+class FreshCall : AbstractCoroutineContextElement(FreshCall) {
+    companion object Key : CoroutineContext.Key<FreshCall>
+
+}
+
+suspend fun <T> freshCall(block: suspend () -> T): T = withContext(FreshCall()) { block() }

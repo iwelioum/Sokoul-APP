@@ -24,6 +24,11 @@ import com.sokoul.iptv.data.net.providers.TasteDiveClient
 import com.sokoul.iptv.data.net.providers.TvdbClient
 import com.sokoul.iptv.data.net.providers.TvdbEpisode
 import com.sokoul.iptv.data.net.providers.TvmazeClient
+import com.sokoul.iptv.data.net.providers.ApiService
+import com.sokoul.iptv.data.net.providers.ChannelDbClient
+import com.sokoul.iptv.data.net.providers.DataSourceTester
+import com.sokoul.iptv.data.net.providers.SubtitlesClient
+import com.sokoul.iptv.ui.screens.settings.sourceStatus
 import com.sokoul.iptv.data.repo.EpisodeMerge
 import com.sokoul.iptv.data.repo.ExtrasRepository
 import com.sokoul.iptv.ui.screens.vod.availabilityPills
@@ -167,5 +172,52 @@ class ExtrasTest {
         assertEquals("Prochain épisode : S3 · É4 le mardi 10 novembre", upcomingLabel(at("2026-11-10T12:00:00Z"), now, zone))
         assertEquals("Prochain épisode : S3 · É4 le vendredi 8 janvier 2027", upcomingLabel(at("2027-01-08T12:00:00Z"), now, zone))
         assertNull("date passée : rien", upcomingLabel(at("2026-10-20T12:00:00Z"), now, zone))
+    }
+
+    @Test fun `tester ignore le cache et signale une cle refusee`() = runBlocking {
+        var code = 200
+        val calls = mutableListOf<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            synchronized(calls) { calls += chain.request().url.toString() }
+            val body = if (code == 200) """{"hdmovielogo":[{"url":"https://x/l.png","lang":"fr","likes":"1"}]}""" else """{"status":"error"}"""
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(code).message("x")
+                .body(body.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val settings = SettingsStore(context)
+        settings.update { it.copy(apiKeys = mapOf("fanart" to "cle-valide-1234")) }
+        val api = ApiHttp(client, json, db.tmdb(), ProviderHealth())
+        val keys = ApiKeys(settings)
+        val tester = DataSourceTester(
+            api, keys, FanartClient(api, keys), TvdbClient(api, keys), StreamingClient(api, keys), TasteDiveClient(api, keys),
+            OmdbClient(api, keys), SubtitlesClient(api, keys), ChannelDbClient(context, client, json, db, api.health), client,
+        )
+        val ok = tester.test(ApiService.FANART)
+        assertTrue(ok.message, ok.ok)
+        // la clé est remplacée par une mauvaise : la réponse en cache ne doit pas faire croire qu'elle marche
+        code = 401
+        val bad = tester.test(ApiService.FANART)
+        assertEquals(false, bad.ok)
+        assertTrue(bad.message, "refusée" in bad.message)
+        assertEquals("un appel par test", 2, calls.size)
+        assertEquals("Clé refusée (pause 24 h)", sourceStatus(ApiService.FANART, "k", api.health.state(ApiService.FANART), null, false))
+    }
+
+    @Test fun `tester sans cle ne fait aucun appel`() = runBlocking {
+        val calls = mutableListOf<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain -> calls += chain.request().url.toString(); error("aucun appel attendu") }.build()
+        val settings = SettingsStore(context)
+        val api = ApiHttp(client, json, db.tmdb(), ProviderHealth())
+        val keys = ApiKeys(settings)
+        val tester = DataSourceTester(
+            api, keys, FanartClient(api, keys), TvdbClient(api, keys), StreamingClient(api, keys), TasteDiveClient(api, keys),
+            OmdbClient(api, keys), SubtitlesClient(api, keys), ChannelDbClient(context, client, json, db, api.health), client,
+        )
+        if (ApiService.OMDB.buildKey.isEmpty()) {
+            val r = tester.test(ApiService.OMDB)
+            assertTrue(r.message, r.message.startsWith("Aucune clé"))
+        }
+        assertEquals("Non utilisé : l'offre gratuite n'inclut pas la France", tester.test(ApiService.WATCHMODE).message)
+        assertEquals(0, calls.size)
+        assertEquals("Clé manquante", sourceStatus(ApiService.OMDB, "", null, null, false))
     }
 }

@@ -87,6 +87,7 @@ import com.sokoul.iptv.work.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -94,6 +95,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.sokoul.iptv.data.net.providers.ApiKeys
+import com.sokoul.iptv.data.net.providers.ApiService
+import com.sokoul.iptv.data.net.providers.ServiceState
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -108,6 +112,8 @@ class SettingsViewModel @Inject constructor(
     private val http: okhttp3.OkHttpClient,
     @ApplicationContext private val context: Context,
     private val vod: com.sokoul.iptv.data.repo.VodRepository,
+    private val health: com.sokoul.iptv.data.net.providers.ProviderHealth,
+    private val tester: com.sokoul.iptv.data.net.providers.DataSourceTester,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings> = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
     val playlistList: StateFlow<List<PlaylistEntity>> = playlists.playlists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -128,6 +134,27 @@ class SettingsViewModel @Inject constructor(
         catalog.setCategoryPref(g.playlistId, g.type, g.categoryId, hidden = false, locked = false)
         done(false)
     }
+    // --- sources de données -----------------------------------------------------------------
+    val serviceStates = health.states
+    val testResults = MutableStateFlow<Map<ApiService, com.sokoul.iptv.data.net.providers.TestResult>>(emptyMap())
+    val testing = MutableStateFlow<ApiService?>(null)
+
+    /** Un seul test à la fois (un appel au service). */
+    fun test(s: ApiService) {
+        if (testing.value != null) return
+        testing.value = s
+        viewModelScope.launch {
+            try { testResults.value = testResults.value + (s to tester.test(s)) } finally { testing.value = null }
+        }
+    }
+
+    /** Nouvelle clé (vide = revenir à celle du fichier local) : disjoncteur levé, ancien résultat oublié. */
+    fun setKey(s: ApiService, value: String) = viewModelScope.launch {
+        store.update { it.copy(apiKeys = it.apiKeys + (s.id to AppSettings.cleanKey(value))) }
+        health.reset(s)
+        testResults.value = testResults.value - s
+    }
+
     fun lockNow() = parental.lock()
     fun stats(done: (com.sokoul.iptv.data.repo.CatalogStats?) -> Unit) = viewModelScope.launch {
         done(active.value?.let { p -> runCatching { vod.stats(p.id) }.getOrNull() })
@@ -195,6 +222,10 @@ fun SettingsScreen(nav: NavHostController) {
     val status by vm.playlistStatus.collectAsStateWithLifecycle()
     val epgStatus by vm.epgStatus.collectAsStateWithLifecycle()
     val flagged by vm.flaggedGroups.collectAsStateWithLifecycle()
+    val serviceStates by vm.serviceStates.collectAsStateWithLifecycle()
+    val testResults by vm.testResults.collectAsStateWithLifecycle()
+    val testing by vm.testing.collectAsStateWithLifecycle()
+    var sourceMenu by remember { mutableStateOf<ApiService?>(null) }
     val context = LocalContext.current
 
     var choice by remember { mutableStateOf<Pair<String, List<MenuOption>>?>(null) }
@@ -355,6 +386,27 @@ fun SettingsScreen(nav: NavHostController) {
             }
         }
 
+        section("Sources de données")
+        item {
+            Text(
+                "Compléments facultatifs à TMDB : notes, « Aussi sur », prochain épisode, sous-titres en ligne, logos. Sans clé, un service est simplement ignoré.",
+                Modifier.padding(horizontal = 8.dp, vertical = 4.dp).widthIn(max = 900.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        items(ApiService.entries.filter { it != ApiService.WATCHMODE }, key = { "src-" + it.id }) { svc ->
+            val key = ApiKeys.resolve(svc, s.apiKeys)
+            SettingRow(
+                svc.label,
+                sourceStatus(svc, key, serviceStates[svc], testResults[svc], testing == svc),
+                svc.purpose + (if (svc.needsKey && key.isNotEmpty()) " · ${ApiKeys.origin(svc, s.apiKeys)} ${ApiKeys.masked(key)}" else ""),
+            ) { sourceMenu = svc }
+        }
+        item {
+            SettingRow("Guide TV xmltv.fr", if (s.epgXmltvFr) "Activé" else "Désactivé", "Chaînes françaises, belges et suisses en complément du guide du fournisseur (fichier de 16 Mo, à chaque mise à jour du guide)") {
+                vm.update { it.copy(epgXmltvFr = !it.epgXmltvFr) }
+            }
+        }
+
         section("Sauvegarde")
         item { SettingRow("Exporter la configuration", "Playlists, favoris, groupes et réglages") { exportMenu = true } }
         item {
@@ -369,6 +421,25 @@ fun SettingsScreen(nav: NavHostController) {
     LaunchedEffect(playlists.isNotEmpty()) { if (playlists.isNotEmpty()) runCatching { firstFocus.requestFocus() } }
 
     choice?.let { (title, options) -> OptionsDialog(title, options, onDismiss = { choice = null }) }
+    sourceMenu?.let { svc ->
+        val saved = !s.apiKeys[svc.id].isNullOrBlank()
+        OptionsDialog(
+            svc.label,
+            buildList {
+                add(MenuOption(if (testing == svc) "Test en cours…" else "Tester (un appel)", Icons.Default.CheckCircle) { vm.test(svc) })
+                if (svc.needsKey) add(MenuOption(if (saved) "Remplacer la clé…" else "Saisir une clé…", Icons.Default.Lock) {
+                    textEdit = TextEdit(
+                        "Clé ${svc.label}", "", password = true,
+                        message = ApiKeys.resolve(svc, s.apiKeys).takeIf { it.isNotEmpty() }?.let { "Clé actuelle : ${ApiKeys.masked(it)}" },
+                        validate = { if (AppSettings.cleanKey(it).length < 8) "Clé trop courte" else null },
+                    ) { v -> vm.setKey(svc, v) }
+                })
+                if (saved) add(MenuOption(if (svc.buildKey.isNotEmpty()) "Revenir à la clé du fichier local" else "Effacer la clé", Icons.Default.Delete) { vm.setKey(svc, "") })
+            },
+            subtitle = svc.purpose + (svc.signupUrl?.let { " — clé gratuite : ${it.removePrefix("https://")}" } ?: " — sans clé"),
+            onDismiss = { sourceMenu = null },
+        )
+    }
     if (exportMenu) {
         OptionsDialog(
             "Exporter la configuration",
@@ -568,4 +639,18 @@ private fun typeLabel(t: ContentType) = when (t) {
     ContentType.LIVE -> "Direct"
     ContentType.MOVIE -> "Films"
     ContentType.SERIES -> "Séries"
+}
+
+/** État affiché d'un service : résultat du dernier test, sinon état du disjoncteur, sinon présence de la clé. */
+internal fun sourceStatus(
+    svc: ApiService, key: String, state: ServiceState?, result: com.sokoul.iptv.data.net.providers.TestResult?, testing: Boolean,
+): String = when {
+    testing -> "Test en cours…"
+    result != null -> (if (result.ok) "✓ " else "✕ ") + result.message
+    svc.needsKey && key.isEmpty() -> "Clé manquante"
+    state is ServiceState.Blocked -> if (state.code == 429) "Quota atteint (pause 1 h)" else "Clé refusée (pause 24 h)"
+    state is ServiceState.Failing -> state.message
+    state == ServiceState.Ok -> "Actif"
+    svc == ApiService.XMLTVFR -> "Facultatif"
+    else -> "Prêt"
 }
