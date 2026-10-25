@@ -32,7 +32,7 @@ object SubtitleFile {
     private fun text(b: ByteArray): String {
         val utf8 = b.toString(Charsets.UTF_8)
         // caractère de remplacement : le fichier n'était pas en UTF-8
-        return if ('�' in utf8) b.toString(Charset.forName("windows-1252")) else utf8.removePrefix("﻿")
+        return if (Char(0xFFFD) in utf8) b.toString(Charset.forName("windows-1252")) else utf8.removePrefix(Char(0xFEFF).toString())
     }
 
     fun parse(text: String): List<Cue> {

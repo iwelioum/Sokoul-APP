@@ -64,6 +64,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // java.time (épisodes, sous-titres, TVmaze) sur Android 7 (minSdk 24)
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -99,6 +101,7 @@ room {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(project(":parser"))
 
     implementation(libs.androidx.core.ktx)
