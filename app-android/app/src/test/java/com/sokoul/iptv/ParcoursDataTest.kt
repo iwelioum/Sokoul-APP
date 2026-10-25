@@ -123,6 +123,52 @@ class ParcoursDataTest {
         assertNull(w.progress)
     }
 
+    @Test fun `episode suivant cherche dans toutes les versions de la serie`() = runBlocking {
+        val min = 60_000L
+        // VF ne contient que l'épisode 1 ; la VOSTFR (même œuvre) a l'épisode 2
+        db.series().upsert(listOf(series("VF", "Série").copy(groupKey = "g"), series("VO", "Série").copy(groupKey = "g")))
+        db.series().upsertEpisodes(listOf(ep("VF", 1, 1), ep("VO", 1, 1), ep("VO", 1, 2)))
+        val p = progress(ContentType.SERIES, "VF-1-1", "VF", 39 * min, 40 * min, at = 1, s = 1, e = 1)
+        val r = browse().continueWorks(pid, listOf(p)).single().resume!!
+        assertEquals("VO-1-2", r.itemId)
+        assertEquals("lecture lancée dans la version qui a l'épisode", "VO", r.parentId)
+        assertEquals(0, r.positionMs)
+    }
+
+    @Test fun `serie terminee sans episodes en cache reste dans la rangee et ouvre la fiche`() = runBlocking {
+        db.series().upsert(listOf(series("U", "Inconnue")))
+        val p = progress(ContentType.SERIES, "U-1-1", "U", 39 * 60_000L, 40 * 60_000L, at = 1, s = 1, e = 1)
+        val w = browse().continueWorks(pid, listOf(p)).single()
+        assertEquals("Terminé · voir la suite", w.subtitle)
+        assertNull("pas de reprise : le clic ouvre la fiche", w.resume)
+        // WorkActions.playRoute : sans reprise ni épisode en cache, aucune action directe → la fiche s'ouvre
+        assertNull(com.sokoul.iptv.data.repo.EpisodeResolver.primaryAction(emptyList(), emptyMap()))
+    }
+
+    // --- cache des épisodes ---------------------------------------------------------------------------
+
+    private fun details(at: Long) = com.sokoul.iptv.data.db.SeriesDetailsEntity(pid, "S", at, null, null, null, null, null, null, null)
+
+    @Test fun `episodes remplaces en une seule transaction meme en cas de panne`() = runBlocking {
+        com.sokoul.iptv.data.repo.replaceEpisodes(db, pid, "S", listOf(ep("S", 1, 1), ep("S", 1, 2)), false, details(1))
+        // panne au milieu de l'écriture : l'ancienne liste et l'ancienne date restent intactes
+        val crash = runCatching {
+            com.sokoul.iptv.data.repo.replaceEpisodes(db, pid, "S", listOf(ep("S", 1, 1), ep("S", 1, 2), ep("S", 1, 3)), true, details(2)) {
+                throw java.io.IOException("coupure")
+            }
+        }
+        assertTrue(crash.isFailure)
+        assertEquals(listOf("S-1-1", "S-1-2"), db.series().episodes(pid, "S").map { it.id })
+        assertEquals(1L, db.series().details(pid, "S")!!.fetchedAt)
+        // réponse vide du fournisseur : liste conservée
+        com.sokoul.iptv.data.repo.replaceEpisodes(db, pid, "S", emptyList(), true, details(3))
+        assertEquals(2, db.series().episodes(pid, "S").size)
+        // vraie mise à jour : liste et date remplacées ensemble
+        com.sokoul.iptv.data.repo.replaceEpisodes(db, pid, "S", listOf(ep("S", 1, 1), ep("S", 1, 2), ep("S", 1, 3)), true, details(4))
+        assertEquals(3, db.series().episodes(pid, "S").size)
+        assertEquals(4L, db.series().details(pid, "S")!!.fetchedAt)
+    }
+
     @Test fun `episodes de toutes les versions et progression par saison`() = runBlocking {
         db.series().upsertEpisodes(listOf(ep("A", 1, 1), ep("B", 1, 1), ep("B", 1, 2), ep("X", 1, 1)))
         db.library().saveProgress(progress(ContentType.SERIES, "B-1-2", "B", 1, 1, at = 1, s = 1, e = 2, manual = true))

@@ -476,13 +476,19 @@ class BrowseRepository @Inject constructor(
                     ?: Work(ContentType.MOVIE, p.itemId, "id:${p.itemId}", p.title, null, p.image, progress = fraction, resume = p, subtitle = remaining)
                 ContentType.SERIES -> {
                     val sid = p.parentId ?: return@mapNotNull null
-                    // dernier épisode terminé : la carte propose le suivant (lancé depuis le début), sinon la série sort de la rangée
+                    // dernier épisode terminé : la carte propose le suivant (lancé depuis le début, toutes versions) ;
+                    // fin de série : elle sort de la rangée ; épisodes pas encore en cache : elle ouvre la fiche
                     val (entry, caption, frac) = if (p.finished) {
-                        val next = nextEpisode(pid, sid, p) ?: return@mapNotNull null
-                        Triple(
-                            p.copy(itemId = next.id, positionMs = 0, finished = false, season = next.season, episode = next.episode, subtitle = "S%02dE%02d · %s".format(next.season, next.episode, next.title)),
-                            "Épisode suivant · S${next.season} · É${next.episode}", null,
-                        )
+                        when (val next = nextEpisode(pid, sid, series[sid], p)) {
+                            is Next.Found -> next.episode.let { n ->
+                                Triple(
+                                    p.copy(itemId = n.id, parentId = n.seriesId, positionMs = 0, finished = false, season = n.season, episode = n.episode, subtitle = "S%02dE%02d · %s".format(n.season, n.episode, n.title)),
+                                    "Épisode suivant · S${n.season} · É${n.episode}", null,
+                                )
+                            }
+                            Next.End -> return@mapNotNull null
+                            Next.Unknown -> Triple(null, "Terminé · voir la suite", null)
+                        }
                     } else Triple(p, listOfNotNull(EpisodeMerge.caption(p.subtitle), remaining).joinToString(" · ").ifEmpty { null }, fraction)
                     series[sid]?.toWork()?.let { it.copy(backdrop = it.backdrop ?: p.image, progress = frac, resume = entry, subtitle = caption) }
                         ?: Work(ContentType.SERIES, sid, "id:$sid", p.title, null, p.image, progress = frac, resume = entry, subtitle = caption)
@@ -494,11 +500,25 @@ class BrowseRepository @Inject constructor(
         return enrich.decorate(pid, works)
     }
 
-    /** Épisode qui suit [p] dans la série (liste déjà en cache, sans appel au fournisseur). */
-    private suspend fun nextEpisode(pid: Long, sid: String, p: com.sokoul.iptv.data.db.ProgressEntity): com.sokoul.iptv.data.db.EpisodeEntity? {
-        val eps = db.vod().episodesIn(pid, listOf(sid))
-        val se = EpisodeResolver.seOf(p, eps.associate { it.id to (it.season to it.episode) }) ?: return null
-        return EpisodeResolver.nextAfter(eps, se)
+    /** Suite d'un épisode terminé : trouvée, fin de série, ou inconnue (épisodes pas encore en cache). */
+    private sealed interface Next {
+        data class Found(val episode: com.sokoul.iptv.data.db.EpisodeEntity) : Next
+        data object End : Next
+        data object Unknown : Next
+    }
+
+    /**
+     * Épisode qui suit [p], toutes versions de la série confondues (liste fusionnée comme sur la fiche),
+     * à partir du cache uniquement : aucun appel au fournisseur.
+     */
+    private suspend fun nextEpisode(pid: Long, sid: String, series: com.sokoul.iptv.data.db.SeriesEntity?, p: com.sokoul.iptv.data.db.ProgressEntity): Next {
+        val versions = series?.let { vod.orderedSeries(pid, vod.seriesVersions(pid, it)).map { v -> v.id } }.orEmpty()
+        val ids = (listOf(sid) + versions).distinct()
+        val all = db.vod().episodesIn(pid, ids)
+        if (all.isEmpty()) return Next.Unknown
+        val merged = VodRepository.mergeEpisodes(all, ids)
+        val se = EpisodeResolver.seOf(p, all.associate { it.id to (it.season to it.episode) }) ?: return Next.Unknown
+        return EpisodeResolver.nextAfter(merged, se)?.let { Next.Found(it) } ?: Next.End
     }
 
     // --- grilles « Tout voir » -------------------------------------------------------------------------

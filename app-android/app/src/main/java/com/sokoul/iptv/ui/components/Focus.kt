@@ -2,7 +2,12 @@ package com.sokoul.iptv.ui.components
 
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.sokoul.iptv.ui.theme.LocalReducedMotion
+import com.sokoul.iptv.ui.theme.Motion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -91,6 +96,8 @@ private class PressState {
 
 /**
  * Surface focalisable : agrandissement + liseré blanc au focus, lisible à 3 mètres.
+ * Transition douce (ressort pour l'échelle, fondu pour la couleur et le liseré) calculée
+ * à l'étape de dessin : aucune recomposition pendant l'animation.
  */
 @Composable
 fun FocusSurface(
@@ -106,17 +113,34 @@ fun FocusSurface(
     content: @Composable (focused: Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) focusScale else 1f, tween(140), label = "scale")
+    val reduced = LocalReducedMotion.current
+    val progress = animateFloatAsState(
+        if (focused) 1f else 0f,
+        if (reduced) snap() else Motion.focusSpring(),
+        label = "focus",
+    )
+    val bg by rememberUpdatedState(color)
+    val fbg by rememberUpdatedState(focusedColor)
     Box(
         modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .graphicsLayer {
+                val s = 1f + (focusScale - 1f) * progress.value
+                scaleX = s; scaleY = s
+            }
             .onFocusChanged {
                 if (it.isFocused && !focused) onFocus?.invoke()
                 focused = it.isFocused
             }
+            .drawWithCache {
+                val outline = shape.createOutline(size, layoutDirection, this)
+                val stroke = Stroke(borderWidth.toPx())
+                onDrawBehind {
+                    val p = progress.value.coerceIn(0f, 1f)
+                    drawOutline(outline, androidx.compose.ui.graphics.lerp(bg, fbg, p))
+                    if (p > 0.01f) drawOutline(outline, SokoulColors.Focus.copy(alpha = p), style = stroke)
+                }
+            }
             .clip(shape)
-            .background(if (focused) focusedColor else color, shape)
-            .then(if (focused) Modifier.border(borderWidth, SokoulColors.Focus, shape) else Modifier)
             .dpadClickable(onClick, onLongClick)
     ) {
         content(focused)

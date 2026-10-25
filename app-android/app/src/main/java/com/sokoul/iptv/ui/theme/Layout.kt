@@ -104,7 +104,22 @@ object Motion {
     const val FAST = 160
     const val MEDIUM = 300
     const val SLOW = 650
+    /** Décalage entre deux éléments qui apparaissent l'un après l'autre (logo, méta, boutons…). */
+    const val STAGGER = 60
     const val HERO_INTERVAL_MS = 8_000L
     val Emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
     val Decelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+    val Accelerate = CubicBezierEasing(0.3f, 0f, 1f, 1f)
+    /** Ressort doux pour le focus : rapide, sans rebond visible. */
+    fun <T> focusSpring() = androidx.compose.animation.core.spring<T>(dampingRatio = 0.85f, stiffness = 900f)
+    fun <T> enter(delay: Int = 0) = androidx.compose.animation.core.tween<T>(MEDIUM, delay, Decelerate)
+    fun <T> exit() = androidx.compose.animation.core.tween<T>(FAST, 0, Accelerate)
+}
+
+/** Rayons d'angle communs. */
+object Radius {
+    val Small = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    val Medium = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+    val Large = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+    val Pill = androidx.compose.foundation.shape.RoundedCornerShape(50)
 }

@@ -134,20 +134,16 @@ class CatalogRepository @Inject constructor(
                 extension = e.extension, streamUrl = null, rating = e.rating,
             )
         }
-        // réponse vide (erreur passagère du fournisseur) : on garde la liste déjà connue
-        if (episodes.isEmpty() && hasEpisodes) return
-        // remplacement atomique : les écrans ne voient jamais une liste vide, même si l'app est tuée entre-temps
-        db.withTransaction {
-            db.series().deleteEpisodes(p.id, seriesId)
-            db.series().upsertEpisodes(episodes)
-        }
         val s = info.series
-        db.series().upsertDetails(
+        replaceEpisodes(
+            db,
+            p.id, seriesId, episodes, hasEpisodes,
             SeriesDetailsEntity(
                 p.id, seriesId, System.currentTimeMillis(), s?.plot, s?.cast, s?.director, s?.genre, s?.releaseDate, s?.backdrop, s?.trailer,
-            )
+            ),
         )
     }
+
 
     suspend fun movieDetails(p: PlaylistEntity, movie: MovieEntity, tmdbHint: Int? = null): MovieDetails {
         val key = "${p.id}:${movie.id}"
@@ -200,4 +196,24 @@ class CatalogRepository @Inject constructor(
     private suspend fun findChannelForKey(pid: Long, key: String): ChannelEntity? =
         if (key.startsWith(EpgRepository.XT_PREFIX)) db.channels().get(pid, key.removePrefix(EpgRepository.XT_PREFIX))
         else db.channels().byEpgKey(pid, key)
+}
+
+/**
+ * Remplace les épisodes d'une série et la date de mise à jour en une seule transaction : les écrans ne voient
+ * jamais une liste vide ou à moitié écrite, même si l'app est tuée ou si l'écriture échoue en cours de route.
+ * Une réponse vide (erreur passagère du fournisseur) ne remplace jamais une liste déjà connue.
+ * [beforeInsert] sert uniquement aux tests (simuler une panne au milieu de l'écriture).
+ */
+internal suspend fun replaceEpisodes(
+    db: AppDatabase,
+    pid: Long, seriesId: String, episodes: List<EpisodeEntity>, hadEpisodes: Boolean, details: SeriesDetailsEntity,
+    beforeInsert: suspend () -> Unit = {},
+) {
+    if (episodes.isEmpty() && hadEpisodes) return
+    db.withTransaction {
+        db.series().deleteEpisodes(pid, seriesId)
+        beforeInsert()
+        db.series().upsertEpisodes(episodes)
+        db.series().upsertDetails(details)
+    }
 }

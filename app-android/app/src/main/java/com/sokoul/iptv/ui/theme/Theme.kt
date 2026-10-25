@@ -32,6 +32,22 @@ object SokoulColors {
     val Skeleton = Color(0xFF1C1C27)
     val SkeletonShine = Color(0xFF2A2A3A)
     val Gold = Color(0xFFFFC94D)
+
+    // --- calques sur image / vidéo (voiles, verre dépoli, texte sur fond clair) ---
+    /** Voile léger (dégradés de lisibilité). */
+    val Scrim = Color(0xB3000000)
+    /** Voile fort (bas de la barre du lecteur, panneaux). */
+    val ScrimStrong = Color(0xF2000000)
+    /** Bouton « verre » au repos sur image. */
+    val GlassLight = Color(0x33FFFFFF)
+    /** Bouton « verre » mis en avant (action principale au repos sur TV). */
+    val GlassHeavy = Color(0x59FFFFFF)
+    /** Panneaux opaques au-dessus de la vidéo. */
+    val Panel = Color(0xF2111118)
+    /** Texte et icônes posés sur un fond blanc (bouton focalisé). */
+    val OnLight = Color(0xFF0A0A0F)
+    /** Teinte d'accent très légère (élément courant dans une liste). */
+    val AccentTint = Color(0x147C6CFF)
 }
 
 private val scheme = darkColorScheme(
@@ -69,13 +85,23 @@ private val typography = Typography(
 /** Vrai sur Android TV / Fire TV (télécommande, pas d'écran tactile). */
 val LocalIsTv = staticCompositionLocalOf { false }
 
+/** Vrai si l'utilisateur a coupé les animations (Accessibilité ou Options développeur : échelle 0). */
+val LocalReducedMotion = staticCompositionLocalOf { false }
+
 @Composable
 fun SokoulTheme(content: @Composable () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val reduced = androidx.compose.runtime.remember {
+        runCatching {
+            android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+        }.getOrDefault(false)
+    }
     MaterialTheme(colorScheme = scheme, typography = typography) {
         // Sans Surface parente, la couleur de texte par défaut serait le noir : illisible sur fond sombre.
         CompositionLocalProvider(
             LocalContentColor provides SokoulColors.TextPrimary,
             LocalLayout provides rememberAppLayout(LocalIsTv.current),
+            LocalReducedMotion provides reduced,
             content = content,
         )
     }
