@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -18,7 +19,7 @@ import androidx.compose.ui.focus.onFocusChanged
  */
 @Stable
 class FocusMemory internal constructor(private val saved: MutableState<String?>) {
-    private val requesters = HashMap<String, FocusRequester>()
+    private val requesters = LinkedHashMap<String, FocusRequester>() // ordre d'affichage
 
     val last: String? get() = saved.value
 
@@ -28,12 +29,21 @@ class FocusMemory internal constructor(private val saved: MutableState<String?>)
 
     fun forget() { saved.value = null }
 
-    /** Redonne le focus au dernier élément retenu ; `false` s'il n'est pas (ou plus) affiché. */
-    fun restore(): Boolean {
+    /**
+     * Redonne le focus au dernier élément retenu ; `false` s'il n'est pas (ou plus) affiché.
+     * Avec [sameGroup], si l'élément exact a disparu (carte remplacée après la lecture), on se rabat
+     * sur un autre élément du même groupe (préfixe avant « | », ex. la même rangée).
+     */
+    fun restore(sameGroup: Boolean = false): Boolean {
         val key = saved.value ?: return false
-        val r = requesters[key] ?: return false
-        return runCatching { r.requestFocus(); true }.getOrDefault(false)
+        if (requesters[key]?.let { tryFocus(it) } == true) return true
+        if (!sameGroup || '|' !in key) return false
+        val group = key.substringBefore('|') + "|"
+        return requesters.entries.any { (k, r) -> k != key && k.startsWith(group) && tryFocus(r) }
     }
+
+    // requestFocus() sans argument ne signale rien quand l'élément a disparu : on lit le résultat
+    private fun tryFocus(r: FocusRequester) = runCatching { r.requestFocus(FocusDirection.Enter) }.getOrDefault(false)
 }
 
 @Composable

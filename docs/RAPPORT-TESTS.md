@@ -198,3 +198,82 @@ Une seule fiche par œuvre ; les doublons (VF, MULTI, VOSTFR, 4K, autres pays, p
 - Le cadrage des écrans téléphone et tablette est simulé sur la box ; à confirmer sur un vrai téléphone.
 - Le héros peut indiquer « 1 saison » (catalogue du fournisseur) alors que la fiche TMDB en compte davantage.
 - Les œuvres jamais vues par TMDB gardent l'affiche du fournisseur et, souvent, un résumé en anglais tant que la file d'enrichissement ne les a pas traitées.
+## 8. Phase 6 — Parcours Films & Séries « zéro friction » (navigation → fiche → lecteur)
+
+Objectif : chaque étape du parcours vérifiée à la télécommande et au tactile, sans erreur ni requête de trop vers le fournisseur (1 connexion maximum).
+
+**Sécurité fournisseur et lecteur** :
+- `ProviderGate` (unique dans l'app) : après un refus 401/403/406/429, aucune nouvelle tentative pendant 30 s, ni automatique ni vers une autre version. « Réessayer » affiche un compte à rebours et reste bloqué jusqu'à la fin. Les erreurs réseau gardent leur nouvel essai progressif.
+- Un seul flux à la fois : un nouveau lecteur libère l'ancien tout de suite. Anti-double-appui sur toute la navigation (`navigateOnce`), donc un double appui n'ouvre jamais deux lecteurs.
+- Accueil (Home) pendant un film : passage en image dans l'image ; sinon pause et sauvegarde de la position.
+- Le curseur tactile ne demande la nouvelle position qu'au relâchement, donc plus de rafales de requêtes.
+- « Épisode suivant », changement de version et démarrage protégés : une erreur s'affiche au lieu de faire planter l'app.
+
+**Reprise juste** (base Room v4, migration 3 → 4 testée : saison, épisode, « vu à la main ») :
+- la reprise se fait par saison et épisode, toutes versions confondues ;
+- « Reprendre S1 · É3 — 18 min restantes » avec barre de progression ;
+- un épisode marqué « vu » à la main ne détourne plus le bouton principal ;
+- une série dont le dernier épisode est terminé reste dans « Reprendre la lecture » avec « Épisode suivant · S1 · É4 » ;
+- même seuil partout (30 s) : aucune carte « Reprendre » ne repart de 0.
+
+**Lecteur** :
+- barre navigable au D-pad : progression (◀ −10 s / ▶ +30 s, aperçu du temps), puis ▼ vers Pause, Audio et sous-titres, Version, Épisodes, Suivant, Format. Tout marche sans touche Menu ;
+- heure de fin estimée (« Fin à 23:42 ») ;
+- indicateur de chargement en VOD ;
+- panneau Épisodes intégré ;
+- carte « Épisode suivant » 20 s avant la fin, avec compte à rebours, Lire maintenant ou Annuler (lecture auto désactivable) ;
+- choix audio et sous-titres mémorisés par langue.
+
+**Fiches** :
+- états chargement, introuvable (avec Retour) et TMDB indisponible (la fiche reste utilisable) ;
+- bouton principal intelligent ; saison de départ = celle à reprendre ;
+- focus restauré au retour du lecteur ;
+- choisir une version ne la rend plus permanente (appui long pour « Toujours cette version ») ;
+- bande-annonce corrigée.
+
+**Navigation** :
+- Accueil, Films et Séries progressifs : les rangées locales arrivent en moins de 1,5 s, TMDB ensuite (12 s au plus, puis abandon propre). Les requêtes TMDB sont maintenant annulables et les calculs se font hors du fil principal ;
+- plus de flash au rechargement ;
+- écran d'erreur avec « Réessayer » ;
+- retour sur la carte d'origine (accueil, grille, fiche) ;
+- fond et aperçu temporisés pendant le défilement ;
+- héros en pause hors écran ;
+- grille « Tout voir » : tri (Sélection, A → Z, Plus récents, Mieux notés), appui long, enrichissement au défilement, « Les N premiers titres ».
+
+| Test | Résultat |
+|---|---|
+| 131 tests automatisés (113 app + 18 parseur), dont `ParcoursLogicTest` (20 : porte fournisseur, reprise, épisode suivant, seuils, tris), `ParcoursDataTest` (6, base Room réelle : rangée Reprendre, série terminée, TMDB très lent → page locale < 3 s et finale < 6 s, TMDB en panne), `ParcoursUiTest` (9, interface Compose : focus Réessayer, compte à rebours bloquant, barre D-pad, carte épisode suivant focalisée et lisible sur TV, double appui, pas de lecteurs empilés, focus retrouvé, carte remplacée → focus dans la même rangée), `MigrationTest` 3 → 4 | OK |
+| Lint release | 0 erreur |
+| Box : accueil, migration v4 sur données réelles | OK |
+| Box : retour d'une fiche → focus sur la carte d'origine (Top 10, Reprendre) | OK |
+| Box : fiche série « Reprendre S1 · É1 » + temps restant ; lecture reprise à la bonne position | OK |
+| Box : barre lecteur (▶ +30 s, ▼ Pause, libellés au focus, « Fin à… ») | OK |
+| Box : pause → Retour → OK reprend la lecture | OK (bug corrigé, voir plus bas) |
+| Box : sortie du lecteur → carte Reprendre mise à jour, flux coupé | OK |
+| Box : double OK → un seul lecteur | OK |
+| Box : enchaînement automatique S1 · É1 → S1 · É2 | OK |
+| Box : carte « Épisode suivant » 20 s avant la fin (compte à rebours, « Lire maintenant » focalisé, « Annuler » sur une ligne) ; Annuler → fin de l'épisode → retour accueil, focus sur la carte « Épisode suivant · S1 · É4 » | OK après correctif (focus) |
+| Box : journal système sans plantage ni refus 4xx sur toute la session | OK |
+
+Tests réels faits avec l'abonnement : un flux à la fois, au moins 30 s entre deux lectures, aucun refus du fournisseur observé.
+
+**Bugs trouvés pendant les tests et corrigés** :
+- Télécommande : dans le lecteur, Retour ne faisait qu'effacer le focus (comportement de Compose), donc ensuite OK ne relançait plus la lecture. Retour est maintenant intercepté avant Compose et ferme dans l'ordre : panneau, liste, aperçu, puis la barre. Le focus est toujours rendu au lecteur.
+- ▼ depuis la barre de progression tombait sur un bouton au milieu (trouvé par un test d'interface) : il mène toujours à Lecture/Pause.
+- Carte « Épisode suivant » : « Annuler » s'affichait lettre par lettre en colonne sur TV, à cause de l'ordre des modificateurs de largeur. Corrigé et couvert par un test qui mesure le vrai texte.
+- Retour d'une fiche ouverte depuis le héros : le focus partait sur le menu latéral. Il revient sur « Lecture ».
+- « Reprise à … » réapparaissait à chaque fois que la barre se cachait : il ne s'affiche plus qu'une fois.
+- Note « 0,5 » affichée pour des titres sans vraie note : masquée sous 1.
+- Titre de secours centré au lieu d'aligné à gauche quand il n'y a pas de logo.
+- Requêtes TMDB impossibles à annuler, qui bloquaient la page jusqu'à 60 s.
+- Fin d'épisode sans enchaînement : retour à l'accueil avec le focus sur le menu latéral. Deux causes : `requestFocus()` ne signale rien quand la carte a disparu (la mémoire du focus croyait avoir réussi), et Compose envoie le focus au menu quand la carte focalisée est remplacée. Corrigé : vrai résultat lu (`requestFocus(Enter)`), repli sur la même rangée puis sur « Lecture », et un gardien qui ramène le focus dans les rangées s'il part sans appui de touche. Test ajouté.
+
+**Passe design (avant/après, critique sur captures de la box)** :
+- Focus plus lisible à 3 m : sur TV, seul le bouton focalisé est blanc, les autres restent translucides (héros et lecteur). Avant, « Lecture » paraissait toujours sélectionné.
+- Ligne de reprise compacte (barre de 140 dp + texte) au lieu d'une barre de 420 dp qui écrasait la fiche.
+
+**Limites** :
+- Le lecteur (ExoPlayer) n'est pas testé de bout en bout avec un faux serveur : la politique d'erreur est testée à travers `ErrorPolicy` et `ProviderGate`.
+- L'atomicité de `ensureEpisodes` (suppression + insertion en transaction) n'a pas de test dédié.
+- Dans « Reprendre la lecture », l'épisode suivant n'est cherché que dans la même version de la série.
+- Pas de tests instrumentés (`androidTest`) : les tests d'interface tournent sous Robolectric, sans flux réel, et les vérifications sur la box ont été faites à la main.

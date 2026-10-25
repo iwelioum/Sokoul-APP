@@ -42,6 +42,7 @@ import com.sokoul.iptv.ui.screens.player.StatusOverlay
 import com.sokoul.iptv.ui.screens.player.VodControls
 import kotlinx.serialization.Serializable
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
@@ -234,5 +235,31 @@ class ParcoursUiTest {
         rule.runOnIdle { assertEquals("ep:1:3", memory!!.last); memory!!.restore() }
         rule.onNodeWithText("Épisode 3").assertIsFocused()
         rule.onNodeWithText("Lecture").assertIsNotFocused()
+    }
+
+    @Test fun `carte remplacee apres la lecture le focus reste dans la meme rangee`() {
+        var memory: FocusMemory? = null
+        var keys by mutableStateOf(listOf("A", "B"))
+        var visible by mutableStateOf(true)
+        rule.setContent {
+            val m = rememberFocusMemory().also { memory = it }
+            Column {
+                AppButton("Menu", {}) // menu latéral : hors mémoire, comme dans l'app
+                if (visible) keys.forEach { k -> androidx.compose.runtime.key(k) { AppButton("Carte $k", {}, Modifier.focusMemory(m, "continue|$k")) } }
+            }
+        }
+        rule.runOnIdle { memory!!.requester("continue|A").requestFocus() }
+        rule.onNodeWithText("Carte A").assertIsFocused()
+        // départ vers le lecteur : la rangée disparaît ; au retour la carte A est devenue A2
+        rule.runOnIdle { visible = false }
+        rule.runOnIdle { keys = listOf("A2", "B"); visible = true }
+        rule.waitForIdle()
+        rule.runOnIdle {
+            assertEquals("continue|A", memory!!.last)
+            assertFalse("carte disparue : pas de faux succès", memory!!.restore())
+            assertTrue(memory!!.restore(sameGroup = true))
+        }
+        rule.onNodeWithText("Menu").assertIsNotFocused()
+        rule.onNodeWithText("Carte B").assertIsFocused()
     }
 }

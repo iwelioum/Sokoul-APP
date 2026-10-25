@@ -54,8 +54,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -128,6 +130,8 @@ fun NavHostController.openWork(w: Work) {
 
 // délai avant de changer le panneau d'aperçu et le fond : pas de rafale d'images quand on maintient le D-pad
 private const val SPOT_DEBOUNCE_MS = 220L
+/** Délai sous lequel une perte de focus vient de la télécommande (◀ vers le menu) et doit être respectée. */
+private const val FOCUS_KEY_WINDOW_MS = 600L
 
 /** Panneau d'information de la carte focalisée (TV). */
 private data class Spot(
@@ -205,7 +209,26 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+    // TV : si la carte focalisée disparaît (rangée mise à jour après la lecture), Compose envoie le focus
+    // au menu latéral. Sans appui de touche récent, on le ramène dans les rangées.
+    var lastKeyAt by remember { mutableStateOf(0L) }
+    var contentFocused by remember { mutableStateOf(false) }
+    var focusLost by remember { mutableStateOf(0) }
+    LaunchedEffect(focusLost) {
+        if (focusLost == 0 || !l.isTv || menuFor != null) return@LaunchedEffect
+        delay(120)
+        if (contentFocused || android.os.SystemClock.uptimeMillis() - lastKeyAt < FOCUS_KEY_WINDOW_MS) return@LaunchedEffect
+        if (!memory.restore(sameGroup = true)) runCatching { playFocus.requestFocus(FocusDirection.Enter) }
+    }
+
+    Box(
+        Modifier.fillMaxSize().background(SokoulColors.Background)
+            .onPreviewKeyEvent { lastKeyAt = android.os.SystemClock.uptimeMillis(); false }
+            .onFocusChanged { f ->
+                if (contentFocused && !f.hasFocus) focusLost++
+                contentFocused = f.hasFocus
+            },
+    ) {
         // fond d'ambiance (TV) : l'œuvre focalisée, très atténuée, derrière les rangées
         if (l.isTv) {
             val ambient by animateFloatAsState(if (inRows && shownSpot?.image != null) 1f else 0f, tween(Motion.SLOW), label = "ambient")
@@ -308,16 +331,19 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     LaunchedEffect(hero.isNotEmpty(), rows.isNotEmpty()) {
         if (!l.isTv) return@LaunchedEffect
         if (memory.last != null) {
-            repeat(6) {
+            // la rangée peut se recomposer juste après le retour (progression mise à jour) : on insiste,
+            // puis on se rabat sur une autre carte de la même rangée plutôt que de laisser le menu latéral
+            repeat(16) { i ->
                 delay(80)
-                if (memory.restore()) { initialFocusDone = true; return@LaunchedEffect }
+                if (memory.restore(sameGroup = i >= 12)) { initialFocusDone = true; return@LaunchedEffect }
             }
         }
         // premier affichage, ou retour d'une fiche ouverte depuis le héros : « Lecture » (jamais le menu latéral)
         if (hero.isEmpty()) return@LaunchedEffect
-        repeat(5) {
+        repeat(5) { i ->
             delay(80)
-            if (runCatching { playFocus.requestFocus() }.isSuccess) { initialFocusDone = true; return@LaunchedEffect }
+            if (i == 1 && listState.firstVisibleItemIndex > 0) listState.scrollToItem(0) // héros hors écran : on remonte
+            if (runCatching { playFocus.requestFocus(FocusDirection.Enter) }.getOrDefault(false)) { initialFocusDone = true; return@LaunchedEffect }
         }
     }
 }

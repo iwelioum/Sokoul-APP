@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -258,7 +259,7 @@ fun BrowseGridScreen(nav: NavHostController, title: String, spec: String) {
                     works.isNotEmpty() -> works.first().uid
                     else -> null
                 } ?: return@LaunchedEffect
-                if (runCatching { memory.requester(first).requestFocus() }.isSuccess) { initialFocusDone = true; return@LaunchedEffect }
+                if (runCatching { memory.requester(first).requestFocus(FocusDirection.Enter) }.getOrDefault(false)) { initialFocusDone = true; return@LaunchedEffect }
             }
         }
     }
