@@ -81,7 +81,8 @@ class RootViewModel @Inject constructor(
 fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
     val vm: RootViewModel = hiltViewModel()
     val hasPlaylist by vm.hasPlaylist.collectAsStateWithLifecycle()
-    Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+    // pas de fond ici : celui de la fenêtre (même couleur) suffit — chaque fond plein écran en plus coûte une passe GPU
+    Box(Modifier.fillMaxSize()) {
         when (hasPlaylist) {
             null -> LoadingBox()
             else -> {

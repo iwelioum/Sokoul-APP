@@ -436,7 +436,7 @@ fun PauseScreen(ui: PlayerUi, position: Long, duration: Long) {
                     Modifier.padding(top = 16.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextMuted,
                 )
             }
-            Text("OK pour reprendre  ·  autre touche : commandes", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextMuted)
+            Text("OK pour reprendre  ·  Retour pour fermer  ·  autre touche : commandes", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextMuted)
         }
     }
 }

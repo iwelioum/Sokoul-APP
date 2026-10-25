@@ -272,7 +272,8 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
 
     // « Retour » : ferme d'abord ce qui est ouvert (panneau, liste, saisie, barre), sinon quitte le lecteur
     fun backConsumed(): Boolean = when {
-        pauseScreen -> { pauseScreen = false; showInfo(); true }
+        // Retour ferme seulement l'écran de pause (sans montrer la barre) : un second Retour quitte le lecteur
+        pauseScreen -> { pauseScreen = false; true }
         tracksVisible -> { tracksVisible = false; true }
         episodesVisible -> { episodesVisible = false; true }
         listVisible -> { listVisible = false; true }
@@ -320,11 +321,12 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     Box(
         Modifier.fillMaxSize().background(Color.Black)
             .onPreviewKeyEvent { e ->
-                // écran de pause : la première touche le ferme (OK reprend la lecture, les autres montrent la barre)
+                // écran de pause : la première touche le ferme (OK reprend la lecture, Retour le ferme seul, les autres montrent la barre)
                 if (pauseScreen && e.type == KeyEventType.KeyDown) {
                     val code = e.nativeKeyEvent.keyCode
                     pauseScreen = false
-                    if (isSelect(code) || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY) playPause() else showInfo()
+                    if (isSelect(code) || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY) playPause()
+                    else if (code != KeyEvent.KEYCODE_BACK) showInfo()
                     backDownConsumed = code == KeyEvent.KEYCODE_BACK
                     return@onPreviewKeyEvent true
                 }

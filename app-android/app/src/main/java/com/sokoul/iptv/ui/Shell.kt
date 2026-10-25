@@ -108,11 +108,11 @@ private val TvRailExpanded = 236.dp
 fun Shell(nav: NavHostController, current: Dest, edgeToEdge: Boolean = false, content: @Composable () -> Unit) {
     val layout = LocalLayout.current
     when (layout.window) {
-        WindowClass.TV -> Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+        WindowClass.TV -> Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().padding(start = TvRailCollapsed)) { content() }
             TvRail(current) { nav.goTo(it) }
         }
-        WindowClass.MEDIUM, WindowClass.EXPANDED -> Row(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+        WindowClass.MEDIUM, WindowClass.EXPANDED -> Row(Modifier.fillMaxSize()) {
             TabletRail(current) { nav.goTo(it) }
             Box(Modifier.fillMaxSize().then(if (edgeToEdge) Modifier else Modifier.statusBarsPadding())) { content() }
         }

@@ -3,6 +3,8 @@ package com.sokoul.iptv.ui.screens.browse
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.State
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -179,15 +181,20 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val playFocus = remember { FocusRequester() }
-    var spot by remember { mutableStateOf<Spot?>(null) }
+    // états lus seulement par des composables enfants : un déplacement du focus ne recompose pas tout l'écran
+    val spot = remember { mutableStateOf<Spot?>(null) }
     var inRows by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<Work?>(null) }
     // carte d'où l'on est parti (fiche, grille, lecteur) : le focus y revient au retour
     val memory = rememberFocusMemory()
     var initialFocusDone by rememberSaveable { mutableStateOf(false) }
     // images d'ambiance et panneau d'aperçu : mis à jour quand le défilement au D-pad se pose
-    var shownSpot by remember { mutableStateOf<Spot?>(null) }
-    LaunchedEffect(spot) { if (shownSpot != null) delay(SPOT_DEBOUNCE_MS); shownSpot = spot }
+    val shownSpot = remember { mutableStateOf<Spot?>(null) }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { spot.value }.collectLatest { s -> if (shownSpot.value != null) delay(SPOT_DEBOUNCE_MS); shownSpot.value = s }
+    }
+    // panneau d'aperçu (TV) : opaque une fois affiché ; le héros dessous n'est alors plus dessiné
+    val spotShown = animateFloatAsState(if (inRows && l.isTv) 1f else 0f, tween(Motion.MEDIUM), label = "spot")
     val spotHeight = (l.heightDp * 0.44f).dp
     val spotPx = with(density) { spotHeight.roundToPx() }
 
@@ -222,7 +229,8 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     }
 
     Box(
-        Modifier.fillMaxSize().background(SokoulColors.Background)
+        // pas de fond : celui de la fenêtre (même couleur) suffit, une passe GPU plein écran de moins par image
+        Modifier.fillMaxSize()
             .onPreviewKeyEvent { lastKeyAt = android.os.SystemClock.uptimeMillis(); false }
             .onFocusChanged { f ->
                 if (contentFocused && !f.hasFocus) focusLost++
@@ -230,20 +238,7 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
             },
     ) {
         // fond d'ambiance (TV) : l'œuvre focalisée, très atténuée, derrière les rangées
-        if (l.isTv) {
-            val ambient by animateFloatAsState(if (inRows && shownSpot?.image != null) 1f else 0f, tween(Motion.SLOW), label = "ambient")
-            if (ambient > 0f) {
-                AnimatedContent(shownSpot?.image, transitionSpec = { fadeIn(tween(Motion.SLOW)) togetherWith fadeOut(tween(Motion.SLOW)) }, label = "amb") { img ->
-                    // sous le panneau seulement, avec un fondu en haut : pas de ligne de coupure visible
-                    Box(Modifier.fillMaxSize().padding(top = spotHeight - 1.dp)) {
-                        Box(Modifier.fillMaxSize().graphicsLayer { alpha = ambient * 0.22f }) {
-                            NetImage(tmdbSized(img, "w780"), null, Modifier.fillMaxSize())
-                        }
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to SokoulColors.Background, 0.45f to Color.Transparent)))
-                    }
-                }
-            }
-        }
+        if (l.isTv) AmbientBackdrop(shownSpot, inRows, spotHeight)
         CompositionLocalProvider(LocalBringIntoViewSpec provides if (l.isTv) noAutoScroll else defaultSpec) {
             LazyColumn(
                 Modifier.fillMaxSize(), state = listState,
@@ -254,7 +249,8 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                         Box(Modifier.fillMaxWidth().height(l.heroHeight).shimmer(RoundedCornerShape(0.dp)))
                     } else if (hero.isNotEmpty()) {
                         HeroCarousel(
-                            hero, onPlay = play, onInfo = open, playFocus = playFocus,
+                            modifier = Modifier.graphicsLayer { alpha = if (spotShown.value >= 1f) 0f else 1f },
+                            works = hero, onPlay = play, onInfo = open, playFocus = playFocus,
                             active = !inRows && listState.firstVisibleItemIndex == 0,
                             label = { i, w -> if (ui.heroRanked && i < 10) "N° ${i + 1} des ${if (w.type == ContentType.MOVIE) "films" else "séries"} cette semaine" else null },
                             onFocused = {
@@ -287,7 +283,7 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                                 RowView(
                                     row, nav, vm,
                                     onOpen = open, onSeeAll = { seeAll(row) },
-                                    onSpot = { spot = it },
+                                    onSpot = { spot.value = it },
                                     onMenu = { menuFor = it },
                                     memory = memory,
                                 )
@@ -308,8 +304,7 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
 
         // TV : panneau d'information de la carte focalisée, au-dessus des rangées
         if (l.isTv) {
-            val shown by animateFloatAsState(if (inRows) 1f else 0f, tween(Motion.MEDIUM), label = "spot")
-            if (shown > 0f) SpotPanel(shownSpot, spotHeight, Modifier.graphicsLayer { alpha = shown })
+            SpotLayer(shownSpot, spotShown, spotHeight)
         } else {
             TopBar(title, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, l.heroHeight.value * density.density, vm.kind, nav)
         }
@@ -441,12 +436,39 @@ private fun Chip(text: String, icon: androidx.compose.ui.graphics.vector.ImageVe
 }
 
 /** Panneau TV : fond de l'œuvre à droite, logo/titre, méta et résumé à gauche. */
+/**
+ * Fond d'ambiance (TV) : l'œuvre focalisée, très atténuée, derrière les rangées.
+ * Composable à part : le changement d'œuvre et le fondu ne recomposent pas tout l'écran.
+ */
+@Composable
+private fun AmbientBackdrop(spot: State<Spot?>, inRows: Boolean, spotHeight: androidx.compose.ui.unit.Dp) {
+    val image = spot.value?.image
+    val ambient = animateFloatAsState(if (inRows && image != null) 1f else 0f, tween(Motion.SLOW), label = "ambient")
+    if (ambient.value <= 0f) return
+    // une seule image (pas de fondu enchaîné entre deux images plein écran : mesuré, c'était ~5 points
+    // d'images saccadées sur la box) ; à 22 % d'opacité derrière les rangées, le changement reste doux
+    Box(Modifier.fillMaxSize().padding(top = spotHeight - 1.dp).graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = ambient.value * 0.22f }) {
+            NetImage(tmdbSized(image, "w780"), null, Modifier.fillMaxSize())
+        }
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to SokoulColors.Background, 0.45f to Color.Transparent)))
+    }
+}
+
+/** Panneau d'aperçu (TV) : lit l'œuvre et l'opacité ici, pas dans l'écran parent. */
+@Composable
+private fun SpotLayer(spot: State<Spot?>, shown: State<Float>, height: androidx.compose.ui.unit.Dp) {
+    if (shown.value > 0f) SpotPanel(spot.value, height, Modifier.graphicsLayer { alpha = shown.value })
+}
+
 @Composable
 private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier: Modifier) {
     val l = LocalLayout.current
     Box(modifier.fillMaxWidth().height(height).background(SokoulColors.Background)) {
         AnimatedContent(spot, transitionSpec = { fadeIn(tween(Motion.MEDIUM)) togetherWith fadeOut(tween(Motion.MEDIUM)) }, label = "spot") { s ->
             Box(Modifier.fillMaxSize()) {
+                // image + dégradés dans une texture en cache : le fondu enchaîné ne redessine rien, il change l'opacité
+                Box(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }) {
                 if (s?.image != null) {
                     NetImage(
                         tmdbSized(s.image, "w1280"), null, Modifier.fillMaxWidth(0.68f).height(height).align(Alignment.TopEnd),
@@ -457,6 +479,7 @@ private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier
                 }
                 Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0.30f to SokoulColors.Background, 0.55f to Color(0xB30A0A0F), 0.80f to Color.Transparent)))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.65f to Color.Transparent, 1f to SokoulColors.Background)))
+                }
                 if (s != null) {
                     Column(Modifier.align(Alignment.BottomStart).padding(start = l.margin, bottom = 18.dp).widthIn(max = l.heroTextWidth)) {
                         if (s.platform != null && s.platform.label != s.title) PlatformBadge(s.platform, Modifier.padding(bottom = 8.dp), large = true)
