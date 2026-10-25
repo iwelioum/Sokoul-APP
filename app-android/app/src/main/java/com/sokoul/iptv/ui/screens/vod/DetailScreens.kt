@@ -784,7 +784,7 @@ private fun DetailTagline(text: String) {
 @Composable
 private fun MetaLine(rating: Double?, bits: List<String>, certification: String?) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (rating != null && rating > 0) RatingChip(rating)
+        if (rating != null && rating >= com.sokoul.iptv.ui.components.MIN_RATING) RatingChip(rating)
         bits.forEach { Text(it, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary) }
         if (certification != null) {
             Text(
@@ -947,8 +947,9 @@ private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boo
 @Composable
 private fun ResumeLine(p: ProgressEntity, prefix: String? = null) {
     if (p.durationMs <= 0) return
-    Row(Modifier.padding(top = 12.dp).widthIn(max = 420.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f).clip(RoundedCornerShape(2.dp))) { ProgressLine(p.positionMs.toFloat() / p.durationMs) }
+    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // barre courte puis le texte, lus d'un seul regard de gauche à droite
+        Box(Modifier.width(140.dp).clip(RoundedCornerShape(2.dp))) { ProgressLine(p.positionMs.toFloat() / p.durationMs) }
         Text(
             listOfNotNull(prefix, EpisodeResolver.remaining(p)).joinToString(" · "),
             Modifier.padding(start = 12.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,

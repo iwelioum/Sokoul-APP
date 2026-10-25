@@ -69,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
@@ -163,6 +164,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val nextFocus = remember { FocusRequester() }
 
     fun showInfo() { infoVisible = true; infoTick++ }
+    // rappel « Reprise à … » affiché une seule fois (5 s), pas à chaque fermeture de la barre
+    var resumeHintDone by remember(ui.resumedFromMs) { mutableStateOf(false) }
+    LaunchedEffect(ui.resumedFromMs) { if (ui.resumedFromMs > 0) { delay(5_000); resumeHintDone = true } }
     val exo = sp?.player
 
     val errorShown = ui.error != null || streamState is StreamState.Failed || streamState is StreamState.Waiting
@@ -247,14 +251,24 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         }
     }
 
-    BackHandler(enabled = episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) {
-        when {
-            episodesVisible -> episodesVisible = false
-            listVisible -> listVisible = false
-            numberBuffer.isNotEmpty() -> numberBuffer = ""
-            seekPreview != null -> seekPreview = null
-            else -> infoVisible = false
-        }
+    // « Retour » : ferme d'abord ce qui est ouvert (panneau, liste, saisie, barre), sinon quitte le lecteur
+    fun backConsumed(): Boolean = when {
+        episodesVisible -> { episodesVisible = false; true }
+        listVisible -> { listVisible = false; true }
+        numberBuffer.isNotEmpty() -> { numberBuffer = ""; true }
+        seekPreview != null -> { seekPreview = null; true }
+        infoVisible && !ui.isLive && isTv -> { infoVisible = false; true }
+        else -> false
+    }
+    BackHandler(enabled = episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
+    // touche Retour interceptée avant Compose : sinon elle retire seulement le focus de la barre (télécommande « muette »)
+    var backDownConsumed by remember { mutableStateOf(false) }
+    // filet de sécurité : le lecteur ne reste jamais sans focus (hors menus, qui ont leur propre fenêtre)
+    var rootHasFocus by remember { mutableStateOf(true) }
+    LaunchedEffect(rootHasFocus, menu, ui.needsPin, inPip) {
+        if (rootHasFocus || menu != null || ui.needsPin || inPip) return@LaunchedEffect
+        delay(150)
+        runCatching { if (infoVisible && !ui.isLive && !l.isTouch && !modal) scrubberFocus.requestFocus() else focus.requestFocus() }
     }
 
     fun seekBy(deltaMs: Long) {
@@ -280,7 +294,16 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
 
     Box(
         Modifier.fillMaxSize().background(Color.Black)
-            .onPreviewKeyEvent { if (it.type == KeyEventType.KeyDown) infoTick++; false }
+            .onPreviewKeyEvent { e ->
+                if (e.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK && menu == null) {
+                    if (e.type == KeyEventType.KeyDown) { backDownConsumed = e.nativeKeyEvent.repeatCount == 0 && backConsumed(); return@onPreviewKeyEvent backDownConsumed }
+                    if (e.type == KeyEventType.KeyUp && backDownConsumed) { backDownConsumed = false; return@onPreviewKeyEvent true }
+                    return@onPreviewKeyEvent false
+                }
+                if (e.type == KeyEventType.KeyDown) infoTick++
+                false
+            }
+            .onFocusChanged { rootHasFocus = it.hasFocus }
             .focusRequester(focus)
             .onKeyEvent { e ->
                 if (menu != null) return@onKeyEvent false
@@ -369,7 +392,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             }
 
             // reprise : rappel discret en haut à gauche
-            if (!ui.isLive && ui.resumedFromMs > 0 && !infoVisible) ResumeHint(ui.resumedFromMs, Modifier.align(Alignment.TopStart))
+            if (!ui.isLive && ui.resumedFromMs > 0 && !infoVisible && !resumeHintDone) ResumeHint(ui.resumedFromMs, Modifier.align(Alignment.TopStart))
             seekFlash?.let { SeekFlash(it, Modifier.align(Alignment.Center)) }
             if (!ui.isLive && seekPreview != null && !infoVisible) SeekFlash(formatDuration(seekPreview ?: 0), Modifier.align(Alignment.Center))
 
@@ -570,9 +593,7 @@ private fun toast(context: android.content.Context, msg: String) = Toast.makeTex
 
 @Composable
 private fun ResumeHint(fromMs: Long, modifier: Modifier) {
-    var visible by remember(fromMs) { mutableStateOf(true) }
-    LaunchedEffect(fromMs) { delay(5_000); visible = false }
-    AnimatedVisibility(visible, modifier, enter = fadeIn(), exit = fadeOut()) {
+    AnimatedVisibility(true, modifier, enter = fadeIn(), exit = fadeOut()) {
         Column(Modifier.padding(24.dp).background(Color(0xCC000000), RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text("Reprise à ${formatDuration(fromMs)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Text("« Depuis le début » dans les commandes", color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelSmall)

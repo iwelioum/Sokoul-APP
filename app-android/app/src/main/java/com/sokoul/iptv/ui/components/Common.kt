@@ -82,7 +82,7 @@ fun NetImage(
     fallback: @Composable () -> Unit = {},
 ) {
     if (url.isNullOrBlank()) {
-        Box(modifier, contentAlignment = Alignment.Center) { fallback() }
+        Box(modifier, contentAlignment = alignment) { fallback() }
         return
     }
     SubcomposeAsyncImage(
@@ -92,7 +92,7 @@ fun NetImage(
         contentScale = contentScale,
         alignment = alignment,
         loading = { Box(Modifier.fillMaxSize().shimmer(RoundedCornerShape(0.dp))) },
-        error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { fallback() } },
+        error = { Box(Modifier.fillMaxSize(), contentAlignment = alignment) { fallback() } },
     )
 }
 

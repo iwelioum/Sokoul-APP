@@ -228,7 +228,7 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
                     Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp, if (compact) Alignment.CenterHorizontally else Alignment.Start),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    if (!compact && w.rating != null && w.rating > 0) RatingChip(w.rating)
+                    if (!compact && w.rating != null && w.rating >= MIN_RATING) RatingChip(w.rating)
                     bits.forEach { Text(it, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary) }
                     if (w.certification != null && !compact) {
                         Text(
@@ -284,15 +284,16 @@ fun HeroButton(text: String, icon: ImageVector, primary: Boolean, onClick: () ->
     val l = LocalLayout.current
     FocusSurface(
         onClick = onClick, modifier = modifier, shape = RoundedCornerShape(if (l.isTv) 10.dp else 8.dp),
-        color = if (primary) Color.White else Color(0x59FFFFFF),
-        focusedColor = if (primary) Color.White else Color(0x8CFFFFFF),
-        focusScale = 1.08f, borderWidth = if (primary) 0.dp else 2.dp,
-    ) { _ ->
+        // TV : seul l'élément focalisé est blanc (sinon le bouton principal semble sélectionné à la place du focus)
+        color = if (primary && !l.isTv) Color.White else if (primary) Color(0x73FFFFFF) else Color(0x59FFFFFF),
+        focusedColor = if (primary || l.isTv) Color.White else Color(0x8CFFFFFF),
+        focusScale = 1.08f, borderWidth = if (primary || l.isTv) 0.dp else 2.dp,
+    ) { focused ->
         Row(
             Modifier.height(if (l.isCompact) 42.dp else 44.dp).padding(horizontal = if (l.isCompact) 18.dp else 22.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val c = if (primary) Color(0xFF0A0A0F) else Color.White
+            val c = if ((primary && !l.isTv) || (l.isTv && focused)) Color(0xFF0A0A0F) else Color.White
             Icon(icon, null, Modifier.size(22.dp), tint = c)
             Spacer(Modifier.width(8.dp))
             Text(text, color = c, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)

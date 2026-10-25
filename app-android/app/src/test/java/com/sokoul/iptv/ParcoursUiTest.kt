@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,9 @@ import com.sokoul.iptv.ui.screens.player.StatusOverlay
 import com.sokoul.iptv.ui.screens.player.VodControls
 import kotlinx.serialization.Serializable
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -131,6 +135,40 @@ class ParcoursUiTest {
         rule.onNodeWithContentDescription("Position de lecture").assertIsFocused()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         rule.runOnIdle { assertEquals(listOf("Sous-titres", "OK"), clicked) }
+    }
+
+    @Composable
+    private fun NextUp(onPlay: () -> Unit = {}) {
+        androidx.compose.foundation.layout.Box(Modifier.size(960.dp, 540.dp)) {
+            com.sokoul.iptv.ui.screens.player.NextUpCard(
+                com.sokoul.iptv.data.db.EpisodeEntity(1, "s", "e2", 1, 2, "The Fan", null, null, null, "mkv", null, null),
+                seconds = 10, fallbackImage = null, playFocus = remember { FocusRequester() },
+                modifier = Modifier, onPlay = onPlay, onCancel = {},
+            )
+        }
+    }
+
+    @Test fun `carte episode suivant bouton Lire focalise et actif au D-pad`() {
+        var played = 0
+        rule.setContent { NextUp { played++ } }
+        rule.mainClock.advanceTimeBy(300)
+        rule.onNodeWithText("Lire maintenant").assertIsFocused()
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.runOnIdle { assertEquals(1, played) }
+    }
+
+    /** Mesure réelle du texte (rendu natif) : la carte occupe la moitié de l'écran TV, rien ne passe à la ligne. */
+    @Config(sdk = [34], application = Application::class, qualifiers = "w960dp-h540dp-land-mdpi")
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    @Test fun `carte episode suivant lisible sur TV`() {
+        rule.setContent { NextUp() }
+        rule.waitForIdle()
+        val cancel = rule.onNodeWithText("Annuler").fetchSemanticsNode().boundsInRoot
+        val title = rule.onNodeWithText("Épisode suivant dans 10 s").fetchSemanticsNode().boundsInRoot
+        with(rule.density) {
+            assertTrue("Annuler : ${cancel.width.toDp()} x ${cancel.height.toDp()}", cancel.height.toDp() < 64.dp && cancel.width.toDp() > 80.dp)
+            assertTrue("titre : ${title.width.toDp()} x ${title.height.toDp()}", title.height.toDp() < 30.dp)
+        }
     }
 
     // --- navigation -------------------------------------------------------------------------------------

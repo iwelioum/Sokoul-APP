@@ -223,10 +223,10 @@ fun PlayerButton(a: PlayerAction, modifier: Modifier = Modifier, compact: Boolea
     val l = LocalLayout.current
     FocusSurface(
         onClick = a.onClick, modifier = modifier.semantics { contentDescription = a.label },
-        shape = RoundedCornerShape(50), color = if (a.primary) Color.White else Color(0x33FFFFFF),
+        shape = RoundedCornerShape(50), color = if (a.primary && !l.isTv) Color.White else if (a.primary) Color(0x59FFFFFF) else Color(0x33FFFFFF),
         focusedColor = Color.White, focusScale = 1.08f, borderWidth = 0.dp,
     ) { focused ->
-        val fg = if (a.primary || focused) Color(0xFF0A0A0F) else Color.White
+        val fg = if ((a.primary && !l.isTv) || focused) Color(0xFF0A0A0F) else Color.White
         Row(
             Modifier.height(if (compact) 44.dp else 48.dp).padding(horizontal = if (focused || (!l.isTv && !compact)) 16.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -324,7 +324,8 @@ fun rememberCountdown(untilMs: Long): Long {
 @Composable
 fun NextUpCard(next: EpisodeEntity, seconds: Int?, fallbackImage: String?, playFocus: FocusRequester, modifier: Modifier, onPlay: () -> Unit, onCancel: () -> Unit) {
     val l = LocalLayout.current
-    Column(modifier.widthIn(max = 520.dp).fillMaxWidth(if (l.isCompact) 0.94f else 0.5f).background(Color(0xF2111118), RoundedCornerShape(16.dp)).padding(14.dp)) {
+    // largeur d'abord (moitié de l'écran), plafond ensuite : dans l'autre ordre la carte ne fait que 260 dp
+    Column(modifier.fillMaxWidth(if (l.isCompact) 0.94f else 0.5f).widthIn(max = 560.dp).background(Color(0xF2111118), RoundedCornerShape(16.dp)).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(if (l.isCompact) 112.dp else 160.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)).background(SokoulColors.SurfaceHigher)) {
                 NetImage(next.image ?: fallbackImage, null, Modifier.fillMaxSize()) { Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.TextMuted) }

@@ -313,7 +313,8 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                 if (memory.restore()) { initialFocusDone = true; return@LaunchedEffect }
             }
         }
-        if ((initialFocusDone && memory.last == null) || hero.isEmpty()) return@LaunchedEffect
+        // premier affichage, ou retour d'une fiche ouverte depuis le héros : « Lecture » (jamais le menu latéral)
+        if (hero.isEmpty()) return@LaunchedEffect
         repeat(5) {
             delay(80)
             if (runCatching { playFocus.requestFocus() }.isSuccess) { initialFocusDone = true; return@LaunchedEffect }
@@ -439,7 +440,7 @@ private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier
                             }
                         } else SpotTitle(s.title)
                         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (s.rating != null && s.rating > 0) RatingChip(s.rating)
+                            if (s.rating != null && s.rating >= com.sokoul.iptv.ui.components.MIN_RATING) RatingChip(s.rating)
                             if (s.meta != null) Text(s.meta, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary, maxLines = 1)
                         }
                         val text = s.overview ?: s.tagline

@@ -362,6 +362,9 @@ fun SeeAllCard(onClick: () -> Unit, landscape: Boolean = false) {
     }
 }
 
+/** En dessous, la note TMDB repose sur trop peu de votes pour être affichée (« 0,5 » paraît cassé). */
+const val MIN_RATING = 1.0
+
 /** Note TMDB : ★ 7,8 */
 @Composable
 fun RatingChip(rating: Double, modifier: Modifier = Modifier) {
