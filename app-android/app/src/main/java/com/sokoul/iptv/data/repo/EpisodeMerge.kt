@@ -17,6 +17,11 @@ data class EpisodeView(
 object EpisodeMerge {
     private val GENERIC = Regex("""^(é|e)pisode\s*\d+$""", RegexOption.IGNORE_CASE)
     private val SE = Regex("""S\d{1,2}\s*[._-]?\s*E\d{1,3}""", RegexOption.IGNORE_CASE)
+    /** Nom de fichier de release (« 720p.NF.WEBRip.x264-GalaxyTV ») : ce n'est pas un titre. */
+    private val RELEASE = Regex(
+        """(^|[ ._\-\[(])(\d{3,4}p|web-?dl|web-?rip|hdtv|blu-?ray|brrip|bdrip|dvdrip|x26[45]|h\.?26[45]|hevc|10bit)([ ._\-\])]|$)""",
+        RegexOption.IGNORE_CASE,
+    )
 
     /**
      * Titre lisible d'un épisode du fournisseur : « PH| Someone, Someday - S01E01 - Pilot » → « Pilot ».
@@ -26,8 +31,8 @@ object EpisodeMerge {
         val m = SE.findAll(raw).lastOrNull()
         val after = m?.let { raw.substring(it.range.last + 1) }?.trim(' ', '-', ':', '|', '.', '–')
         return when {
-            m == null -> raw.trim().ifEmpty { "Épisode $episode" }
-            !after.isNullOrBlank() && !GENERIC.matches(after) -> after
+            m == null -> raw.trim().takeUnless { it.isEmpty() || RELEASE.containsMatchIn(it) } ?: "Épisode $episode"
+            !after.isNullOrBlank() && !GENERIC.matches(after) && !RELEASE.containsMatchIn(after) -> after
             else -> "Épisode $episode"
         }
     }

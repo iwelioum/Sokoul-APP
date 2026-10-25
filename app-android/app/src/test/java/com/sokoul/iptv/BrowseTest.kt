@@ -95,6 +95,10 @@ class BrowseTest {
         assertEquals("Épisode 3", EpisodeMerge.cleanTitle("Chernobyl S01E03", 3))
         assertEquals("Épisode 2", EpisodeMerge.cleanTitle("Show - S01E02 - Episode 2", 2))
         assertEquals("Le début", EpisodeMerge.cleanTitle("Le début", 1))
+        // nom de release du fournisseur : jamais affiché comme titre
+        assertEquals("Épisode 1", EpisodeMerge.cleanTitle("Trese - S01E01 - 720p.NF.WEBRip.x264-GalaxyTV", 1))
+        assertEquals("Épisode 4", EpisodeMerge.cleanTitle("Show.S01E04.1080p.WEB-DL.H264", 4))
+        assertEquals("Le 720 Club", EpisodeMerge.cleanTitle("Show - S01E05 - Le 720 Club", 5))
         assertEquals("S1 · É1 · Pilot", EpisodeMerge.caption("S01E01 · PH| Someone, Someday - S01E01 - Pilot"))
         assertEquals("S2 · É5", EpisodeMerge.caption("Show S02E05"))
         assertNull(EpisodeMerge.caption(null))

@@ -138,6 +138,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val zapList by vm.zapList.collectAsStateWithLifecycle()
     val episodes by vm.episodesFlow.collectAsStateWithLifecycle()
+    val tmdbEpisodes by vm.tmdbEpisodes.collectAsStateWithLifecycle()
     val resizeIndex by vm.resizeMode.collectAsStateWithLifecycle()
     val inPip by PlaybackUiState.inPip.collectAsStateWithLifecycle()
     val fallbackState = remember { MutableStateFlow<StreamState>(StreamState.Idle) }
@@ -492,7 +493,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 ChannelListOverlay(zapList, listIndex, ui.channel?.id) { i -> zapList.getOrNull(i)?.let { vm.playChannel(it) }; listVisible = false }
             }
             AnimatedVisibility(episodesVisible, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
-                EpisodesPanel(episodes, ui.currentSe, ui.seriesBackdrop ?: ui.image, Modifier) { e -> episodesVisible = false; vm.playEpisodeNow(e) }
+                EpisodesPanel(episodes, ui.currentSe, ui.seriesBackdrop ?: ui.image, Modifier, tmdb = tmdbEpisodes, onSeason = vm::loadTmdbSeason) { e -> episodesVisible = false; vm.playEpisodeNow(e) }
             }
             AnimatedVisibility(
                 tracksVisible, Modifier.align(Alignment.CenterEnd),
@@ -523,7 +524,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     NextUpCard(
                         n, seconds = if (vm.autoplayNext && !ui.endedWithNext) nextCountdown else null,
                         // l'image de l'épisode suivant d'abord (dans la carte), sinon le fond de la série — jamais l'épisode en cours
-                        fallbackImage = ui.seriesBackdrop, playFocus = nextFocus,
+                        fallbackImage = ui.seriesBackdrop, playFocus = nextFocus, tmdb = tmdbEpisodes[n.season to n.episode],
                         modifier = Modifier.padding(if (l.isCompact) 12.dp else 40.dp),
                         onPlay = { vm.playNextEpisode() },
                         onCancel = {

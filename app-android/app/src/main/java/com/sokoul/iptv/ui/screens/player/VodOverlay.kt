@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sokoul.iptv.data.db.EpisodeEntity
 import com.sokoul.iptv.data.repo.EpisodeMerge
+import com.sokoul.iptv.data.net.TmdbEpisode
 import com.sokoul.iptv.player.StreamState
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.FocusSurface
@@ -518,20 +519,24 @@ const val NEXT_COUNTDOWN_S = 20
  * « Lire maintenant » qui se remplit pendant le compte à rebours.
  */
 @Composable
-fun NextUpCard(next: EpisodeEntity, seconds: Int?, fallbackImage: String?, playFocus: FocusRequester, modifier: Modifier, onPlay: () -> Unit, onCancel: () -> Unit) {
+fun NextUpCard(
+    next: EpisodeEntity, seconds: Int?, fallbackImage: String?, playFocus: FocusRequester, modifier: Modifier,
+    tmdb: TmdbEpisode? = null, onPlay: () -> Unit, onCancel: () -> Unit,
+) {
     val l = LocalLayout.current
+    val view = EpisodeMerge.merge(next, tmdb, null)
     // largeur d'abord (moitié de l'écran), plafond ensuite : dans l'autre ordre la carte ne fait que 260 dp
     Column(modifier.fillMaxWidth(if (l.isCompact) 0.94f else 0.5f).widthIn(max = 560.dp).background(SokoulColors.Panel, Radius.Large).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(if (l.isCompact) 112.dp else 168.dp).aspectRatio(16f / 9f).clip(Radius.Small).background(SokoulColors.SurfaceHigher).semantics { contentDescription = "Vignette de l'épisode ${next.episode}" }) {
-                NetImage(next.image ?: fallbackImage, null, Modifier.fillMaxSize()) {
+                NetImage(view.image ?: fallbackImage, null, Modifier.fillMaxSize()) {
                     NetImage(fallbackImage, null, Modifier.fillMaxSize()) { Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.TextMuted) }
                 }
             }
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text(if (seconds != null) "Épisode suivant dans $seconds s" else "Épisode suivant", color = SokoulColors.Accent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    "S${next.season} · É${next.episode} — ${EpisodeMerge.cleanTitle(next.title, next.episode)}",
+                    "S${next.season} · É${next.episode} — ${view.title}",
                     Modifier.padding(top = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
                 )
             }
@@ -569,10 +574,12 @@ private fun CountdownButton(label: String, fraction: Float?, focus: FocusRequest
 @Composable
 fun EpisodesPanel(
     episodes: List<EpisodeEntity>, current: Pair<Int, Int>?, fallbackImage: String?, modifier: Modifier,
+    tmdb: Map<Pair<Int, Int>, TmdbEpisode> = emptyMap(), onSeason: (Int) -> Unit = {},
     onPick: (EpisodeEntity) -> Unit,
 ) {
     val seasons = remember(episodes) { episodes.map { it.season }.distinct().sorted() }
     var season by remember(current) { mutableStateOf(current?.first ?: seasons.firstOrNull()) }
+    LaunchedEffect(season) { season?.let(onSeason) }
     val list = episodes.filter { it.season == season }
     val state = rememberLazyListState()
     val currentFocus = remember { FocusRequester() }
@@ -599,7 +606,8 @@ fun EpisodesPanel(
         LazyColumn(Modifier.padding(top = 12.dp), state = state, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(list, key = { it.id }) { e ->
                 val isCurrent = current == (e.season to e.episode)
-                val title = EpisodeMerge.cleanTitle(e.title, e.episode)
+                val view = EpisodeMerge.merge(e, tmdb[e.season to e.episode], null)
+                val title = view.title
                 FocusSurface(
                     onClick = { onPick(e) },
                     modifier = Modifier.fillMaxWidth().then(
@@ -613,11 +621,11 @@ fun EpisodesPanel(
                 ) { _ ->
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.width(120.dp).aspectRatio(16f / 9f).clip(Radius.Small).background(SokoulColors.SurfaceHigher)) {
-                            NetImage(e.image ?: fallbackImage, null, Modifier.fillMaxSize()) { NetImage(fallbackImage, null, Modifier.fillMaxSize()) }
+                            NetImage(view.image ?: fallbackImage, null, Modifier.fillMaxSize()) { NetImage(fallbackImage, null, Modifier.fillMaxSize()) }
                             if (isCurrent) Icon(Icons.Default.PlayArrow, null, Modifier.align(Alignment.Center).size(28.dp).background(SokoulColors.Scrim, CircleShape), tint = Color.White)
                         }
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text("${e.episode}. $title", maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium)
+                            Text(if (title == "Épisode ${e.episode}") title else "${e.episode}. $title", maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium)
                             e.durationSecs?.takeIf { it > 0 }?.let { Text("${it / 60} min", color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall) }
                         }
                     }

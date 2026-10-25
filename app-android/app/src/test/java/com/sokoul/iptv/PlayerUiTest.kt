@@ -68,6 +68,11 @@ class PlayerUiTest {
         assertEquals(null, com.sokoul.iptv.ui.screens.player.trackLanguageName("xyz"))
     }
 
+    @Test fun `libelle episode sans repetition`() {
+        assertEquals("S1 · É3", com.sokoul.iptv.ui.screens.player.seLabel(1, 3, "Épisode 3"))
+        assertEquals("S1 · É3 · Pilote", com.sokoul.iptv.ui.screens.player.seLabel(1, 3, "Pilote"))
+    }
+
     @Test fun `saut borne au debut et une seconde avant la fin`() {
         assertEquals(0L, clampSeek(-5_000, 60_000))
         assertEquals(59_000L, clampSeek(90_000, 60_000))

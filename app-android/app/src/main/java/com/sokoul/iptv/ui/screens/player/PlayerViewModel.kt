@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import javax.inject.Inject
 
@@ -430,6 +431,43 @@ class PlayerViewModel @Inject constructor(
 
     private var allSeriesEpisodes: List<EpisodeEntity> = emptyList()
 
+    private val _tmdbEpisodes = MutableStateFlow<Map<Pair<Int, Int>, com.sokoul.iptv.data.net.TmdbEpisode>>(emptyMap())
+    /** Titres, résumés et vignettes TMDB (en français) des saisons consultées, comme sur la fiche. */
+    val tmdbEpisodes: StateFlow<Map<Pair<Int, Int>, com.sokoul.iptv.data.net.TmdbEpisode>> = _tmdbEpisodes.asStateFlow()
+    private var tmdbSeries: com.sokoul.iptv.data.net.TmdbInfo? = null
+    private var tmdbSeriesLoaded = false
+    private val tmdbLock = kotlinx.coroutines.sync.Mutex()
+    private val tmdbSeasons = mutableSetOf<Int>()
+
+    /** Charge (cache 7 jours, comme la fiche) les épisodes TMDB d'une saison ; sans clé ou hors ligne : rien. */
+    fun loadTmdbSeason(season: Int) {
+        val series = currentSeries ?: return
+        viewModelScope.launch {
+            val tm = tmdbLock.withLock {
+                if (!tmdbSeriesLoaded) {
+                    tmdbSeriesLoaded = true
+                    tmdbSeries = runCatching { catalog.seriesTmdb(series) }.getOrNull()
+                    tmdbSeries?.backdrop?.let { b -> _ui.update { it.copy(seriesBackdrop = b) } }
+                }
+                tmdbSeries
+            } ?: return@launch
+            if (!tmdbSeasons.add(season)) return@launch
+            val list = runCatching { catalog.tmdbSeason(tm.id, season) }.getOrDefault(emptyList())
+            if (list.isEmpty()) return@launch
+            _tmdbEpisodes.value = _tmdbEpisodes.value + list.associateBy { it.season to it.episode }
+            refreshEpisodeTexts()
+        }
+    }
+
+    /** Sous-titre et résumé de l'épisode en cours avec les textes TMDB dès qu'ils arrivent. */
+    private fun refreshEpisodeTexts() {
+        val e = currentEpisode ?: return
+        val v = com.sokoul.iptv.data.repo.EpisodeMerge.merge(e, _tmdbEpisodes.value[e.season to e.episode], null)
+        _ui.update { if (it.currentSe != e.season to e.episode) it else it.copy(subtitle = seLabel(e.season, e.episode, v.title), overview = v.overview ?: it.overview) }
+    }
+
+    private var currentSeries: com.sokoul.iptv.data.db.SeriesEntity? = null
+
     private suspend fun reloadEpisodes(p: PlaylistEntity) {
         val all = db.vod().episodesIn(p.id, seriesVersionIds)
         episodes = VodRepository.mergeEpisodes(all, seriesVersionIds)
@@ -454,12 +492,16 @@ class PlayerViewModel @Inject constructor(
         val title = series?.let { com.sokoul.iptv.data.repo.cleanDisplayTitle(it.title, it.year) } ?: e.title
         _ui.update {
             it.copy(
-                title = title, subtitle = "S${e.season} · É${e.episode} · $clean", image = e.image ?: series?.poster,
+                title = title, subtitle = seLabel(e.season, e.episode, clean), image = e.image ?: series?.poster,
                 isLive = false, channel = null, nextEpisode = EpisodeResolver.nextAfter(episodes, e.season to e.episode),
                 resumedFromMs = resume, currentSe = e.season to e.episode, endedWithNext = false,
-                seriesBackdrop = series?.backdrop ?: series?.poster, overview = e.plot?.takeIf { it.isNotBlank() } ?: series?.plot,
+                seriesBackdrop = tmdbSeries?.backdrop ?: series?.backdrop ?: series?.poster, overview = e.plot?.takeIf { it.isNotBlank() } ?: series?.plot,
             )
         }
+        if (series != null) currentSeries = series
+        refreshEpisodeTexts()
+        loadTmdbSeason(e.season)
+        _ui.value.nextEpisode?.season?.takeIf { it != e.season }?.let { loadTmdbSeason(it) }
         play(resolver.episode(p, e), e.title, resume)
         trackProgress { pos, dur ->
             library.saveProgress(
@@ -644,3 +686,7 @@ internal fun trackLanguageName(code: String?): String? {
     val name = java.util.Locale(c).getDisplayLanguage(java.util.Locale.FRENCH)
     return name.takeIf { it.isNotBlank() && !it.equals(c, ignoreCase = true) }?.replaceFirstChar { it.uppercase() }
 }
+
+/** « S1 · É3 · Titre », sans répéter « Épisode 3 » quand l'épisode n'a pas de vrai titre. */
+internal fun seLabel(season: Int, episode: Int, title: String): String =
+    if (title == "Épisode $episode") "S$season · É$episode" else "S$season · É$episode · $title"
