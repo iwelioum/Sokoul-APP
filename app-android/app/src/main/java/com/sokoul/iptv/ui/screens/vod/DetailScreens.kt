@@ -44,6 +44,9 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Theaters
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -61,6 +64,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -235,6 +239,15 @@ class MovieDetailViewModel @Inject constructor(
     fun clearProgress() = viewModelScope.launch {
         playlist?.let { p -> vod.clearMovieProgress(p.id, versions.value.map { it.id }) }
     }
+
+    /** « Marquer comme vu / non vu » (menu ⋯) : vaut pour toutes les versions du film. */
+    fun setWatched(watched: Boolean) = viewModelScope.launch {
+        val p = playlist ?: return@launch
+        val m = details.value?.movie ?: return@launch
+        val ids = versions.value.map { it.id }.ifEmpty { listOf(m.id) }
+        if (watched) library.setWatched(p.id, ContentType.MOVIE, ids.first(), null, m.title, true)
+        else vod.clearMovieProgress(p.id, ids)
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -253,10 +266,15 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val l = LocalLayout.current
     val memory = rememberFocusMemory()
     var versionMenu by remember { mutableStateOf<MovieEntity?>(null) }
+    var moreMenu by remember { mutableStateOf(false) }
+    /** 1 = choisir la version à lire, 2 = choisir la version lancée en premier. */
+    var versionPicker by remember { mutableStateOf(0) }
+    var showSynopsis by remember { mutableStateOf(false) }
     LaunchedEffect(id) { vm.load(id) }
 
     val details = d
-    if (details == null) {
+    val pid = vm.playlist?.id
+    if (details == null || pid == null) {
         val e = error
         if (e != null) DetailError(e, onRetry = { vm.load(id, force = true) }, onBack = { nav.popBackStack() }) else DetailSkeleton()
         return
@@ -264,57 +282,57 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val m = details.movie
     val tm = details.tmdb
     val xt = details.xtream
-    val pid = vm.playlist?.id ?: return
     val synopsis = pickSynopsis(tm?.overview, xt?.plot, tm?.overviewEn)
     val durationMin = xt?.durationSecs?.div(60)?.takeIf { it > 0 } ?: tm?.runtimeMin
-    val resume = progress?.takeIf { LibraryRepository.resumeFrom(it) > 0 }
+    val resume = progress?.takeIf { !it.finished && LibraryRepository.resumeFrom(it) > 0 }
+    val watched = progress?.finished == true
     // version lancée par « Lecture » : la meilleure selon les préférences (langue, qualité, choix manuel)
     val best = versions.firstOrNull() ?: m
     val multi = versions.size > 1
     val title = tm?.title?.takeIf { it.isNotBlank() } ?: com.sokoul.iptv.data.repo.cleanDisplayTitle(m.title, m.year)
-    val play = { fromStart: Boolean -> nav.navigateOnce(PlayerRoute(PlayKind.MOVIE, pid, best.id, fromStart = fromStart)) }
+    val play = { v: MovieEntity, fromStart: Boolean -> nav.navigateOnce(PlayerRoute(PlayKind.MOVIE, pid, v.id, fromStart = fromStart)) }
+    val trailer = (tm?.trailerYoutubeKey ?: xt?.trailer)?.takeIf { it.isNotBlank() }
+    val director = (tm?.director ?: xt?.director)?.takeIf { it.isNotBlank() }
+
+    val hero = DetailHeroData(
+        title = title, logo = tm?.logo, backdrop = tm?.backdrop ?: xt?.backdrop, poster = tm?.poster ?: xt?.poster ?: m.poster,
+        rating = tm?.rating ?: xt?.rating ?: m.rating,
+        facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), best.language, if (multi) "${versions.size} versions" else null),
+        certification = tm?.certification, quality = best.quality,
+        genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
+        tagline = tm?.tagline, synopsis = synopsis,
+        credit = director?.let { "Réalisation : $it" } ?: xt?.cast?.takeIf { tm?.cast.isNullOrEmpty() && it.isNotBlank() }?.let { "Avec : $it" },
+        watched = watched,
+    )
+    val primary = PrimaryAction(
+        label = (when { resume != null -> "Reprendre"; watched -> "Revoir"; else -> "Lecture" }) + if (multi) " · ${versionLabel(best)}" else "",
+        detail = resume?.let { EpisodeResolver.remaining(it) },
+        progress = resume?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
+        onClick = { play(best, watched && resume == null) },
+    )
+    val actions = buildList {
+        if (resume != null) add(SecondaryAction("restart", "Depuis le début", Icons.Default.Replay) { play(best, true) })
+        add(SecondaryAction("fav", if (favorite) "Dans ma liste" else "Ma liste", if (favorite) Icons.Default.Check else Icons.Default.Add) { vm.toggleFavorite(m.id) })
+        if (trailer != null) add(SecondaryAction("trailer", "Bande-annonce", Icons.Default.Theaters) { openYoutube(context, trailer) })
+        add(SecondaryAction("more", "Plus", Icons.Default.MoreHoriz) { moreMenu = true })
+    }
+    val hasMore = multi || tm?.cast?.isNotEmpty() == true || saga != null || similar.isNotEmpty()
 
     DetailScaffold(
-        nav, backdrop = tm?.backdrop ?: xt?.backdrop, poster = tm?.poster ?: xt?.poster ?: m.poster, logo = tm?.logo, title = title,
-        header = {
-            tm?.tagline?.let { DetailTagline(it) }
-            MetaLine(
-                rating = tm?.rating ?: xt?.rating ?: m.rating,
-                bits = listOfNotNull(
-                    (m.year ?: tm?.year)?.toString(), formatRuntime(durationMin),
-                    best.quality, best.language, if (multi) "${versions.size} versions" else null,
-                ),
-                certification = tm?.certification,
-            )
-            val genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre
-            if (!genres.isNullOrBlank()) Text(genres, Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            DetailButtons {
-                HeroButton(
-                    (if (resume != null) "Reprendre" else "Lecture") + (if (multi) " · ${versionLabel(best)}" else ""),
-                    Icons.Default.PlayArrow, primary = true, onClick = { play(false) },
-                    modifier = Modifier.then(if (l.isCompact) Modifier.fillMaxWidth() else Modifier).focusMemory(memory, "play"),
-                )
-                if (resume != null) DetailAction("Depuis le début", Icons.Default.Replay, Modifier.focusMemory(memory, "restart")) { play(true) }
-                DetailAction(if (favorite) "Dans ma liste" else "Ma liste", if (favorite) Icons.Default.Check else Icons.Default.Add, Modifier.focusMemory(memory, "fav")) { vm.toggleFavorite(m.id) }
-                val trailer = tm?.trailerYoutubeKey ?: xt?.trailer
-                if (!trailer.isNullOrBlank()) DetailAction("Bande-annonce", Icons.Default.Theaters, Modifier.focusMemory(memory, "trailer")) { openYoutube(context, trailer) }
-            }
-            if (resume != null) ResumeLine(resume)
-            synopsis?.let { Overview(it) }
-            val director = tm?.director ?: xt?.director
-            if (!director.isNullOrBlank()) Credit("Réalisation", director)
-            if (tm?.cast.isNullOrEmpty() && !xt?.cast.isNullOrBlank()) Credit("Avec", xt?.cast ?: "")
-        },
+        nav, hero, primary, primaryLoading = false, actions = actions, hint = if (hasMore && l.isTv) "Plus d'infos" else null,
+        memory = memory, onSynopsis = { showSynopsis = true },
     ) {
+        // ▼ depuis les versions : première carte de la section suivante (évite le saut en bout de rangée de Compose)
+        val belowVersions = (saga?.second?.firstOrNull()?.let { "saga:${it.uid}" } ?: similar.firstOrNull()?.let { "sim:${it.uid}" })?.let { memory.requester(it) }
         if (multi) {
-            section("versions", "Versions disponibles", if (l.isTouch) "Touchez pour lire · appui long pour la lancer toujours en premier" else "OK pour lire · appui long pour la lancer toujours en premier") {
-                FlowRow(Modifier.padding(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    versions.forEach { v ->
+            detailSection("versions", "Versions disponibles", if (l.isTouch) "Touchez pour lire · appui long pour la lancer toujours en premier" else "OK pour lire · appui long pour la lancer toujours en premier") {
+                LazyRow(contentPadding = PaddingValues(horizontal = l.margin, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(versions, key = { it.id }) { v ->
                         VersionChip(
                             label = versionLabel(v), detail = vm.categoryNames[v.categoryId],
                             preferred = v.id == preferredId, first = v.id == best.id,
-                            modifier = Modifier.focusMemory(memory, "ver:${v.id}"),
-                            onClick = { nav.navigateOnce(PlayerRoute(PlayKind.MOVIE, pid, v.id)) }, onLongClick = { versionMenu = v },
+                            modifier = Modifier.focusMemory(memory, "ver:${v.id}").focusProperties { if (belowVersions != null) down = belowVersions },
+                            onClick = { play(v, false) }, onLongClick = { versionMenu = v },
                         )
                     }
                 }
@@ -322,29 +340,59 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         }
         castSection(tm?.cast.orEmpty())
         saga?.let { (name, works) ->
-            section("saga", "Saga : ${name.replace(" - Saga", "").replace(" (Collection)", "")}", "Toute l'histoire, dans l'ordre de sortie.") {
+            detailSection("saga", "Saga : ${name.replace(" - Saga", "").replace(" (Collection)", "")}", "Toute l'histoire, dans l'ordre de sortie.") {
                 CardRow(works, { it.uid }) { _, w ->
                     WorkCard(w, { if (w.id != m.id) nav.openWork(w) }, Modifier.focusMemory(memory, "saga:${w.uid}"), showPlatform = false)
                 }
             }
         }
         if (similar.isNotEmpty()) {
-            section("similar", "Vous aimerez aussi", "Des films dans la même veine, disponibles dans votre abonnement.") {
+            detailSection("similar", "Vous aimerez aussi", "Des films dans la même veine, disponibles dans votre abonnement.") {
                 CardRow(similar, { it.uid }) { _, w -> WorkCard(w, { nav.openWork(w) }, Modifier.focusMemory(memory, "sim:${w.uid}")) }
             }
         }
+    }
+
+    if (moreMenu) {
+        OptionsDialog(
+            title,
+            buildList {
+                if (synopsis != null) add(MenuOption("Lire le résumé complet", Icons.Default.Info) { showSynopsis = true })
+                if (multi) add(MenuOption("Choisir la version à lire…", Icons.Default.PlayArrow) { versionPicker = 1 })
+                if (multi) add(MenuOption("Version lancée en premier…", Icons.Default.Star) { versionPicker = 2 })
+                add(
+                    if (watched) MenuOption("Marquer comme non vu", Icons.Default.Replay) { vm.setWatched(false) }
+                    else MenuOption("Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(true) }
+                )
+            },
+            subtitle = hero.facts.joinToString(" · ").ifEmpty { null },
+            onDismiss = { moreMenu = false },
+        )
+    }
+    if (versionPicker != 0) {
+        val prefer = versionPicker == 2
+        OptionsDialog(
+            if (prefer) "Version lancée en premier" else "Choisir la version",
+            versions.map { v ->
+                MenuOption(versionLabel(v) + (vm.categoryNames[v.categoryId]?.let { " · $it" } ?: ""), if (v.id == preferredId) Icons.Default.Star else Icons.Default.PlayArrow, selected = if (prefer) v.id == preferredId else v.id == best.id) {
+                    if (prefer) vm.prefer(v) else play(v, false)
+                }
+            },
+            onDismiss = { versionPicker = 0 },
+        )
     }
     versionMenu?.let { v ->
         OptionsDialog(
             versionLabel(v),
             listOf(
-                MenuOption("Lire cette version", Icons.Default.PlayArrow) { nav.navigateOnce(PlayerRoute(PlayKind.MOVIE, pid, v.id)) },
+                MenuOption("Lire cette version", Icons.Default.PlayArrow) { play(v, false) },
                 MenuOption("Toujours lancer cette version en premier", Icons.Default.Star) { vm.prefer(v) },
             ),
             subtitle = v.name,
             onDismiss = { versionMenu = null },
         )
     }
+    if (showSynopsis && synopsis != null) SynopsisDialog(title, synopsis.text) { showSynopsis = false }
     // retour du lecteur ou d'une autre fiche : focus sur l'élément d'où l'on vient, sinon « Lecture »
     LaunchedEffect(m.id) {
         delay(120)
@@ -517,164 +565,194 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val memory = rememberFocusMemory()
     var season by rememberSaveable { mutableStateOf<Int?>(null) }
     var episodeMenu by remember { mutableStateOf<EpisodeEntity?>(null) }
-    var versionMenu by remember { mutableStateOf<SeriesEntity?>(null) }
+    var seasonMenu by remember { mutableStateOf<Int?>(null) }
+    var moreMenu by remember { mutableStateOf(false) }
+    var versionPicker by remember { mutableStateOf(false) }
+    var showSynopsis by remember { mutableStateOf(false) }
     LaunchedEffect(id) { vm.load(id) }
 
-    val series = s ?: run {
+    val series = s
+    val pid = vm.playlist?.id
+    if (series == null || pid == null) {
         val e = missing
         if (e != null) DetailError(e, onRetry = { vm.load(id, force = true) }, onBack = { nav.popBackStack() }) else DetailSkeleton()
         return
     }
-    val pid = vm.playlist?.id ?: return
     // progression rattachée à la saison/épisode : un épisode vu dans une version l'est dans toutes
     val bySe = remember(progress, allEpisodes) { EpisodeResolver.progressBySe(progress, allEpisodes) }
     val action = remember(episodes, bySe) { EpisodeResolver.primaryAction(episodes, bySe) }
-    val seasons = episodes.map { it.season }.distinct().sorted()
+    val seasons = remember(episodes) { episodes.map { it.season }.distinct().sorted() }
     val currentSeason = season?.takeIf { it in seasons } ?: action?.episode?.season ?: seasons.firstOrNull()
     LaunchedEffect(currentSeason, tmdb?.id) { currentSeason?.let { vm.loadSeason(it) } }
 
     val backdrop = tmdb?.backdrop ?: details?.backdrop ?: series.backdrop
     val synopsis = pickSynopsis(tmdb?.overview, details?.plot ?: series.plot, tmdb?.overviewEn)
     val title = tmdb?.title?.takeIf { it.isNotBlank() } ?: com.sokoul.iptv.data.repo.cleanDisplayTitle(series.title, series.year)
-    val seasonEpisodes = episodes.filter { it.season == currentSeason }.map { EpisodeMerge.merge(it, tmdbEpisodes[it.season to it.episode], backdrop) }
+    val seasonEpisodes = remember(episodes, currentSeason, tmdbEpisodes, backdrop) {
+        episodes.filter { it.season == currentSeason }.map { EpisodeMerge.merge(it, tmdbEpisodes[it.season to it.episode], backdrop) }
+    }
     val playEpisode = { e: EpisodeEntity, fromStart: Boolean ->
         nav.navigateOnce(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = e.seriesId, fromStart = fromStart))
     }
+    val seasonSeen = { n: Int ->
+        val list = episodes.filter { it.season == n }
+        list.isNotEmpty() && list.all { bySe[it.season to it.episode]?.finished == true }
+    }
+    val allSeen = episodes.isNotEmpty() && episodes.all { bySe[it.season to it.episode]?.finished == true }
+    val shownVersion = versions.firstOrNull { it.id == primaryId }
+    val trailer = (tmdb?.trailerYoutubeKey ?: details?.trailer)?.takeIf { it.isNotBlank() }
+    val creator = (tmdb?.director ?: details?.director)?.takeIf { it.isNotBlank() }
+
+    val hero = DetailHeroData(
+        title = title, logo = tmdb?.logo, backdrop = backdrop, poster = tmdb?.poster ?: series.poster,
+        rating = tmdb?.rating ?: series.rating,
+        facts = listOfNotNull(
+            (series.year ?: tmdb?.year)?.toString(),
+            // TMDB connaît souvent plus de saisons que le fournisseur n'en propose : on affiche celles disponibles
+            seasons.size.takeIf { it > 0 }?.let { if (it > 1) "$it saisons" else "1 saison" } ?: tmdb?.seasons?.let { if (it > 1) "$it saisons" else "1 saison" },
+            if (versions.size > 1) "${versions.size} versions" else null,
+        ),
+        certification = tmdb?.certification, quality = null,
+        genres = tmdb?.genres?.joinToString(", ")?.ifEmpty { null } ?: details?.genre ?: series.genre,
+        tagline = tmdb?.tagline, synopsis = synopsis, credit = creator?.let { "Création : $it" }, watched = allSeen,
+    )
+    val primary = action?.let { a ->
+        val p = (a as? SeriesAction.Resume)?.progress
+        PrimaryAction(
+            label = EpisodeResolver.label(a),
+            detail = EpisodeResolver.hint(a),
+            progress = p?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
+            onClick = { playEpisode(a.episode, a is SeriesAction.Rewatch) },
+        )
+    }
+    val actions = buildList {
+        if (action is SeriesAction.Resume) add(SecondaryAction("restart", "Reprendre l'épisode au début", Icons.Default.Replay) { playEpisode(action.episode, true) })
+        add(SecondaryAction("fav", if (favorite) "Dans ma liste" else "Ma liste", if (favorite) Icons.Default.Check else Icons.Default.Add) { vm.toggleFavorite(series.id) })
+        if (trailer != null) add(SecondaryAction("trailer", "Bande-annonce", Icons.Default.Theaters) { openYoutube(context, trailer) })
+        add(SecondaryAction("more", "Plus", Icons.Default.MoreHoriz) { moreMenu = true })
+    }
 
     DetailScaffold(
-        nav, backdrop = backdrop, poster = tmdb?.poster ?: series.poster, logo = tmdb?.logo, title = title,
-        header = {
-            tmdb?.tagline?.let { DetailTagline(it) }
-            MetaLine(
-                rating = tmdb?.rating ?: series.rating,
-                bits = listOfNotNull(
-                    (series.year ?: tmdb?.year)?.toString(),
-                    // TMDB connaît souvent plus de saisons que le fournisseur n'en propose : on affiche celles disponibles
-                    seasons.size.takeIf { it > 0 }?.let { if (it > 1) "$it saisons" else "1 saison" } ?: tmdb?.seasons?.let { if (it > 1) "$it saisons" else "1 saison" },
-                    if (versions.size > 1) "${versions.size} versions" else null,
-                ),
-                certification = tmdb?.certification,
-            )
-            val genre = tmdb?.genres?.joinToString(", ")?.ifEmpty { null } ?: details?.genre ?: series.genre
-            if (!genre.isNullOrBlank()) Text(genre, Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            DetailButtons {
-                if (action != null) {
-                    HeroButton(
-                        EpisodeResolver.label(action), Icons.Default.PlayArrow, primary = true,
-                        onClick = { playEpisode(action.episode, action is SeriesAction.Rewatch) },
-                        modifier = Modifier.then(if (l.isCompact) Modifier.fillMaxWidth() else Modifier).focusMemory(memory, "play"),
-                    )
-                } else if (loading) {
-                    HeroButton("Chargement des épisodes…", Icons.Default.PlayArrow, primary = true, onClick = {}, modifier = Modifier.focusMemory(memory, "play"))
-                }
-                DetailAction(if (favorite) "Dans ma liste" else "Ma liste", if (favorite) Icons.Default.Check else Icons.Default.Add, Modifier.focusMemory(memory, "fav")) { vm.toggleFavorite(series.id) }
-                val trailer = tmdb?.trailerYoutubeKey ?: details?.trailer
-                if (!trailer.isNullOrBlank()) DetailAction("Bande-annonce", Icons.Default.Theaters, Modifier.focusMemory(memory, "trailer")) { openYoutube(context, trailer) }
-                DetailAction("Actualiser", Icons.Default.Refresh, Modifier.focusMemory(memory, "refresh")) { vm.load(id, force = true) }
-            }
-            action?.let { a ->
-                if (a is SeriesAction.Resume) ResumeLine(a.progress, prefix = EpisodeMerge.cleanTitle(a.episode.title, a.episode.episode))
-                else EpisodeResolver.hint(a)?.let { Text(it, Modifier.padding(top = 10.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
-            synopsis?.let { Overview(it) }
-            val creator = tmdb?.director ?: details?.director
-            if (!creator.isNullOrBlank()) Credit("Création", creator)
-        },
+        nav, hero, primary, primaryLoading = loading && action == null, actions = actions,
+        hint = if (l.isTv && (seasons.isNotEmpty() || loading)) "Épisodes" else null,
+        memory = memory, onSynopsis = { showSynopsis = true },
     ) {
-        if (versions.size > 1) {
-            section("versions", "Versions", "Choisissez la langue · appui long pour la garder par défaut. Les épisodes manquants sont complétés par les autres versions.") {
-                LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(versions, key = { it.id }) { v ->
-                        Pill(
-                            seriesVersionLabel(v) + if (v.id == preferredId) " ★" else "", selected = v.id == primaryId,
-                            modifier = Modifier.focusMemory(memory, "ver:${v.id}"),
-                            onLongClick = { versionMenu = v },
-                        ) { vm.selectVersion(v) }
-                    }
-                }
-            }
-        }
         error?.let { e ->
             item("error") {
-                Row(Modifier.padding(horizontal = l.margin, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = l.margin, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(e, Modifier.weight(1f, fill = false), color = SokoulColors.Live, style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.width(12.dp))
-                    DetailAction("Réessayer", Icons.Default.Refresh, Modifier.focusMemory(memory, "retry")) { vm.load(id, force = true) }
+                    DetailActionButton(SecondaryAction("retry", "Réessayer", Icons.Default.Refresh) { vm.load(id, force = true) }, Modifier.focusMemory(memory, "retry"))
                 }
             }
         }
-        if (loading && episodes.isEmpty()) item("loading") { EpisodeSkeleton() }
+        if (loading && episodes.isEmpty()) item("loading") { EpisodeShelfSkeleton() }
         if (!loading && episodes.isEmpty() && error == null) {
             item("empty") { Text("Aucun épisode disponible pour le moment.", Modifier.padding(horizontal = l.margin, vertical = 16.dp), color = SokoulColors.TextMuted) }
         }
         if (seasons.isNotEmpty()) {
-            section("seasons", "Épisodes", if (seasons.size > 1) "${seasons.size} saisons · appui long sur une saison pour la marquer comme vue" else null) {
-                LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(seasons) { n ->
-                        val count = episodes.count { it.season == n }
-                        val seen = episodes.count { it.season == n && bySe[it.season to it.episode]?.finished == true }
-                        Pill(
-                            "Saison $n" + if (seen == count && count > 0) " ✓" else "", selected = n == currentSeason,
-                            modifier = Modifier.focusMemory(memory, "season:$n"),
-                            onLongClick = { episodeMenu = EpisodeEntity(pid, series.id, "season:$n", n, 0, "Saison $n", null, null, null, null, null, null) },
-                        ) { season = n }
+            detailSection("episodes", if (l.isTv) null else "Épisodes") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SeasonTabs(
+                        seasons, currentSeason, seasonSeen, memory, onSelect = { season = it }, onLongClick = { seasonMenu = it },
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (versions.size > 1) {
+                        DetailActionButton(
+                            SecondaryAction("versions", "Version : " + (shownVersion?.let { seriesVersionLabel(it) } ?: "—"), Icons.Default.Translate) { versionPicker = true },
+                            Modifier.padding(end = l.margin).focusMemory(memory, "versions"),
+                        )
                     }
                 }
+                if (!l.isCompact) {
+                    EpisodeShelf(
+                        currentSeason, seasonEpisodes, { ev -> bySe[ev.entity.season to ev.entity.episode] },
+                        currentKey = action?.episode?.let { it.season to it.episode }, memory = memory,
+                        onPlay = { playEpisode(it.entity, false) }, onLongClick = { episodeMenu = it.entity }, fallbackImage = backdrop,
+                    )
+                }
             }
-            items(seasonEpisodes, key = { "ep:" + it.entity.id }) { ev ->
-                val p = bySe[ev.entity.season to ev.entity.episode]
-                EpisodeItem(
-                    ev, p, current = action?.episode?.let { it.season == ev.entity.season && it.episode == ev.entity.episode } == true,
-                    modifier = Modifier.focusMemory(memory, "ep:${ev.entity.season}:${ev.entity.episode}"),
-                    onClick = { playEpisode(ev.entity, false) }, onLongClick = { episodeMenu = ev.entity },
-                )
+            if (l.isCompact) {
+                items(seasonEpisodes, key = { "ep:" + it.entity.id }) { ev ->
+                    val p = bySe[ev.entity.season to ev.entity.episode]
+                    EpisodeItem(
+                        ev, p, current = action?.episode?.let { it.season == ev.entity.season && it.episode == ev.entity.episode } == true,
+                        modifier = Modifier.focusMemory(memory, "ep:${ev.entity.season}:${ev.entity.episode}"),
+                        onClick = { playEpisode(ev.entity, false) }, onLongClick = { episodeMenu = ev.entity },
+                    )
+                }
             }
         }
         castSection(tmdb?.cast.orEmpty())
         if (similar.isNotEmpty()) {
-            section("similar", "Vous aimerez aussi", "Des séries dans la même veine, disponibles dans votre abonnement.") {
+            detailSection("similar", "Vous aimerez aussi", "Des séries dans la même veine, disponibles dans votre abonnement.") {
                 CardRow(similar, { it.uid }) { _, w -> WorkCard(w, { nav.openWork(w) }, Modifier.focusMemory(memory, "sim:${w.uid}")) }
             }
         }
     }
 
-    episodeMenu?.let { e ->
-        if (e.id.startsWith("season:")) {
-            val list = episodes.filter { it.season == e.season }
-            OptionsDialog(
-                "Saison ${e.season}",
-                listOf(
-                    MenuOption("Marquer la saison comme vue", Icons.Default.CheckCircle) { vm.setSeasonWatched(list, true) },
-                    MenuOption("Marquer la saison comme non vue", Icons.Default.Replay) { vm.setSeasonWatched(list, false) },
-                ),
-                onDismiss = { episodeMenu = null },
-            )
-        } else {
-            val p = bySe[e.season to e.episode]
-            val watched = p?.finished == true
-            OptionsDialog(
-                "S%02dE%02d · %s".format(e.season, e.episode, EpisodeMerge.cleanTitle(e.title, e.episode)),
-                buildList {
-                    add(MenuOption(if (p != null && LibraryRepository.resumeFrom(p) > 0) "Reprendre" else "Lecture", Icons.Default.PlayArrow) { playEpisode(e, false) })
-                    if (p != null && LibraryRepository.resumeFrom(p) > 0) add(MenuOption("Depuis le début", Icons.Default.Replay) { playEpisode(e, true) })
-                    add(MenuOption(if (watched) "Marquer comme non vu" else "Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(e, !watched) })
-                },
-                subtitle = e.plot,
-                onDismiss = { episodeMenu = null },
-            )
-        }
-    }
-    versionMenu?.let { v ->
+    if (moreMenu) {
         OptionsDialog(
-            seriesVersionLabel(v),
-            listOf(
-                MenuOption("Afficher cette version", Icons.Default.PlayArrow) { vm.selectVersion(v) },
-                MenuOption("Toujours utiliser cette version", Icons.Default.Star) { vm.preferVersion(v) },
-            ),
-            subtitle = v.name,
-            onDismiss = { versionMenu = null },
+            title,
+            buildList {
+                if (synopsis != null) add(MenuOption("Lire le résumé complet", Icons.Default.Info) { showSynopsis = true })
+                if (versions.size > 1) add(MenuOption("Choisir la version…", Icons.Default.Translate) { versionPicker = true })
+                currentSeason?.let { n ->
+                    val list = episodes.filter { it.season == n }
+                    if (seasonSeen(n)) add(MenuOption("Marquer la saison $n comme non vue", Icons.Default.Replay) { vm.setSeasonWatched(list, false) })
+                    else add(MenuOption("Marquer la saison $n comme vue", Icons.Default.CheckCircle) { vm.setSeasonWatched(list, true) })
+                }
+                if (episodes.isNotEmpty()) {
+                    if (allSeen) add(MenuOption("Marquer la série comme non vue", Icons.Default.Replay) { vm.setSeasonWatched(episodes, false) })
+                    else add(MenuOption("Marquer toute la série comme vue", Icons.Default.CheckCircle) { vm.setSeasonWatched(episodes, true) })
+                }
+                add(MenuOption("Actualiser les épisodes", Icons.Default.Refresh) { vm.load(id, force = true) })
+            },
+            subtitle = hero.facts.joinToString(" · ").ifEmpty { null },
+            onDismiss = { moreMenu = false },
         )
     }
+    if (versionPicker) {
+        OptionsDialog(
+            "Version",
+            versions.map { v ->
+                MenuOption(seriesVersionLabel(v) + if (v.id == preferredId) " ★" else "", Icons.Default.Translate, selected = v.id == primaryId) { vm.selectVersion(v) }
+            } + listOfNotNull(
+                shownVersion?.takeIf { it.id != preferredId }?.let { v ->
+                    MenuOption("Toujours utiliser « ${seriesVersionLabel(v)} »", Icons.Default.Star) { vm.preferVersion(v) }
+                },
+            ),
+            subtitle = "Les épisodes manquants sont complétés par les autres versions.",
+            onDismiss = { versionPicker = false },
+        )
+    }
+    seasonMenu?.let { n ->
+        val list = episodes.filter { it.season == n }
+        OptionsDialog(
+            "Saison $n",
+            listOf(
+                MenuOption("Marquer la saison comme vue", Icons.Default.CheckCircle) { vm.setSeasonWatched(list, true) },
+                MenuOption("Marquer la saison comme non vue", Icons.Default.Replay) { vm.setSeasonWatched(list, false) },
+            ),
+            onDismiss = { seasonMenu = null },
+        )
+    }
+    episodeMenu?.let { e ->
+        val p = bySe[e.season to e.episode]
+        val watched = p?.finished == true
+        val resumable = p != null && !p.finished && LibraryRepository.resumeFrom(p) > 0
+        OptionsDialog(
+            "S%02dE%02d · %s".format(e.season, e.episode, EpisodeMerge.cleanTitle(e.title, e.episode)),
+            buildList {
+                add(MenuOption(if (resumable) "Reprendre" else "Lecture", Icons.Default.PlayArrow) { playEpisode(e, false) })
+                if (resumable) add(MenuOption("Depuis le début", Icons.Default.Replay) { playEpisode(e, true) })
+                add(MenuOption(if (watched) "Marquer comme non vu" else "Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(e, !watched) })
+            },
+            subtitle = e.plot,
+            onDismiss = { episodeMenu = null },
+        )
+    }
+    if (showSynopsis && synopsis != null) SynopsisDialog(title, synopsis.text) { showSynopsis = false }
     // retour du lecteur : focus sur l'épisode lancé (ou le bouton principal), jamais perdu
     LaunchedEffect(series.id, action != null) {
         if (action == null && loading) return@LaunchedEffect
@@ -683,169 +761,11 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     }
 }
 
-// --- composants des fiches -------------------------------------------------------------------------
-
-/**
- * Mise en page des fiches. Grand écran/TV : fond plein cadre à droite (effet Ken Burns), texte à gauche.
- * Téléphone : image en haut, contenu en colonne dessous.
- */
-@Composable
-private fun DetailScaffold(
-    nav: NavHostController,
-    backdrop: String?,
-    poster: String?,
-    logo: String?,
-    title: String,
-    header: @Composable () -> Unit,
-    sections: LazyListScope.() -> Unit,
-) {
-    val l = LocalLayout.current
-    val kb = remember { Animatable(1f) }
-    LaunchedEffect(backdrop) { kb.snapTo(1f); kb.animateTo(1.07f, tween(22_000, easing = LinearEasing)) }
-    val listState = rememberLazyListState()
-    // le fond s'efface quand on descend dans la fiche, pour garder les sections lisibles
-    val fade by remember {
-        derivedStateOf {
-            if (listState.firstVisibleItemIndex > 0) 0.18f
-            else (1f - listState.firstVisibleItemScrollOffset / 900f).coerceIn(0.18f, 1f)
-        }
-    }
-    Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-        if (!l.isCompact) {
-            val imgMod = Modifier.fillMaxWidth(0.80f).aspectRatio(16f / 9f).align(Alignment.TopEnd)
-            if (backdrop != null) {
-                NetImage(
-                    tmdbSized(backdrop, "w1280"), null,
-                    imgMod.clipToBounds().graphicsLayer { scaleX = kb.value; scaleY = kb.value; alpha = fade },
-                )
-            } else if (poster != null) {
-                // pas de fond : l'affiche, en grand à droite
-                NetImage(
-                    tmdbSized(poster, "w500"), title,
-                    Modifier.align(Alignment.TopEnd).padding(top = 40.dp, end = l.margin).height((l.heightDp * 0.6f).dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)),
-                )
-            }
-            Box(imgMod.background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to SokoulColors.Background)))
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.Background, 0.30f to Color(0xF20A0A0F), 0.62f to Color(0x330A0A0F), 1f to Color.Transparent)))
-        }
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = PaddingValues(top = if (l.isCompact) 0.dp else (l.heightDp * 0.14f).dp, bottom = 56.dp),
-        ) {
-            if (l.isCompact) {
-                item("image") {
-                    Box(Modifier.fillMaxWidth().aspectRatio(if (backdrop != null) 16f / 10f else 4f / 5f)) {
-                        NetImage(tmdbSized(backdrop ?: poster, if (backdrop != null) "w780" else "w500"), title, Modifier.fillMaxSize().clipToBounds().graphicsLayer { scaleX = kb.value; scaleY = kb.value }, alignment = Alignment.TopCenter)
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x80000000), 0.25f to Color.Transparent, 0.7f to Color.Transparent, 1f to SokoulColors.Background)))
-                    }
-                }
-            }
-            item("header") {
-                Column(Modifier.padding(horizontal = l.margin).then(if (l.isCompact) Modifier else Modifier.widthIn(max = (l.widthDp * 0.52f).dp))) {
-                    if (logo != null) {
-                        NetImage(
-                            tmdbSized(logo, "w500"), title, Modifier.heightIn(max = if (l.isCompact) 80.dp else 110.dp).widthIn(max = if (l.isCompact) 260.dp else 420.dp),
-                            ContentScale.Fit, alignment = Alignment.BottomStart,
-                        ) { DetailTitle(title) }
-                    } else {
-                        DetailTitle(title)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    header()
-                }
-            }
-            sections()
-        }
-        if (l.isTouch) {
-            Box(
-                Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(CircleShape).background(Color(0x80000000)).dpadClickable({ nav.popBackStack() }),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = Color.White) }
-        }
-    }
-}
-
-@Composable
-private fun DetailTitle(title: String) {
-    val l = LocalLayout.current
-    Text(
-        title, style = if (l.isCompact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.displaySmall,
-        fontWeight = FontWeight.Black, maxLines = 3, overflow = TextOverflow.Ellipsis,
-    )
-}
-
-@Composable
-private fun DetailTagline(text: String) {
-    Text(text, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.titleMedium, fontStyle = FontStyle.Italic, color = SokoulColors.TextPrimary.copy(alpha = 0.85f), maxLines = 2)
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MetaLine(rating: Double?, bits: List<String>, certification: String?) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (rating != null && rating >= com.sokoul.iptv.ui.components.MIN_RATING) RatingChip(rating)
-        bits.forEach { Text(it, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary) }
-        if (certification != null) {
-            Text(
-                certificationLabel(certification), Modifier.background(Color(0x33FFFFFF), RoundedCornerShape(3.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun DetailButtons(content: @Composable () -> Unit) {
-    FlowRow(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
-}
-
-/** Action secondaire : pastille translucide (icône + libellé). */
-@Composable
-private fun DetailAction(text: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    HeroButton(text, icon, primary = false, onClick = onClick, modifier = modifier)
-}
-
-/** Résumé (dépliable au toucher), avec mention quand il n'existe qu'en anglais. */
-@Composable
-private fun Overview(s: Synopsis) {
-    val l = LocalLayout.current
-    var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.padding(top = 16.dp).animateContentSize()) {
-        Text(
-            s.text, Modifier.then(if (l.isTouch) Modifier.dpadClickable({ expanded = !expanded }) else Modifier),
-            style = MaterialTheme.typography.bodyLarge, color = SokoulColors.TextPrimary.copy(alpha = 0.92f),
-            maxLines = if (expanded) Int.MAX_VALUE else if (l.isTv) 5 else 4, overflow = TextOverflow.Ellipsis,
-        )
-        if (!s.french) Text("Résumé disponible en anglais uniquement", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextMuted)
-    }
-}
-
-@Composable
-private fun Credit(label: String, value: String) {
-    Text(
-        "$label : $value", Modifier.padding(top = 10.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium,
-        maxLines = 2, overflow = TextOverflow.Ellipsis,
-    )
-}
-
-/** Section de fiche : titre + accroche + contenu, marges adaptatives. */
-private fun LazyListScope.section(key: String, title: String, tagline: String?, content: @Composable () -> Unit) {
-    item(key) {
-        val l = LocalLayout.current
-        Column(Modifier.padding(top = 28.dp)) {
-            Text(title, Modifier.padding(horizontal = l.margin), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            if (tagline != null) Text(tagline, Modifier.padding(horizontal = l.margin, vertical = 2.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextMuted)
-            Spacer(Modifier.height(10.dp))
-            content()
-        }
-    }
-}
+// --- composants propres aux fiches (le reste est dans DetailKit.kt) -----------------------------------
 
 private fun LazyListScope.castSection(cast: List<TmdbPerson>) {
     if (cast.isEmpty()) return
-    section("cast", "Distribution", null) {
+    detailSection("cast", "Distribution") {
         val l = LocalLayout.current
         LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             items(cast) { person ->
@@ -943,20 +863,6 @@ private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boo
     }
 }
 
-/** Sous le bouton principal : barre de progression et temps restant (« S2 · É5 · Reste 18 min »). */
-@Composable
-private fun ResumeLine(p: ProgressEntity, prefix: String? = null) {
-    if (p.durationMs <= 0) return
-    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        // barre courte puis le texte, lus d'un seul regard de gauche à droite
-        Box(Modifier.width(140.dp).clip(RoundedCornerShape(2.dp))) { ProgressLine(p.positionMs.toFloat() / p.durationMs) }
-        Text(
-            listOfNotNull(prefix, EpisodeResolver.remaining(p)).joinToString(" · "),
-            Modifier.padding(start = 12.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
 /** Fiche introuvable / playlist inactive : message clair et sortie évidente (jamais de chargement infini). */
 @Composable
 private fun DetailError(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
@@ -973,40 +879,6 @@ private fun DetailError(message: String, onRetry: () -> Unit, onBack: () -> Unit
         }
     }
     LaunchedEffect(Unit) { delay(80); runCatching { back.requestFocus() } }
-}
-
-/** Squelette de fiche pendant le chargement (même mise en page que la fiche finale). */
-@Composable
-private fun DetailSkeleton() {
-    val l = LocalLayout.current
-    Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-        Column(Modifier.padding(horizontal = l.margin).padding(top = if (l.isCompact) 260.dp else (l.heightDp * 0.2f).dp).widthIn(max = 640.dp)) {
-            Box(Modifier.fillMaxWidth(0.7f).height(if (l.isCompact) 34.dp else 52.dp).shimmer(RoundedCornerShape(8.dp)))
-            Box(Modifier.padding(top = 14.dp).fillMaxWidth(0.45f).height(16.dp).shimmer(RoundedCornerShape(6.dp)))
-            Row(Modifier.padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(150.dp, 46.dp).shimmer(RoundedCornerShape(50)))
-                Box(Modifier.size(120.dp, 46.dp).shimmer(RoundedCornerShape(50)))
-            }
-            repeat(3) { Box(Modifier.padding(top = 12.dp).fillMaxWidth(if (it == 2) 0.6f else 1f).height(14.dp).shimmer(RoundedCornerShape(6.dp))) }
-        }
-        if (l.isCompact) Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).shimmer(RoundedCornerShape(0.dp)))
-    }
-}
-
-@Composable
-private fun EpisodeSkeleton() {
-    val l = LocalLayout.current
-    Column(Modifier.padding(horizontal = l.margin, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        repeat(3) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.width(if (l.isCompact) 136.dp else l.landscape * 0.9f).aspectRatio(16f / 9f).shimmer())
-                Column(Modifier.padding(start = 16.dp).weight(1f)) {
-                    Box(Modifier.fillMaxWidth(0.5f).height(18.dp).shimmer(RoundedCornerShape(6.dp)))
-                    Box(Modifier.padding(top = 8.dp).fillMaxWidth(0.8f).height(12.dp).shimmer(RoundedCornerShape(6.dp)))
-                }
-            }
-        }
-    }
 }
 
 fun versionLabel(m: MovieEntity): String = VersionPicker.label(m.toVersion())
