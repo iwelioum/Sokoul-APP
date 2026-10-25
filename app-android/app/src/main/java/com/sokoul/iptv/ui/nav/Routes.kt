@@ -39,6 +39,8 @@ data class PlayerRoute(
     val categoryId: String? = null,
     val start: Long = 0,
     val end: Long = 0,
+    /** Film / épisode : ignorer la reprise et lire depuis le début. */
+    val fromStart: Boolean = false,
 )
 
 object PlayKind {

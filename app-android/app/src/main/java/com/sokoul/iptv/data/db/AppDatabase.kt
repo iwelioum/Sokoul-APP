@@ -35,7 +35,7 @@ import javax.inject.Singleton
         TmdbMetaEntity::class,
         TmdbMatchEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -117,5 +117,26 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    /**
+     * v4 : progression des épisodes rattachée à la saison/épisode (reprise juste quelle que soit la version)
+     * et marquage manuel distingué du visionnage réel.
+     */
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `progress` ADD COLUMN `season` INTEGER")
+            db.execSQL("ALTER TABLE `progress` ADD COLUMN `episode` INTEGER")
+            db.execSQL("ALTER TABLE `progress` ADD COLUMN `manual` INTEGER NOT NULL DEFAULT 0")
+            // épisodes déjà regardés : saison/numéro recopiés depuis la liste des épisodes
+            db.execSQL(
+                "UPDATE `progress` SET " +
+                    "`season` = (SELECT e.season FROM episodes e WHERE e.playlistId = progress.playlistId AND e.seriesId = progress.parentId AND e.id = progress.itemId), " +
+                    "`episode` = (SELECT e.episode FROM episodes e WHERE e.playlistId = progress.playlistId AND e.seriesId = progress.parentId AND e.id = progress.itemId) " +
+                    "WHERE `type` = 'SERIES'"
+            )
+            // ancien « marquer comme vu » : position 1 ms sur 1 ms
+            db.execSQL("UPDATE `progress` SET `manual` = 1 WHERE `type` = 'SERIES' AND `positionMs` = 1 AND `durationMs` = 1")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }

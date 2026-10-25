@@ -234,6 +234,11 @@ data class ProgressEntity(
     val durationMs: Long,
     val updatedAt: Long,
     val finished: Boolean,
+    /** Épisode : saison/numéro, pour retrouver la progression quelle que soit la version lue (v4). */
+    val season: Int? = null,
+    val episode: Int? = null,
+    /** Marqué vu / non vu à la main : ne décide pas de l'épisode à reprendre (v4). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val manual: Boolean = false,
 )
 
 @Entity(tableName = "recordings", indices = [Index("status"), Index("startAt")])

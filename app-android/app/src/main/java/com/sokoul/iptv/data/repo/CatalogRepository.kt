@@ -1,5 +1,6 @@
 package com.sokoul.iptv.data.repo
 
+import androidx.room.withTransaction
 import com.sokoul.iptv.data.SettingsStore
 import com.sokoul.iptv.data.db.AppDatabase
 import com.sokoul.iptv.data.db.CategoryPrefEntity
@@ -133,8 +134,13 @@ class CatalogRepository @Inject constructor(
                 extension = e.extension, streamUrl = null, rating = e.rating,
             )
         }
-        db.series().deleteEpisodes(p.id, seriesId)
-        db.series().upsertEpisodes(episodes)
+        // réponse vide (erreur passagère du fournisseur) : on garde la liste déjà connue
+        if (episodes.isEmpty() && hasEpisodes) return
+        // remplacement atomique : les écrans ne voient jamais une liste vide, même si l'app est tuée entre-temps
+        db.withTransaction {
+            db.series().deleteEpisodes(p.id, seriesId)
+            db.series().upsertEpisodes(episodes)
+        }
         val s = info.series
         db.series().upsertDetails(
             SeriesDetailsEntity(

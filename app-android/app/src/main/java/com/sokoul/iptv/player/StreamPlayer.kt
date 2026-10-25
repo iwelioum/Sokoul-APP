@@ -18,8 +18,13 @@ sealed interface StreamState {
     data object Idle : StreamState
     data object Loading : StreamState
     data object Playing : StreamState
+    /** Lecture à la demande en attente de données (après une avance rapide, réseau lent). */
+    data object Buffering : StreamState
     data class Reconnecting(val attempt: Int) : StreamState
-    data class Failed(val message: String) : StreamState
+    /** Pause imposée après un refus du fournisseur : nouvel essai automatique à [untilMs]. */
+    data class Waiting(val untilMs: Long, val message: String) : StreamState
+    /** @param refused refus du fournisseur : « Réessayer » reste bloqué jusqu'à [retryAtMs]. */
+    data class Failed(val message: String, val refused: Boolean = false, val retryAtMs: Long = 0) : StreamState
     data object Ended : StreamState
 }
 
@@ -27,11 +32,18 @@ sealed interface StreamState {
  * Pilote un ExoPlayer pour l'IPTV : essaie les URL de repli (TS ↔ HLS, HLS forcé),
  * se reconnecte automatiquement en cas de coupure réseau et relance un flux direct
  * bloqué en mise en mémoire tampon trop longtemps.
+ *
+ * Un refus du fournisseur (4xx) n'est jamais relancé tout de suite : la porte [gate]
+ * impose une pause, suivie d'un seul nouvel essai automatique.
+ *
+ * @param exclusive lecteur principal : en démarrer un arrête l'autre (une connexion à la fois).
  */
 class StreamPlayer(
     val player: ExoPlayer,
     private val factory: PlayerFactory,
     private val scope: CoroutineScope,
+    private val gate: ProviderGate,
+    private val exclusive: Boolean = true,
 ) {
     private val _state = MutableStateFlow<StreamState>(StreamState.Idle)
     val state: StateFlow<StreamState> = _state.asStateFlow()
@@ -41,6 +53,7 @@ class StreamPlayer(
     private var candidates: List<Pair<String, Boolean>> = emptyList() // (url, forceHls)
     private var candidateIndex = 0
     private var retries = 0
+    private var refusalRetries = 0
     private var retryJob: Job? = null
     private var watchdog: Job? = null
     private var startPositionMs = 0L
@@ -50,12 +63,16 @@ class StreamPlayer(
             when (state) {
                 Player.STATE_READY -> {
                     retries = 0
+                    refusalRetries = 0
                     _state.value = StreamState.Playing
                     watchdog?.cancel()
                 }
-                Player.STATE_BUFFERING -> armWatchdog()
+                Player.STATE_BUFFERING -> {
+                    if (stream?.isLive == true) armWatchdog()
+                    else if (_state.value == StreamState.Playing) _state.value = StreamState.Buffering
+                }
                 Player.STATE_ENDED -> {
-                    if (stream?.isLive == true) scheduleRetry("Flux terminé") else _state.value = StreamState.Ended
+                    if (stream?.isLive == true) network("Flux terminé") else _state.value = StreamState.Ended
                 }
                 Player.STATE_IDLE -> Unit
             }
@@ -64,28 +81,21 @@ class StreamPlayer(
         override fun onPlayerError(error: PlaybackException) {
             Timber.w(error, "Erreur de lecture ${error.errorCodeName}")
             val s = stream ?: return
+            if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                player.seekToDefaultPosition()
+                player.prepare()
+                return
+            }
             val http = httpStatus(error)
-            when {
-                error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> {
-                    player.seekToDefaultPosition()
-                    player.prepare()
-                }
-                // Refus du serveur : autre format si disponible, sinon quelques essais espacés puis abandon
-                http != null && http in 400..499 -> when {
-                    candidateIndex < candidates.lastIndex && http != 401 -> { candidateIndex++; load(keepPosition = true) }
-                    http == 404 || http == 410 -> _state.value = StreamState.Failed("Flux introuvable sur le serveur (chaîne ou film retiré)")
-                    else -> scheduleRetry(refusal(http), refused = true)
-                }
-                isFormatError(error) && candidateIndex < candidates.lastIndex -> {
-                    candidateIndex++
-                    load(keepPosition = false)
-                }
-                isNetworkError(error) || s.isLive -> scheduleRetry(describe(error))
-                candidateIndex < candidates.lastIndex -> {
-                    candidateIndex++
-                    load(keepPosition = true)
-                }
-                else -> _state.value = StreamState.Failed(describe(error))
+            val decision = ErrorPolicy.decide(
+                http = http, network = isNetworkError(error) || (http != null && http >= 500), format = isFormatError(error), live = s.isLive,
+                hasNextCandidate = candidateIndex < candidates.lastIndex, retries = retries, describe = describe(error),
+            )
+            when (decision) {
+                ErrorDecision.NextCandidate -> { candidateIndex++; load(keepPosition = true) }
+                is ErrorDecision.Refused -> refused(decision.message)
+                is ErrorDecision.Retry -> network(describe(error), decision.delayMs)
+                is ErrorDecision.Fail -> _state.value = StreamState.Failed(decision.message)
             }
         }
     }
@@ -95,6 +105,7 @@ class StreamPlayer(
     }
 
     fun play(stream: ResolvedStream, title: String, startPositionMs: Long = 0) {
+        if (exclusive) gate.acquire(this)
         this.stream = stream
         this.title = title
         this.startPositionMs = startPositionMs
@@ -108,13 +119,29 @@ class StreamPlayer(
         }
         candidateIndex = 0
         retries = 0
-        load(keepPosition = false)
+        refusalRetries = 0
+        loadWhenAllowed(keepPosition = false)
     }
 
+    /** « Réessayer » : respecte toujours la pause imposée par le fournisseur. */
     fun retryNow() {
+        if (stream == null) return
+        if (exclusive) gate.acquire(this)
         retries = 0
         candidateIndex = 0
-        load(keepPosition = true)
+        loadWhenAllowed(keepPosition = true)
+    }
+
+    private fun loadWhenAllowed(keepPosition: Boolean) {
+        retryJob?.cancel()
+        val wait = gate.remainingMs()
+        if (wait <= 0) { load(keepPosition); return }
+        player.stop()
+        _state.value = StreamState.Waiting(gate.availableAt(), "Le fournisseur a refusé une connexion il y a quelques instants.")
+        retryJob = scope.launch {
+            delay(wait)
+            load(keepPosition)
+        }
     }
 
     private fun load(keepPosition: Boolean) {
@@ -130,42 +157,58 @@ class StreamPlayer(
         player.playWhenReady = true
     }
 
-    private fun scheduleRetry(reason: String, refused: Boolean = false) {
-        if (retryJob?.isActive == true) return
-        retries++
-        val maxRetries = when {
-            refused -> 2 // la connexion se libère parfois quelques secondes après la chaîne précédente
-            stream?.isLive == true -> 40
-            else -> 8
+    /** Refus du fournisseur : pause imposée, puis un seul nouvel essai automatique. */
+    private fun refused(message: String) {
+        retryJob?.cancel()
+        watchdog?.cancel()
+        gate.noteRefusal()
+        player.stop()
+        if (refusalRetries >= MAX_AUTO_RETRIES_AFTER_REFUSAL) {
+            _state.value = StreamState.Failed(message, refused = true, retryAtMs = gate.availableAt())
+            return
         }
-        if (retries > maxRetries) {
+        refusalRetries++
+        val wait = gate.remainingMs()
+        _state.value = StreamState.Waiting(gate.availableAt(), message)
+        retryJob = scope.launch {
+            delay(wait)
+            candidateIndex = 0
+            load(keepPosition = true)
+        }
+    }
+
+    private fun network(reason: String, delayMs: Long = ErrorPolicy.backoff(retries + 1)) {
+        if (retryJob?.isActive == true) return
+        val max = if (stream?.isLive == true) ErrorPolicy.MAX_NETWORK_RETRIES_LIVE else ErrorPolicy.MAX_NETWORK_RETRIES_VOD
+        retries++
+        if (retries > max) {
             _state.value = StreamState.Failed(reason)
             return
         }
         _state.value = StreamState.Reconnecting(retries)
         retryJob = scope.launch {
-            delay(if (refused) 4_000L * retries else minOf(500L * (1L shl minOf(retries - 1, 5)), 15_000L))
+            delay(delayMs)
             // en direct, on alterne entre les formats disponibles (TS / HLS)
             if (stream?.isLive == true && candidates.size > 1 && retries % 3 == 0) {
                 candidateIndex = (candidateIndex + 1) % candidates.size
             }
-            load(keepPosition = true)
+            if (gate.remainingMs() > 0) loadWhenAllowed(keepPosition = true) else load(keepPosition = true)
         }
     }
 
     /** Un direct qui reste en BUFFERING plus de 12 s est relancé. */
     private fun armWatchdog() {
-        if (stream?.isLive != true) return
         watchdog?.cancel()
         watchdog = scope.launch {
             delay(12_000)
             if (isActive && player.playbackState == Player.STATE_BUFFERING) {
                 Timber.i("Flux bloqué, relance")
-                scheduleRetry("Flux bloqué")
+                network("Flux bloqué")
             }
         }
     }
 
+    /** Arrête le flux (connexion fermée). Appelé aussi quand un autre lecteur prend la main. */
     fun stop() {
         retryJob?.cancel()
         watchdog?.cancel()
@@ -175,6 +218,7 @@ class StreamPlayer(
 
     fun release() {
         stop()
+        gate.release(this)
         player.removeListener(listener)
         player.release()
     }
@@ -188,23 +232,20 @@ class StreamPlayer(
         return null
     }
 
-    private fun refusal(code: Int) = when (code) {
-        401, 403 -> "Le fournisseur refuse le flux ($code) : connexion déjà utilisée ailleurs, abonnement expiré ou accès bloqué temporairement"
-        406, 429, 458 -> "Le fournisseur limite les connexions ($code) : fermez l'autre appareil ou réessayez dans quelques minutes"
-        else -> "Le serveur refuse le flux (erreur $code)"
-    }
-
-    private fun isNetworkError(e: PlaybackException) = e.errorCode in 2000..2999
-    private fun isFormatError(e: PlaybackException) = e.errorCode in 3000..3999 ||
-        e.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && candidates.size > 1
+    private fun isNetworkError(e: PlaybackException) = e.errorCode in 2000..2999 && e.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+    private fun isFormatError(e: PlaybackException) = e.errorCode in 3000..3999
 
     private fun describe(e: PlaybackException): String = when (e.errorCode) {
         PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Le serveur refuse le flux (abonnement, connexions simultanées ou chaîne hors ligne)"
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Connexion au flux impossible"
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Connexion au flux impossible : vérifiez la connexion internet de l'appareil."
         PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> "Flux introuvable"
         in 3000..3999 -> "Format de flux non reconnu"
         in 4000..4999 -> "Le décodeur de l'appareil ne prend pas en charge ce flux (essayez le mode logiciel dans Réglages › Lecteur)"
         else -> e.errorCodeName
+    }
+
+    companion object {
+        const val MAX_AUTO_RETRIES_AFTER_REFUSAL = 1
     }
 }

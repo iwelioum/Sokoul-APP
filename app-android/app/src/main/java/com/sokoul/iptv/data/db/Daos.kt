@@ -378,12 +378,16 @@ interface LibraryDao {
     @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId = :sid ORDER BY updatedAt DESC LIMIT 1")
     suspend fun lastEpisodeProgress(pid: Long, sid: String): ProgressEntity?
 
-    /** « Continuer à regarder » : films non terminés + dernier épisode de chaque série. */
+    /**
+     * « Continuer à regarder » : films commencés (au moins 30 s, comme la reprise) et dernier épisode réellement
+     * regardé de chaque série, même terminé (la rangée propose alors l'épisode suivant). Les marquages manuels sont ignorés.
+     */
     @Query(
         """
-        SELECT * FROM progress p WHERE p.playlistId = :pid AND p.type != 'LIVE' AND p.finished = 0 AND p.positionMs > 0
-          AND (p.type = 'MOVIE' OR p.updatedAt = (
-              SELECT MAX(q.updatedAt) FROM progress q WHERE q.playlistId = p.playlistId AND q.type = 'SERIES' AND q.parentId = p.parentId))
+        SELECT * FROM progress p WHERE p.playlistId = :pid AND p.manual = 0 AND (
+            (p.type = 'MOVIE' AND p.finished = 0 AND p.positionMs >= 30000)
+            OR (p.type = 'SERIES' AND p.updatedAt = (
+              SELECT MAX(q.updatedAt) FROM progress q WHERE q.playlistId = p.playlistId AND q.type = 'SERIES' AND q.parentId = p.parentId AND q.manual = 0)))
         ORDER BY p.updatedAt DESC LIMIT :limit
         """
     )
@@ -570,7 +574,13 @@ interface VodDao {
     @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids)")
     fun observeSeriesProgressIn(pid: Long, sids: List<String>): Flow<List<ProgressEntity>>
 
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids) ORDER BY updatedAt DESC LIMIT 1")
+    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids)")
+    suspend fun seriesProgressIn(pid: Long, sids: List<String>): List<ProgressEntity>
+
+    @Query("SELECT * FROM episodes WHERE playlistId = :pid AND seriesId IN (:sids) ORDER BY season, episode")
+    suspend fun episodesIn(pid: Long, sids: List<String>): List<EpisodeEntity>
+
+    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND manual = 0 AND parentId IN (:sids) ORDER BY updatedAt DESC LIMIT 1")
     suspend fun lastEpisodeProgressIn(pid: Long, sids: List<String>): ProgressEntity?
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE playlistId = :pid AND type = :type AND itemId IN (:ids))")

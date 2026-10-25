@@ -29,12 +29,12 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
 
     suspend fun saveProgress(
         pid: Long, type: ContentType, id: String, parentId: String?, title: String, subtitle: String?, image: String?,
-        positionMs: Long, durationMs: Long,
+        positionMs: Long, durationMs: Long, season: Int? = null, episode: Int? = null,
     ) {
         if (durationMs <= 0 || positionMs < 0) return
         val finished = isFinished(positionMs, durationMs)
         db.library().saveProgress(
-            ProgressEntity(pid, type, id, parentId, title, subtitle, image, positionMs, durationMs, System.currentTimeMillis(), finished)
+            ProgressEntity(pid, type, id, parentId, title, subtitle, image, positionMs, durationMs, System.currentTimeMillis(), finished, season, episode, manual = false)
         )
     }
 
@@ -44,9 +44,10 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
 
     suspend fun clearProgress(pid: Long, type: ContentType, id: String) = db.library().deleteProgress(pid, type, id)
 
-    suspend fun setWatched(pid: Long, type: ContentType, id: String, parentId: String?, title: String, watched: Boolean) {
+    /** Marquage manuel : ne déplace pas la reprise (voir [EpisodeResolver.primaryAction]). */
+    suspend fun setWatched(pid: Long, type: ContentType, id: String, parentId: String?, title: String, watched: Boolean, season: Int? = null, episode: Int? = null) {
         if (watched) {
-            db.library().saveProgress(ProgressEntity(pid, type, id, parentId, title, null, null, 1, 1, System.currentTimeMillis(), true))
+            db.library().saveProgress(ProgressEntity(pid, type, id, parentId, title, null, null, 1, 1, System.currentTimeMillis(), true, season, episode, manual = true))
         } else db.library().deleteProgress(pid, type, id)
     }
 

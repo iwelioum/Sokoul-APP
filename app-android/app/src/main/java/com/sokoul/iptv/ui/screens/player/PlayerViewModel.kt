@@ -19,6 +19,8 @@ import com.sokoul.iptv.data.db.ContentType
 import com.sokoul.iptv.data.db.EpisodeEntity
 import com.sokoul.iptv.data.db.PlaylistEntity
 import com.sokoul.iptv.data.repo.CatalogRepository
+import com.sokoul.iptv.data.repo.EpisodeResolver
+import com.sokoul.iptv.data.repo.VodRepository
 import com.sokoul.iptv.data.repo.EpgRepository
 import com.sokoul.iptv.data.repo.LibraryRepository
 import com.sokoul.iptv.data.repo.NowNext
@@ -27,6 +29,7 @@ import com.sokoul.iptv.data.repo.ResolvedStream
 import com.sokoul.iptv.data.repo.StreamResolver
 import com.sokoul.iptv.data.repo.userMessage
 import com.sokoul.iptv.player.PlayerFactory
+import com.sokoul.iptv.player.ProviderGate
 import com.sokoul.iptv.player.StreamPlayer
 import com.sokoul.iptv.player.StreamState
 import com.sokoul.iptv.ui.nav.PlayKind
@@ -67,6 +70,10 @@ data class PlayerUi(
     val notice: String? = null,
     /** Version en cours (« VF · FHD ») quand l'œuvre en compte plusieurs. */
     val versionLabel: String? = null,
+    /** Épisode en cours (saison, numéro), pour le panneau des épisodes. */
+    val currentSe: Pair<Int, Int>? = null,
+    /** Fin d'épisode sans lecture automatique : la carte « Épisode suivant » reste affichée. */
+    val endedWithNext: Boolean = false,
 )
 
 @HiltViewModel
@@ -81,7 +88,8 @@ class PlayerViewModel @Inject constructor(
     private val library: LibraryRepository,
     private val actions: ChannelActions,
     private val db: AppDatabase,
-    private val vod: com.sokoul.iptv.data.repo.VodRepository,
+    private val vod: VodRepository,
+    private val gate: ProviderGate,
 ) : ViewModel() {
 
     val route: PlayerRoute = savedState.toRoute()
@@ -116,14 +124,46 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsStore.current()
             autoplayNext = settings.autoplayNextEpisode
-            val sp = StreamPlayer(factory.create(settings), factory, viewModelScope)
+            resizeMode.value = settings.resizeMode
+            val sp = StreamPlayer(factory.create(settings), factory, viewModelScope, gate)
             sp.player.addListener(listener)
             _player.value = sp
+            watchEnd(sp)
             playlist = playlists.get(route.playlistId)
-            try {
-                start()
-            } catch (e: Exception) {
-                _ui.update { it.copy(error = e.userMessage()) }
+            startSafely()
+        }
+    }
+
+    /** Format d'image (index dans les modes du lecteur), mémorisé dans les réglages. */
+    val resizeMode = MutableStateFlow(0)
+
+    fun setResizeMode(i: Int) {
+        resizeMode.value = i
+        viewModelScope.launch { settingsStore.update { it.copy(resizeMode = i) } }
+    }
+
+    private var started = false
+
+    private suspend fun startSafely() {
+        _ui.update { it.copy(error = null) }
+        try {
+            start()
+            started = true
+        } catch (e: Exception) {
+            _ui.update { it.copy(error = e.userMessage()) }
+        }
+    }
+
+    /** Fin de lecture : position finale enregistrée (l'épisode passe « vu »), puis enchaînement. */
+    private fun watchEnd(sp: StreamPlayer) {
+        viewModelScope.launch {
+            sp.state.collect { s ->
+                if (s is StreamState.Ended && !_ui.value.isLive) {
+                    saveNow()
+                    if (_ui.value.nextEpisode != null) {
+                        if (autoplayNext) playNextEpisode() else _ui.update { it.copy(endedWithNext = true) }
+                    }
+                }
             }
         }
     }
@@ -181,28 +221,29 @@ class PlayerViewModel @Inject constructor(
                 movieVersions = listOf(m) + vod.orderedMovies(p.id, others)
                 movieIndex = 0
                 // reprise partagée : la dernière position connue, quelle que soit la version regardée
-                val resume = LibraryRepository.resumeFrom(vod.latestMovieProgress(p.id, movieVersions.map { it.id }))
+                val resume = if (route.fromStart) 0 else LibraryRepository.resumeFrom(vod.latestMovieProgress(p.id, movieVersions.map { it.id }))
                 playMovie(p, m, resume)
                 watchMovieFailures(p)
             }
             PlayKind.EPISODE -> {
                 val sid = route.parentId ?: throw IllegalStateException("Série inconnue")
-                catalog.ensureEpisodes(p, sid)
-                episodes = catalog.episodeList(p.id, sid)
+                // liste déjà en cache : une erreur réseau du fournisseur ne bloque pas la lecture
+                val cached = catalog.episodeList(p.id, sid).isNotEmpty()
+                if (cached) runCatching { catalog.ensureEpisodes(p, sid) } else catalog.ensureEpisodes(p, sid)
+                val series = catalog.seriesItem(p.id, sid)
+                // toutes les versions de la série : l'épisode suivant peut venir d'une autre version (trou comblé)
+                seriesVersionIds = series?.let { s -> listOf(sid) + vod.orderedSeries(p.id, vod.seriesVersions(p.id, s)).map { it.id }.filter { it != sid } } ?: listOf(sid)
+                reloadEpisodes(p)
                 val e = episodes.firstOrNull { it.id == route.id } ?: catalog.episode(p.id, sid, route.id) ?: throw IllegalStateException("Épisode introuvable")
-                val seriesCat = catalog.seriesItem(p.id, sid)?.categoryId
-                if (!allowed(ContentType.SERIES, seriesCat) { playEpisode(e) }) return
-                playEpisode(e)
+                if (!allowed(ContentType.SERIES, series?.categoryId) { playEpisode(e, fromStart = route.fromStart) }) return
+                playEpisode(e, fromStart = route.fromStart)
             }
             PlayKind.RECORDING -> Unit
         }
     }
 
-    private suspend fun resumePosition(type: ContentType, id: String): Long =
-        LibraryRepository.resumeFrom(library.progress(route.playlistId, type, id))
-
     private fun play(stream: ResolvedStream, title: String, startMs: Long) {
-        _ui.update { it.copy(error = null) }
+        _ui.update { it.copy(error = null, endedWithNext = false) }
         _player.value?.play(stream, title, startMs)
         updateVideoInfo()
     }
@@ -238,7 +279,8 @@ class PlayerViewModel @Inject constructor(
         fallbackJob = viewModelScope.launch {
             val sp = _player.value ?: return@launch
             sp.state.collect { s ->
-                if (s !is StreamState.Failed || movieIndex >= movieVersions.lastIndex) return@collect
+                // un refus du fournisseur vaut pour tout le compte : changer de version ne servirait qu'à insister
+                if (s !is StreamState.Failed || s.refused || movieIndex >= movieVersions.lastIndex) return@collect
                 val failed = movieVersions[movieIndex]
                 val next = movieVersions[movieIndex + 1]
                 _ui.update { it.copy(notice = "Version ${versionLabel(failed)} indisponible, lecture de la version ${versionLabel(next)}…") }
@@ -260,7 +302,7 @@ class PlayerViewModel @Inject constructor(
             saveNow()
             val pos = _player.value?.player?.currentPosition?.takeIf { it > 5_000 } ?: 0
             movieIndex = i
-            playMovie(p, movieVersions[i], pos)
+            try { playMovie(p, movieVersions[i], pos) } catch (e: Exception) { _ui.update { it.copy(error = e.userMessage()) } }
         }
     }
 
@@ -374,31 +416,72 @@ class PlayerViewModel @Inject constructor(
 
     // --- Séries ------------------------------------------------------------------------
 
-    private suspend fun playEpisode(e: EpisodeEntity) {
+    /** Versions de la série en cours (celle lancée en tête) : leurs épisodes forment la liste fusionnée. */
+    private var seriesVersionIds: List<String> = emptyList()
+
+    private val _episodesFlow = MutableStateFlow<List<EpisodeEntity>>(emptyList())
+    /** Épisodes de toutes les versions (un par saison/numéro), pour le panneau « Épisodes » du lecteur. */
+    val episodesFlow: StateFlow<List<EpisodeEntity>> = _episodesFlow.asStateFlow()
+
+    private var allSeriesEpisodes: List<EpisodeEntity> = emptyList()
+
+    private suspend fun reloadEpisodes(p: PlaylistEntity) {
+        val all = db.vod().episodesIn(p.id, seriesVersionIds)
+        episodes = VodRepository.mergeEpisodes(all, seriesVersionIds)
+        allSeriesEpisodes = all
+        _episodesFlow.value = episodes
+    }
+
+    /** Reprise d'un épisode : dernière position connue pour cette saison/épisode, toutes versions confondues. */
+    private suspend fun episodeResume(p: PlaylistEntity, e: EpisodeEntity): Long {
+        val progress = db.vod().seriesProgressIn(p.id, seriesVersionIds.ifEmpty { listOf(e.seriesId) })
+        val bySe = EpisodeResolver.progressBySe(progress, allSeriesEpisodes + e)
+        return LibraryRepository.resumeFrom(bySe[e.season to e.episode])
+    }
+
+    private suspend fun playEpisode(e: EpisodeEntity, fromStart: Boolean = false) {
         val p = playlist ?: return
         currentEpisode = e
         val series = catalog.seriesItem(p.id, e.seriesId)
-        val resume = resumePosition(ContentType.SERIES, e.id)
+        val resume = if (fromStart) 0 else episodeResume(p, e)
         val label = "S%02dE%02d".format(e.season, e.episode)
-        val idx = episodes.indexOfFirst { it.id == e.id }
+        val clean = com.sokoul.iptv.data.repo.EpisodeMerge.cleanTitle(e.title, e.episode)
+        val title = series?.let { com.sokoul.iptv.data.repo.cleanDisplayTitle(it.title, it.year) } ?: e.title
         _ui.update {
             it.copy(
-                title = series?.title ?: e.title, subtitle = "$label · ${e.title}", image = e.image ?: series?.poster,
-                isLive = false, channel = null, nextEpisode = episodes.getOrNull(idx + 1), resumedFromMs = resume,
+                title = title, subtitle = "S${e.season} · É${e.episode} · $clean", image = e.image ?: series?.poster,
+                isLive = false, channel = null, nextEpisode = EpisodeResolver.nextAfter(episodes, e.season to e.episode),
+                resumedFromMs = resume, currentSe = e.season to e.episode, endedWithNext = false,
             )
         }
         play(resolver.episode(p, e), e.title, resume)
         trackProgress { pos, dur ->
-            library.saveProgress(p.id, ContentType.SERIES, e.id, e.seriesId, series?.title ?: e.title, "$label · ${e.title}", e.image ?: series?.poster, pos, dur)
+            library.saveProgress(
+                p.id, ContentType.SERIES, e.id, e.seriesId, series?.title ?: e.title, "$label · ${e.title}", e.image ?: series?.poster,
+                pos, dur, season = e.season, episode = e.episode,
+            )
         }
     }
 
     fun playNextEpisode() {
         val next = _ui.value.nextEpisode ?: return
-        viewModelScope.launch { saveNow(); playEpisode(next) }
+        playEpisodeNow(next)
     }
 
-    fun restartFromBeginning() { _player.value?.player?.seekTo(0) }
+    /** Changement d'épisode depuis le lecteur (suivant, panneau « Épisodes »). */
+    fun playEpisodeNow(e: EpisodeEntity) {
+        viewModelScope.launch {
+            saveNow()
+            try { playEpisode(e) } catch (ex: Exception) { _ui.update { it.copy(error = ex.userMessage()) } }
+        }
+    }
+
+    fun restartFromBeginning() {
+        _player.value?.player?.seekTo(0)
+        _ui.update { it.copy(resumedFromMs = 0) }
+    }
+
+    fun dismissEndCard() = _ui.update { it.copy(endedWithNext = false) }
 
     // --- Progression -------------------------------------------------------------------
 
@@ -423,6 +506,26 @@ class PlayerViewModel @Inject constructor(
         saver?.invoke(pos, dur)
     }
 
+    /** Pause (bouton, télécommande) : la position est enregistrée tout de suite. */
+    fun pauseAndSave() {
+        _player.value?.player?.pause()
+        viewModelScope.launch { saveNow() }
+    }
+
+    /** Application en arrière-plan sans image dans l'image : pause et sauvegarde (direct : connexion fermée). */
+    fun onBackground() {
+        val sp = _player.value ?: return
+        if (_ui.value.isLive) { sp.stop(); return }
+        sp.player.pause()
+        viewModelScope.launch { saveNow() }
+    }
+
+    /** Retour au premier plan après [onBackground] : un direct est relancé (la VOD reste en pause). */
+    fun onForeground() {
+        val sp = _player.value ?: return
+        if (_ui.value.isLive && sp.state.value == StreamState.Idle) sp.retryNow()
+    }
+
     // --- Pistes ------------------------------------------------------------------------
 
     fun audioOptions(): List<TrackOption> = trackOptions(C.TRACK_TYPE_AUDIO)
@@ -434,14 +537,22 @@ class PlayerViewModel @Inject constructor(
         (0 until g.length).filter { g.isTrackSupported(it) }.map { i -> TrackOption(describe(g.getTrackFormat(i), type), g, i, g.isTrackSelected(i)) }
     }
 
+    /**
+     * Choix de piste : appliqué tout de suite et retenu par **langue**, pour que l'épisode
+     * ou la version suivante (autres groupes de pistes) garde la même langue.
+     */
     fun selectTrack(type: Int, option: TrackOption) {
         val exo: ExoPlayer = _player.value?.player ?: return
         val builder = exo.trackSelectionParameters.buildUpon()
         if (option.group == null) {
             builder.setTrackTypeDisabled(type, true)
         } else {
+            val lang = option.group.getTrackFormat(option.index).language
             builder.setTrackTypeDisabled(type, false)
                 .setOverrideForType(TrackSelectionOverride(option.group.mediaTrackGroup, option.index))
+            if (!lang.isNullOrBlank() && lang != C.LANGUAGE_UNDETERMINED) {
+                if (type == C.TRACK_TYPE_AUDIO) builder.setPreferredAudioLanguage(lang) else builder.setPreferredTextLanguage(lang)
+            }
         }
         exo.trackSelectionParameters = builder.build()
     }
@@ -469,7 +580,17 @@ class PlayerViewModel @Inject constructor(
         _ui.update { it.copy(videoInfo = info) }
     }
 
-    fun retry() = _player.value?.retryNow()
+    /** « Réessayer » : relance tout le démarrage si rien n'a pu être chargé, sinon le flux (pause fournisseur respectée). */
+    fun retry() {
+        if (!started) viewModelScope.launch { startSafely() }
+        else {
+            _ui.update { it.copy(error = null) }
+            _player.value?.retryNow()
+        }
+    }
+
+    /** Pause imposée par le fournisseur restante (ms), pour le compte à rebours de « Réessayer ». */
+    fun providerWaitMs(): Long = gate.remainingMs()
 
     companion object {
         const val FALLBACK_PAUSE_MS = 4_000L

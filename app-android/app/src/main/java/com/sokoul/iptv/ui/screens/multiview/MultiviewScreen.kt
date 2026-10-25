@@ -79,6 +79,7 @@ class MultiviewViewModel @Inject constructor(
     private val catalog: CatalogRepository,
     private val resolver: StreamResolver,
     private val parental: com.sokoul.iptv.ui.ParentalGate,
+    private val gate: com.sokoul.iptv.player.ProviderGate,
 ) : ViewModel() {
     private val _slots = MutableStateFlow(List(4) { SlotState(null, null) })
     val slots: StateFlow<List<SlotState>> = _slots.asStateFlow()
@@ -107,7 +108,7 @@ class MultiviewViewModel @Inject constructor(
         val p = playlists.get(c.playlistId) ?: return@launch
         // Chaque case ouvre une connexion : on respecte la limite de l'abonnement plutôt que d'échouer en boucle
         val max = p.maxConnections?.takeIf { it > 0 }
-        val others = _slots.value.withIndex().count { (j, s) -> j != index && s.channel?.playlistId == c.playlistId && s.player?.state?.value.let { it is StreamState.Playing || it is StreamState.Loading || it is StreamState.Reconnecting } }
+        val others = _slots.value.withIndex().count { (j, s) -> j != index && s.channel?.playlistId == c.playlistId && s.player?.state?.value.let { it is StreamState.Playing || it is StreamState.Buffering || it is StreamState.Loading || it is StreamState.Reconnecting } }
         if (max != null && others >= max) {
             notice.value = "Votre abonnement n'autorise que $max connexion${if (max > 1) "s" else ""} simultanée${if (max > 1) "s" else ""} : videz une case avant d'en lancer une autre."
             return@launch
@@ -122,7 +123,7 @@ class MultiviewViewModel @Inject constructor(
         }
         notice.value = null
         val current = _slots.value[index]
-        val sp = current.player ?: StreamPlayer(factory.create(settings.current(), forMultiview = true), factory, viewModelScope)
+        val sp = current.player ?: StreamPlayer(factory.create(settings.current(), forMultiview = true), factory, viewModelScope, gate, exclusive = false)
         sp.player.volume = if (index == audioSlot) 1f else 0f
         _slots.value = _slots.value.toMutableList().also { it[index] = SlotState(c, sp) }
         session.set(index, MultiviewSession.Slot(c.playlistId, c.id))
@@ -266,7 +267,7 @@ private fun SlotView(slot: SlotState, hasAudio: Boolean) {
         )
         val state by sp.state.collectAsState()
         when (val s = state) {
-            is StreamState.Loading, is StreamState.Reconnecting -> CircularProgressIndicator(Modifier.size(32.dp), color = SokoulColors.Accent)
+            is StreamState.Loading, is StreamState.Buffering, is StreamState.Reconnecting, is StreamState.Waiting -> CircularProgressIndicator(Modifier.size(32.dp), color = SokoulColors.Accent)
             is StreamState.Failed -> Text(s.message, Modifier.padding(16.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
             else -> Unit
         }

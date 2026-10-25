@@ -41,6 +41,8 @@ data class AppSettings(
     val groupDuplicates: Boolean = true,
     /** Ordre de préférence des langues pour choisir la version lancée (VF,MULTI,VOSTFR,VO). */
     val vodLanguages: String = DEFAULT_VOD_LANGUAGES,
+    /** Format d'image du lecteur (0 = adapter, 1 = rogner, 2 = étirer), mémorisé d'une lecture à l'autre. */
+    val resizeMode: Int = 0,
 ) {
     /** Bornes appliquées à chaque écriture : une valeur aberrante (import, bug d'UI) ne doit pas casser l'app. */
     fun sanitized(): AppSettings = copy(
@@ -54,6 +56,7 @@ data class AppSettings(
         tmdbApiKey = tmdbApiKey.trim().take(256).filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' },
         lastChannelId = lastChannelId.take(64),
         vodLanguages = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(vodLanguages).joinToString(","),
+        resizeMode = resizeMode.coerceIn(0, 2),
     )
 
     companion object {
@@ -82,6 +85,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val pin = stringPreferencesKey("parental_pin")
         val tmdb = stringPreferencesKey("tmdb_key")
         val autoplay = booleanPreferencesKey("autoplay_next")
+        val resize = intPreferencesKey("resize_mode")
         val resumeLast = booleanPreferencesKey("resume_last_channel")
         val lastChannel = stringPreferencesKey("last_channel")
         val clock = booleanPreferencesKey("show_clock")
@@ -108,6 +112,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         parentalPin = this[K.pin] ?: "",
         tmdbApiKey = this[K.tmdb] ?: "",
         autoplayNextEpisode = this[K.autoplay] ?: true,
+        resizeMode = this[K.resize] ?: 0,
         resumeLastChannel = this[K.resumeLast] ?: false,
         lastChannelId = this[K.lastChannel] ?: "",
         showClock = this[K.clock] ?: true,
@@ -161,6 +166,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.pin] = s.parentalPin
             prefs[K.tmdb] = s.tmdbApiKey
             prefs[K.autoplay] = s.autoplayNextEpisode
+            prefs[K.resize] = s.resizeMode
             prefs[K.resumeLast] = s.resumeLastChannel
             prefs[K.lastChannel] = s.lastChannelId
             prefs[K.clock] = s.showClock
