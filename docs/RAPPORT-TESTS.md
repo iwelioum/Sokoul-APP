@@ -399,3 +399,86 @@ Ensuite, deux façons de donner la clé :
 - **Libellé des sous-titres en ligne** : « Français · Subdl · Interstellar 2014 1080p BluRay… » au lieu de « Sous-titres · Subdl ». La langue est lue depuis le code (« FR ») ou le nom anglais (« French »), et le nom de version permet de distinguer les résultats.
 - **Lecteur** : quand la barre réapparaît, le focus est replacé sur le curseur dès qu'il est prêt (nouvel essai à chaque image, 600 ms au plus). Avant, le focus restait sur l'écran et le premier ▼ ne servait à rien.
 - Suite : 159 tests app (vérification réelle incluse) et 18 tests parser verts, `lintRelease` OK.
+
+## 11. Phase 9 — Cohérence visuelle et navigation par « univers » (25/10/2026)
+
+Branche `phase9-design`, 7 étapes, un commit local chacune (`e331767` → `e8cd11c`), plus `a4d79c7` (lint) et `6c12563` (fluidité). Rien n'est poussé sur GitHub.
+
+### Ce qui change pour l'utilisateur
+- **Deux univers, un seul langage visuel.**
+  - **Streaming** (Accueil, Films, Séries, Ma liste, Sagas) : onglets en haut qui s'effacent quand on descend dans le contenu.
+  - **TV** : plein écran, sans barre, avec des surimpressions sur la vidéo (bandeau de zapping, liste des chaînes, groupes, mini-guide).
+- **Système de design unique** :
+  - jetons `Radius`, `Space`, `Type` et couleurs ;
+  - 3 styles de focus seulement (carte, ligne, pastille) ;
+  - une seule affiche, une seule pastille, un seul en-tête, un seul logo ;
+  - un test refuse les couleurs et les arrondis écrits en dur dans les écrans.
+- **Recherche contextuelle** : le périmètre dépend de la page d'origine (Films → films, TV → chaînes et programmes…) et se modifie avec des pastilles. Clavier TV avec 3 suggestions par préfixe.
+- **Explorer, ambiances et micro-genres** :
+  - filtres Genre, Décennie, Note, Durée, Langue et Qualité ;
+  - 6 ambiances (Frissons, Esprit léger, En famille…) et des micro-genres (« Pépites méconnues », « Grand spectacle en 4K »…) ;
+  - le catalogue est analysé en arrière-plan, et l'analyse se met en pause pendant la lecture.
+- **Sagas** :
+  - hub de toutes les collections ;
+  - page « musée » : frise, ordre de sortie ou du récit, visages de la saga, coulisses, séries du même univers ;
+  - les films absents sont marqués « HORS CATALOGUE » et peuvent quand même être ajoutés à Ma liste.
+- **Préparation de Real-Debrid** : une source de lecture est décrite par des valeurs typées (origine, qualité, HDR, langue, état), pas par du texte. Les badges `[VF] [1080p] [4K]` sont calculés par l'interface.
+
+### Recommandations de l'audit (« Analyse UX du Plan TV.pdf »)
+| Recommandation | Décision | Raison / ce qui a été fait |
+|---|---|---|
+| Carte focalisée au premier plan (`zIndex`) | ✔ Gardée | La voisine ne recouvre plus la carte agrandie |
+| Double anneau de focus (filet sombre + contour dégradé) | ✔ Gardée | Focus visible même sur les affiches à bord blanc ; dessiné sans recomposition |
+| Zones de sécurité TV (48 dp, haut 27 dp, résumés ≤ 600 dp) | ✔ Gardée | Fonds toujours bord à bord |
+| Faux verre (image réduite et agrandie) au lieu d'un vrai flou | ✔ Gardée | `GlassPanel` : aperçu, liste des chaînes, mini-guide, pistes |
+| Onglets qui changent de page au focus | ✔ Gardée | Après 320 ms d'arrêt ; 🔍, TV et ⚙ demandent OK : jamais de bascule en TV par accident |
+| `focusRestorer` partout | ✖ Écartée | Ferait double emploi avec `focusMemory`, déjà validé sur la box |
+| Ligne de repère du défilement (~35 %) | ✔ Gardée | Sur le `BringIntoViewSpec` existant |
+| Lueur d'ambiance (Palette, bornes HSL, cache) | ✔ Gardée et précisée | Calculée sur une miniature de 64 px ; fond « cuit » en basse définition (voir Fluidité) |
+| Jauge de 2 dp pendant le délai de zapping | ✔ Gardée | 600 ms, puis le flux démarre |
+| ◀ = chaîne précédente, appui long sur Retour = tout fermer | ✔ Gardées | — |
+| Réglage « Sens du zapping » | ✔ Gardée | ✚ Ajouts : pavé numérique et réglage « Au démarrage » |
+| Suggestions de complétion | ✔ Adaptée | Préfixe sur les noms du catalogue, pas sur les titres TMDB (seule une partie du catalogue est enrichie) |
+| Touches Lecture/Pause = espace, Retour rapide = effacer | ✔ Gardée | — |
+| Indexation par lots, pause pendant la lecture | ✔ Gardée | ✚ Elle cède aussi la base pendant le chargement d'un écran |
+| Mots-clés TMDB par identifiant | ✔ Adaptée | Stockés par **nom** : `Moods.kt` reste lisible et vérifiable |
+| Titres de rangées en Majuscules À Chaque Mot | ✔ Adaptée | Pastilles courtes gardées ; titres en français naturel (« Frissons garantis ») |
+| Durées « 90-120 min » | ✔ Adaptée | « Moins de 1 h 30 », « 1 h 30 à 2 h », « Plus de 2 h » |
+| `curated_sagas.json` (ordre du récit, séries liées) | ✔ Gardée | Chaque identifiant vérifié par un vrai appel TMDB ; `CuratedSagasTest` |
+| Badge « HORS CATALOGUE IPTV » | ✔ Adaptée | « HORS CATALOGUE » : avec Real-Debrid, le catalogue ne sera plus seulement l'IPTV |
+| `PlaybackSource` avec libellés | ✔ Gardée et typée | Énumérations ; libellé calculé par l'interface |
+| Vrai flou, parallaxe forte, bandes-annonces au focus | ✖ Écartées | Puce graphique de la box trop faible, limite d'une connexion du fournisseur, YouTube |
+
+### Fluidité mesurée sur la box (`dumpsys gfxinfo`, part d'images saccadées)
+| Écran | Avant | Après | Ce qui a changé |
+|---|---|---|---|
+| Accueil (à chaud) | 17,6 % / 7,9 % | **6,3 % / 3,3 %** (médiane ~30 ms) | Le fond d'ambiance plein écran est peint une fois dans une image de 320 px, puis étiré |
+| Films (à chaud) | 5,6 % / 10,1 % (1er passage) | **3,8 % / 4,4 %** | — |
+| Hub des Sagas | 18–19 % | **6,1 % / 6,4 %** (médiane 21 ms) | Fond en double retiré, dégradé limité au bas des tuiles, tuile sans fond opaque, requête des ambiances corrigée |
+| Explorer pendant l'indexation (31 %) | — | **5,8 % / 7,8 %** (médiane 15 ms) | L'indexation cède la base aux écrans |
+| Ouverture d'une page saga | 5 à 10 s | **0,16 à 0,23 s** | Lecture de la base non bloquée par l'indexation, films affichés avant les crédits |
+| Requête des ambiances | ~1 s × 12 par page (et > 20 s dans le pire cas) | indexée | Jointure directe au lieu d'une sous-requête relancée par ligne ; filtre 4K séparé en deux recherches indexées ; 2 requêtes au plus en même temps |
+
+L'objectif « sous 5 % » est atteint sur Films. Accueil, Sagas et Explorer en restent proches (3 à 8 %, contre 4,2 % en phase 7 pour l'Accueil, qui n'avait pas encore de fond d'ambiance).
+
+**Zapping TV : non mesuré.** Le fournisseur a refusé le flux (401, connexion sans doute ouverte ailleurs), puis l'a coupé au second essai, plus de 30 s après. Les règles d'utilisation de l'abonnement interdisent d'insister. La logique du zapping (un seul flux après 5 appuis rapides, ouvert 600 ms après le dernier) est couverte par les tests automatiques.
+
+### Correctif vu pendant ces essais
+- Sur l'écran « Connexion en pause » ou « Lecture impossible », **Retour retirait seulement le focus du bouton**, et l'essai automatique repartait. Retour quitte maintenant le lecteur directement. Vérifié sur la box : un seul Retour ramène aux Sagas.
+
+### Tests
+- Nouveaux fichiers de tests :
+  - `DesignTokensTest` : aucune couleur ni arrondi écrit en dur hors du thème ;
+  - `ShellUiTest` : onglets effacés et restaurés, traversée de la barre sans charger de page, TV sur OK seulement, chaîne de Retour ;
+  - `AmbientTintTest` : choix et bornes de la teinte ;
+  - `TvZapTest` : cinq appuis rapides = un seul flux, ouvert après l'arrêt et après fermeture du précédent ; liste qui boucle ; Retour pendant le zapping ; sens du zapping ;
+  - `SearchKeyboardTest` : saisie et touches de la télécommande ;
+  - `ExploreTest` : identifiants de genres films et séries, ambiances, filtres de l'Explorer, indexation par lots de 45, pause pendant la lecture ;
+  - `SagaTest` : frise, hors catalogue, ordre du récit, visages et coulisses, Ma liste par identifiant TMDB, format des sagas éditorialisées ;
+  - `PlaybackSourceTest` : sources typées et libellés, avec un garde-fou (aucun libellé de source écrit en dur dans les écrans) ;
+  - `ScreenLoadingTest` : l'indexation attend la fin des chargements d'écran.
+- Tests enrichis :
+  - `MigrationTest` (4→5, 5→6) ;
+  - `DataTest` (recherche contextuelle, suggestions par préfixe) ;
+  - `ParcoursDataTest` et `ParcoursUiTest`.
+- Suite complète : **195 tests app verts**, 1 ignoré (`ApiLiveCheck`, la vérification réelle, ignorée sans clés). Tests du parser verts. `lintRelease` : **0 erreur**, 18 avertissements.
