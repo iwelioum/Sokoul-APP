@@ -44,6 +44,7 @@ class SyncWorker @AssistedInject constructor(
                     sync.syncPlaylist(id)
                     if (inputData.getBoolean(KEY_WITH_EPG, false)) runCatching { sync.syncEpg(id) }
                     fillLogos(id)
+                    CatalogIndexWorker.start(applicationContext)
                 }
                 MODE_EPG -> { sync.syncEpg(id); fillLogos(id) }
                 else -> periodic()

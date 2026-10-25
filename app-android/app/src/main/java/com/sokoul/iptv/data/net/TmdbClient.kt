@@ -47,6 +47,13 @@ data class TmdbInfo(
     val tvdbId: Int? = null,
     /** Série en cours de diffusion (TMDB « Returning Series »). */
     val inProduction: Boolean = false,
+    /** Langue originale (« fr », « en », « ko »…). */
+    val originalLanguage: String? = null,
+    /** Identifiants de genres TMDB (différents pour les films et les séries). */
+    val genreIds: List<Int> = emptyList(),
+    val voteCount: Int? = null,
+    /** Noms des mots-clés TMDB, en minuscules (« heist », « time travel »). */
+    val keywords: List<String>? = null,
 )
 
 /** Résultat de liste TMDB (tendances, recommandations, collection). */
@@ -59,6 +66,9 @@ data class TmdbItem(
     val backdrop: String?,
     val rating: Double?,
     val overview: String?,
+    val genreIds: List<Int> = emptyList(),
+    val originalLanguage: String? = null,
+    val voteCount: Int? = null,
 )
 
 data class TmdbEpisode(val season: Int, val episode: Int, val name: String?, val overview: String?, val still: String?, val runtimeMin: Int?)
@@ -94,7 +104,7 @@ class TmdbClient @Inject constructor(
      * titre identique (titre français ou original, normalisé) et année à ±1 an.
      * Sans année : accepté uniquement si un seul résultat porte exactement ce titre.
      */
-    suspend fun match(apiKey: String, kind: String, title: String, year: Int?): Int? {
+    suspend fun match(apiKey: String, kind: String, title: String, year: Int?, store: Boolean = true): Int? {
         if (apiKey.isBlank()) return null
         return safe {
             val norm = VodGrouping.normalizeTitle(title, year)
@@ -103,9 +113,9 @@ class TmdbClient @Inject constructor(
                 put("query", VodGrouping.stripCountry(title))
                 if (year != null) put(if (kind == "movie") "primary_release_year" else "first_air_date_year", year.toString())
             }
-            var results = items(get(apiKey, "/3/search/$kind", params), kind)
+            var results = items(get(apiKey, "/3/search/$kind", params, store = store), kind)
             if (results.isEmpty() && year != null) {
-                results = items(get(apiKey, "/3/search/$kind", mapOf("query" to VodGrouping.stripCountry(title))), kind)
+                results = items(get(apiKey, "/3/search/$kind", mapOf("query" to VodGrouping.stripCountry(title)), store = store), kind)
             }
             val exact = results.filter { r ->
                 VodGrouping.normalizeTitle(r.title, r.year) == norm || r.originalTitle?.let { VodGrouping.normalizeTitle(it, r.year) } == norm
@@ -116,16 +126,20 @@ class TmdbClient @Inject constructor(
     }
 
     /** Fiche TMDB ; `full` ajoute casting et vidéos (fiche détaillée), sinon images seulement (enrichissement des rangées). */
-    suspend fun details(apiKey: String, kind: String, id: Int, full: Boolean): TmdbInfo? {
+    /**
+     * [store] faux : réponse non gardée dans le cache (indexation de tout le catalogue : des dizaines
+     * de milliers de fiches, que le cache ferait gonfler pour rien).
+     */
+    suspend fun details(apiKey: String, kind: String, id: Int, full: Boolean, store: Boolean = true): TmdbInfo? {
         if (apiKey.isBlank()) return null
         return safe {
             val ratings = if (kind == "movie") "release_dates" else "content_ratings"
-            val append = if (full) "credits,videos,images,external_ids,$ratings" else "images,$ratings"
-            val o = get(apiKey, "/3/$kind/$id", mapOf("append_to_response" to append, "include_image_language" to "fr,en,null"))
+            val append = if (full) "credits,videos,images,external_ids,keywords,$ratings" else "images,keywords,$ratings"
+            val o = get(apiKey, "/3/$kind/$id", mapOf("append_to_response" to append, "include_image_language" to "fr,en,null"), store = store)
                 ?: return@safe null
             var info = parse(kind, o)
             if (info.overview.isNullOrBlank()) {
-                val en = get(apiKey, "/3/$kind/$id", emptyMap(), language = "en-US")
+                val en = get(apiKey, "/3/$kind/$id", emptyMap(), language = "en-US", store = store)
                 info = info.copy(overviewEn = en?.str("overview")?.takeIf { it.isNotBlank() })
             }
             info
@@ -209,7 +223,7 @@ class TmdbClient @Inject constructor(
         try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { Timber.w(e, "TMDB indisponible"); null }
     }
 
-    private suspend fun get(apiKey: String, path: String, params: Map<String, String>, language: String = "fr-FR", ttlMs: Long = 7 * 24 * HOUR): JsonObject? {
+    private suspend fun get(apiKey: String, path: String, params: Map<String, String>, language: String = "fr-FR", ttlMs: Long = 7 * 24 * HOUR, store: Boolean = true): JsonObject? {
         val url = "https://api.themoviedb.org$path".toHttpUrl().newBuilder().apply {
             addQueryParameter("api_key", apiKey)
             addQueryParameter("language", language)
@@ -226,7 +240,7 @@ class TmdbClient @Inject constructor(
             if (!resp.isSuccessful) return cached?.let { json.parseToJsonElement(it.json) as? JsonObject }
             resp.body?.string() ?: return null
         }
-        cache.put(TmdbCacheEntity(key, text, now))
+        if (store) cache.put(TmdbCacheEntity(key, text, now))
         return json.parseToJsonElement(text) as? JsonObject
     }
 
@@ -244,6 +258,9 @@ class TmdbClient @Inject constructor(
                 backdrop = x.str("backdrop_path")?.let { "$IMG/w1280$it" },
                 rating = x.double("vote_average")?.takeIf { it > 0 },
                 overview = x.str("overview")?.takeIf { it.isNotBlank() },
+                genreIds = (x["genre_ids"] as? JsonArray).orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() },
+                originalLanguage = x.str("original_language"),
+                voteCount = x.int("vote_count"),
             )
         }
 
@@ -291,6 +308,13 @@ class TmdbClient @Inject constructor(
             imdbId = (o.str("imdb_id") ?: (o["external_ids"] as? JsonObject)?.str("imdb_id"))?.takeIf { it.startsWith("tt") },
             tvdbId = (o["external_ids"] as? JsonObject)?.int("tvdb_id"),
             inProduction = o["in_production"]?.toString() == "true",
+            originalLanguage = o.str("original_language"),
+            genreIds = (o["genres"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.int("id") },
+            voteCount = o.int("vote_count"),
+            keywords = (o["keywords"] as? JsonObject)?.let { k ->
+                // films : « keywords », séries : « results »
+                ((k["keywords"] ?: k["results"]) as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.str("name")?.lowercase()?.trim() }
+            },
         )
     }
 

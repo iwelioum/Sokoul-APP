@@ -312,6 +312,13 @@ data class TmdbMetaEntity(
     val collectionName: String?,
     val certification: String?,
     val fetchedAt: Long,
+    /** v5 — langue originale (« fr », « ko »). */
+    val originalLanguage: String? = null,
+    /** v5 — identifiants de genres TMDB encadrés de virgules (« ,28,12, ») pour les requêtes LIKE. */
+    val genreIds: String? = null,
+    val voteCount: Int? = null,
+    /** v5 — mots-clés TMDB en minuscules encadrés de barres (« |heist|car chase| ») ; null = pas encore indexé. */
+    val keywords: String? = null,
 )
 
 /**

@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
@@ -707,9 +708,26 @@ interface BrowseDao {
 
     @Query("DELETE FROM tmdb_match WHERE playlistId = :pid")
     suspend fun deleteMatches(pid: Long)
+
+    /** Explorer, ambiances, micro-genres (requête construite par `ExploreQuery`). */
+    @RawQuery
+    suspend fun explore(q: androidx.sqlite.db.SupportSQLiteQuery): List<KeyedMeta>
+
+    /** Indexation : œuvres sans fiche complète (requête construite par `IndexQuery`). */
+    @RawQuery
+    suspend fun indexCandidates(q: androidx.sqlite.db.SupportSQLiteQuery): List<IndexCandidate>
+
+    @RawQuery
+    suspend fun count(q: androidx.sqlite.db.SupportSQLiteQuery): Int
+
+    @Upsert
+    suspend fun putMetas(m: List<TmdbMetaEntity>)
 }
 /** Chaîne sans logo : de quoi lui trouver un logo de secours. */
 data class ChannelLogoRef(val id: String, val tvgId: String?, val nameKey: String)
 
 /** Suggestion de complétion : titre affiché et groupe (pour masquer les groupes verrouillés). */
 data class SuggestRow(val title: String, val categoryId: String)
+
+/** Œuvre à indexer : clé de regroupement et une version représentative (titre, année). */
+data class IndexCandidate(val workKey: String, val id: String, val title: String, val year: Int?)

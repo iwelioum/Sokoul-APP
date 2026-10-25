@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Mises à jour de la base installée (v1 → v4) : aucune donnée perdue. */
+/** Mises à jour de la base installée (v1 → v5) : aucune donnée perdue. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class MigrationTest {
@@ -82,6 +82,21 @@ class MigrationTest {
         assertEquals("0", str("SELECT manual FROM progress WHERE itemId = 'm1'"))
         assertEquals(null, str("SELECT season FROM progress WHERE itemId = 'm1'"))
         assertEquals("3", str("SELECT COUNT(*) FROM progress"))
+        db.close()
+    }
+
+    @Test fun `migration 4 vers 5 garde les fiches TMDB et ajoute les champs d exploration`() {
+        val name = dbName + "5"
+        helper.createDatabase(name, 4).apply {
+            execSQL("INSERT INTO tmdb_meta (type, tmdbId, title, originalTitle, overview, overviewLang, tagline, genres, poster, backdrop, logo, rating, year, runtimeMin, seasons, collectionId, collectionName, certification, fetchedAt) VALUES ('MOVIE', 603, 'Matrix', NULL, NULL, NULL, NULL, 'Action', NULL, NULL, NULL, 8.2, 1999, 136, NULL, 2344, 'Matrix', NULL, 7)")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(name, 5, true, *Migrations.ALL)
+        fun str(sql: String) = db.query(sql).use { it.moveToFirst(); if (it.isNull(0)) null else it.getString(0) }
+        assertEquals("Matrix|2344|7", str("SELECT title || '|' || collectionId || '|' || fetchedAt FROM tmdb_meta"))
+        // pas encore indexée : l'indexation la complétera
+        assertEquals(null, str("SELECT keywords FROM tmdb_meta"))
+        assertEquals(null, str("SELECT genreIds FROM tmdb_meta"))
         db.close()
     }
 }

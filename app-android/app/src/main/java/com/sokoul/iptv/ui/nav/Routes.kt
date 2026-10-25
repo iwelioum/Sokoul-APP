@@ -24,6 +24,9 @@ import kotlinx.serialization.Serializable
 /** Grille « Tout voir » d'une rangée (spec = GridSpec encodée). */
 @Serializable data class BrowseGridRoute(val title: String, val spec: String)
 
+/** Explorer : tout le catalogue d'un type (MOVIE | SERIES), filtré par les fiches TMDB. */
+@Serializable data class ExploreRoute(val type: String)
+
 /** Ancienne navigation par catégories du fournisseur (type = MOVIE | SERIES). */
 @Serializable data class AllCategoriesRoute(val type: String)
 

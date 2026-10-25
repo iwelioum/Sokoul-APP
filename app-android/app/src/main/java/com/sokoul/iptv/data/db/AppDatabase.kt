@@ -35,7 +35,7 @@ import javax.inject.Singleton
         TmdbMetaEntity::class,
         TmdbMatchEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -138,5 +138,18 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    /**
+     * v5 : de quoi explorer le catalogue (genres, langue, votes, mots-clés TMDB). Les fiches existantes
+     * gardent tout le reste ; l'indexation complète les nouveaux champs en arrière-plan.
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `tmdb_meta` ADD COLUMN `originalLanguage` TEXT")
+            db.execSQL("ALTER TABLE `tmdb_meta` ADD COLUMN `genreIds` TEXT")
+            db.execSQL("ALTER TABLE `tmdb_meta` ADD COLUMN `voteCount` INTEGER")
+            db.execSQL("ALTER TABLE `tmdb_meta` ADD COLUMN `keywords` TEXT")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 }

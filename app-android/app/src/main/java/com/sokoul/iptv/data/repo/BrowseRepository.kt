@@ -37,8 +37,11 @@ sealed interface GridSpec {
     data class Saga(val id: Int) : GridSpec
     /** « Ma liste » : un type, ou films et séries mêlés ([type] null), du plus récent ajout au plus ancien. */
     data class Favorites(val type: ContentType?) : GridSpec
+    /** Ambiance ou micro-genre (fiches TMDB indexées). */
+    data class Mooded(val type: ContentType, val mood: Mood?, val micro: MicroGenre?) : GridSpec
 
     fun encode(): String = when (this) {
+        is Mooded -> join("mood", type.name, mood?.name ?: "-", micro?.name ?: "-")
         is Cats -> join("cats", type.name, if (byPosition) "p" else "a", *ids.toTypedArray())
         is Recent -> join("recent", type.name)
         is Ids -> join("ids", type.name, *ids.toTypedArray())
@@ -63,6 +66,7 @@ sealed interface GridSpec {
                 "theme" -> Themed(type(1), Theme.valueOf(p[2]))
                 "saga" -> Saga(p[1].toInt())
                 "fav" -> Favorites(if (p[1] == "ALL") null else type(1))
+                "mood" -> Mooded(type(1), p[2].takeIf { it != "-" }?.let(Mood::valueOf), p[3].takeIf { it != "-" }?.let(MicroGenre::valueOf))
                 else -> null
             }
         }.getOrNull()
@@ -150,6 +154,57 @@ class BrowseRepository @Inject constructor(
         val works = if (type == ContentType.MOVIE) movieWorks(b.recentMovies(pid, excluded, limit * 3))
         else seriesWorks(b.recentSeries(pid, excluded, limit * 3))
         return distinctTitles(works).take(limit)
+    }
+
+    /** Œuvres par clé de regroupement, dans l'ordre des clés (contenus masqués ou verrouillés exclus). */
+    private suspend fun Ctx.byKeys(keys: List<String>): List<Work> {
+        if (keys.isEmpty()) return emptyList()
+        val b = db.browse()
+        val (direct, grouped) = keys.partition { it.startsWith("id:") }
+        val ids = direct.map { it.removePrefix("id:") }
+        val works = if (type == ContentType.MOVIE) {
+            movieWorks(grouped.chunked(500).flatMap { b.moviesByKeys(pid, it) } + ids.chunked(500).flatMap { b.moviesByIds(pid, it) })
+        } else {
+            seriesWorks(grouped.chunked(500).flatMap { b.seriesByKeys(pid, it) } + ids.chunked(500).flatMap { b.seriesByIds(pid, it) })
+        }
+        val order = keys.withIndex().associate { it.value to it.index }
+        return works.filter { it.key in order }.sortedBy { order[it.key] }
+    }
+
+    /** Explorer : œuvres dont la fiche répond aux filtres, décorées (fonds, logos). */
+    private suspend fun Ctx.explore(filter: ExploreFilter, sort: GridSort, limit: Int): List<Work> {
+        val rows = db.browse().explore(ExploreQuery.build(pid, type, filter, sort, limit * 2))
+        val metas = rows.associate { it.workKey to it.meta }
+        // une même fiche TMDB peut couvrir deux groupes (titre du fournisseur / clé « tmdb:N ») :
+        // une seule carte, à la place de la première, celle qui a le plus de versions
+        val byTmdb = LinkedHashMap<Any, Work>()
+        for (w in byKeys(rows.map { it.workKey })) {
+            val id: Any = metas[w.key]?.tmdbId ?: w.key
+            val kept = byTmdb[id]
+            if (kept == null || w.versions > kept.versions) byTmdb[id] = w
+        }
+        val works = distinctTitles(byTmdb.values.toList()).take(limit)
+        return works.map { it.withMeta(metas[it.key]) }
+    }
+
+    suspend fun explore(pid: Long, type: ContentType, filter: ExploreFilter, sort: GridSort = GridSort.DEFAULT, limit: Int = GRID_LIMIT): List<Work> =
+        withContext(Dispatchers.Default) { ctx(pid, type).explore(filter, sort, limit) }
+
+    /** Rangées d'ambiances et de micro-genres d'une page Films / Séries (au moins [MicroGenre.MIN_ROW] titres chacune). */
+    private suspend fun Ctx.moodRows(): List<BrowseRow> = coroutineScope {
+        val moods = Mood.entries.map { m ->
+            async {
+                val works = runCatching { explore(ExploreFilter(mood = m), GridSort.DEFAULT, 24) }.getOrDefault(emptyList())
+                BrowseRow("mood-" + m.name, m.title(type), m.tagline, works = works, seeAll = GridSpec.Mooded(type, m, null).encode())
+            }
+        }
+        val micros = MicroGenre.entries.filter { it != MicroGenre.SPECTACLE || DeviceCaps.supports4k }.map { g ->
+            async {
+                val works = runCatching { explore(ExploreFilter(micro = g), GridSort.DEFAULT, 24) }.getOrDefault(emptyList())
+                BrowseRow("micro-" + g.name, g.title, g.tagline, works = works, seeAll = GridSpec.Mooded(type, null, g).encode())
+            }
+        }
+        (moods + micros).awaitAll().filter { it.works.size >= MicroGenre.MIN_ROW }
     }
 
     private suspend fun Ctx.byIds(ids: List<String>): List<Work> {
@@ -258,6 +313,8 @@ class BrowseRepository @Inject constructor(
         val topRatedD = async { runCatching { c.topRated() }.getOrDefault(emptyList()) }
         val bywD = async { runCatching { becauseYouWatched(pid, setOf(type)) }.getOrNull() }
         val sagasD: Deferred<List<SagaCard>>? = if (movies) async { runCatching { sagas(pid) }.getOrDefault(emptyList()) } else null
+        // ambiances et micro-genres : fiches déjà indexées, sans réseau
+        val moodD = async { runCatching { c.moodRows() }.getOrDefault(emptyList()) }
 
         // nouveautés : catégorie « récemment ajoutés » du fournisseur, sinon derniers ajouts
         val newCats = c.preferred(c.visible.filter { Theme.NEW.matches(it.name) })
@@ -303,7 +360,7 @@ class BrowseRepository @Inject constructor(
             }
         }
 
-        val tmdbParts = listOfNotNull(trendingD, topRatedD, bywD, sagasD)
+        val tmdbParts = listOfNotNull(trendingD, topRatedD, bywD, sagasD, moodD)
         progressive(tmdbParts, onPartial) {
         val trending = trendingD.v(emptyList())
         val top10 = trending.take(10)
@@ -334,23 +391,31 @@ class BrowseRepository @Inject constructor(
         // rythme : plateformes, genres et listes alternent ; les thèmes de saison passent devant
         val seasonalRows = themeRows.filter { (t, _) -> (t == Theme.HORROR && season == Season.HALLOWEEN) || t == Theme.CHRISTMAS }.map { it.second }
         val themes = ArrayDeque(themeRows.map { it.second }.filter { it !in seasonalRows })
+        val moodRows = ArrayDeque(moodD.v(emptyList()))
         val plats = ArrayDeque(platformRows)
         val rows = ArrayList<BrowseRow>()
         rows += tiles
         rows += top10Row
         rows += seasonalRows
         rows += newRow
+        rows += BrowseRow(
+            "moods", "Ambiances", "Choisissez une humeur, on s'occupe du reste.", RowStyle.MOODS,
+            chips = Mood.entries.map { GridSpec.Mooded(type, it, null).encode() to it.chip },
+        )
         plats.removeFirstOrNull()?.let { rows += it }
         rows += popularRow
+        moodRows.removeFirstOrNull()?.let { rows += it }
         yearRows.firstOrNull()?.let { rows += it }
         plats.removeFirstOrNull()?.let { rows += it }
         byw?.let { rows += it }
+        moodRows.removeFirstOrNull()?.let { rows += it }
         themes.removeFirstOrNull()?.let { rows += it }
         if (movies) rows += sagaRow
         plats.removeFirstOrNull()?.let { rows += it }
         themes.removeFirstOrNull()?.let { rows += it }
         rows += topRatedRow
-        while (plats.isNotEmpty() || themes.isNotEmpty()) {
+        while (plats.isNotEmpty() || themes.isNotEmpty() || moodRows.isNotEmpty()) {
+            moodRows.removeFirstOrNull()?.let { rows += it }
             plats.removeFirstOrNull()?.let { rows += it }
             themes.removeFirstOrNull()?.let { rows += it }
         }
@@ -563,6 +628,11 @@ class BrowseRepository @Inject constructor(
                 val col = if (api.isBlank()) null else tmdb.collection(api, spec.id)
                 if (col == null) null to emptyList()
                 else GridHeader(col.name, "${col.parts.size} films", col.overview, col.backdrop) to ctx(pid, ContentType.MOVIE).matchItems(col.parts, 50)
+            }
+            is GridSpec.Mooded -> {
+                val title = spec.mood?.title(spec.type) ?: spec.micro?.title.orEmpty()
+                val tagline = spec.mood?.tagline ?: spec.micro?.tagline
+                GridHeader(title, tagline) to ctx(pid, spec.type).explore(ExploreFilter(mood = spec.mood, micro = spec.micro), GridSort.DEFAULT, GRID_LIMIT)
             }
             is GridSpec.Favorites -> {
                 val types = spec.type?.let { listOf(it) } ?: listOf(ContentType.MOVIE, ContentType.SERIES)

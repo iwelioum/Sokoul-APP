@@ -35,6 +35,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
         createChannels()
         SyncWorker.schedulePeriodic(this)
+        com.sokoul.iptv.work.CatalogIndexWorker.start(this)
         recordingScheduler.restoreAll()
         // Après la mise à jour de la base : calcule une fois les clés de regroupement des doublons.
         com.sokoul.iptv.data.AppScope.launch {

@@ -100,8 +100,11 @@ class StreamPlayer(
         }
     }
 
+    private val released = java.util.concurrent.atomic.AtomicBoolean(false)
+
     init {
         player.addListener(listener)
+        PlaybackActivity.started()
     }
 
     fun play(stream: ResolvedStream, title: String, startPositionMs: Long = 0) {
@@ -217,6 +220,7 @@ class StreamPlayer(
     }
 
     fun release() {
+        if (released.compareAndSet(false, true)) PlaybackActivity.ended()
         stop()
         gate.release(this)
         player.removeListener(listener)

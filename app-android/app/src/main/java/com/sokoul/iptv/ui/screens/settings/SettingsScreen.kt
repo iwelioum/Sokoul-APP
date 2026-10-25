@@ -118,7 +118,20 @@ class SettingsViewModel @Inject constructor(
     private val vod: com.sokoul.iptv.data.repo.VodRepository,
     private val health: com.sokoul.iptv.data.net.providers.ProviderHealth,
     private val tester: com.sokoul.iptv.data.net.providers.DataSourceTester,
+    private val indexer: com.sokoul.iptv.data.repo.CatalogIndexer,
 ) : ViewModel() {
+    /** Part du catalogue dont la fiche est complète (Explorer, ambiances). */
+    val coverage = kotlinx.coroutines.flow.MutableStateFlow<com.sokoul.iptv.data.repo.IndexCoverage?>(null)
+
+    fun refreshCoverage() = viewModelScope.launch {
+        val p = playlists.activeNow() ?: return@launch
+        coverage.value = runCatching { indexer.coverage(p.id) }.getOrNull()
+    }
+
+    fun setTmdbKey(v: String) = viewModelScope.launch {
+        store.update { it.copy(tmdbApiKey = v.trim()) }
+        if (v.isNotBlank()) com.sokoul.iptv.work.CatalogIndexWorker.start(context)
+    }
     val settings: StateFlow<AppSettings> = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
     val playlistList: StateFlow<List<PlaylistEntity>> = playlists.playlists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val active: StateFlow<PlaylistEntity?> = playlists.active.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -374,8 +387,20 @@ fun SettingsScreen(nav: NavHostController) {
         section("Fiches films et séries")
         item {
             SettingRow("Clé API TMDB", if (s.tmdbApiKey.isBlank()) "Non configurée — affiches HD, résumés, casting et bandes-annonces" else "Configurée") {
-                textEdit = TextEdit("Clé API TMDB (gratuite sur themoviedb.org)", s.tmdbApiKey) { v -> vm.update { it.copy(tmdbApiKey = v.trim()) } }
+                textEdit = TextEdit("Clé API TMDB (gratuite sur themoviedb.org)", s.tmdbApiKey) { v -> vm.setTmdbKey(v) }
             }
+        }
+        if (s.tmdbApiKey.isNotBlank()) item {
+            val cov by vm.coverage.collectAsStateWithLifecycle()
+            LaunchedEffect(Unit) { vm.refreshCoverage() }
+            SettingRow(
+                cov?.let { "Fiches enrichies : " + it.percent + " % du catalogue" } ?: "Fiches enrichies",
+                when {
+                    cov == null -> "Calcul…"
+                    cov?.complete == true -> "Genres, ambiances et Explorer couvrent tout le catalogue"
+                    else -> "L'analyse continue en arrière-plan, et se met en pause pendant la lecture"
+                },
+            ) { vm.refreshCoverage() }
         }
 
         item {

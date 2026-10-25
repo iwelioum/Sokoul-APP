@@ -62,6 +62,9 @@ class EnrichmentRepository @Inject constructor(
         return works.map { w -> w.withMeta(byType[w.type]?.get(w.key)) }
     }
 
+    /** Nouvelles fiches écrites ailleurs (indexation) : les écrans se redécorent une fois par lot. */
+    fun notifyUpdated() { _updates.value = _updates.value + 1 }
+
     /** Demande l'enrichissement en arrière-plan ; l'ordre de la liste donne la priorité. */
     fun request(pid: Long, works: List<Work>) {
         if (works.isEmpty()) return
@@ -114,7 +117,8 @@ class EnrichmentRepository @Inject constructor(
         }
         val existing = dao.meta(w.type, id)
         var wrote = false
-        if (existing == null || existing.fetchedAt < now - STALE_MS) {
+        // fiche d'avant la v5 (sans mots-clés) : complétée à son prochain affichage
+        if (existing == null || existing.fetchedAt < now - STALE_MS || existing.keywords == null) {
             val info = tmdb.details(api, kind, id, full = false) ?: return false
             dao.putMeta(info.toMeta(w.type, now))
             wrote = true
@@ -143,6 +147,7 @@ class EnrichmentRepository @Inject constructor(
                     overview = item.overview, overviewLang = item.overview?.let { "fr" }, tagline = null, genres = null,
                     poster = item.poster, backdrop = item.backdrop, logo = null, rating = item.rating, year = item.year,
                     runtimeMin = null, seasons = null, collectionId = null, collectionName = null, certification = null,
+                    originalLanguage = item.originalLanguage, genreIds = packIds(item.genreIds), voteCount = item.voteCount,
                     // fiche partielle : sera complétée (logo, accroche, saga) au prochain enrichissement
                     fetchedAt = 0,
                 )

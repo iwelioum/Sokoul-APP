@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.PlayArrow
@@ -460,6 +461,30 @@ private fun RowView(
                         Box(m(id)) { Chip(label, onFocus = { onSpot(Spot(label, meta = "Catégorie")) }) {
                             nav.navigateOnce(BrowseGridRoute(label, GridSpec.Cats(type, listOf(id), byPosition = true).encode()))
                         } }
+                    }
+                }
+            }
+            // ambiances : « Explorer » (tous les filtres) puis une pastille par humeur
+            RowStyle.MOODS -> {
+                val type = if (vm.kind == BrowseKind.SERIES) ContentType.SERIES else ContentType.MOVIE
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = l.margin, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item("explore") {
+                        Box(m("explore")) {
+                            Chip("Explorer", Icons.Default.Tune, accent = true, onFocus = {
+                                onSpot(Spot("Explorer", overview = "Genre, décennie, note, durée, langue, qualité : affinez tout le catalogue."))
+                            }) { nav.navigateOnce(com.sokoul.iptv.ui.nav.ExploreRoute(type.name)) }
+                        }
+                    }
+                    items(row.chips, key = { it.first }) { (spec, label) ->
+                        val mood = (GridSpec.decode(spec) as? GridSpec.Mooded)?.mood
+                        Box(m(spec)) {
+                            Chip(label, onFocus = { onSpot(Spot(mood?.title(type) ?: label, meta = "Ambiance", overview = mood?.tagline)) }) {
+                                nav.navigateOnce(BrowseGridRoute(mood?.title(type) ?: label, spec))
+                            }
+                        }
                     }
                 }
             }

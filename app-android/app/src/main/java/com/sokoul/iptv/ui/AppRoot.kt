@@ -140,6 +140,7 @@ private fun AppNavHost(nav: NavHostController, start: Any) {
             Shell(nav, if (movies) Dest.MOVIES else Dest.SERIES, bare = true) { if (movies) MoviesScreen(nav) else SeriesScreen(nav) }
         }
         composable<BrowseGridRoute> { val r = it.toRoute<BrowseGridRoute>(); BrowseGridScreen(nav, r.title, r.spec) }
+        composable<com.sokoul.iptv.ui.nav.ExploreRoute> { com.sokoul.iptv.ui.screens.browse.ExploreScreen(nav, it.toRoute<com.sokoul.iptv.ui.nav.ExploreRoute>().type) }
         composable<SearchRoute> { Shell(nav, Dest.SEARCH) { SearchScreen(nav, it.toRoute<SearchRoute>().origin) } }
         composable<RecordingsRoute> { Shell(nav, Dest.RECORDINGS) { RecordingsScreen(nav) } }
         composable<SettingsRoute> { Shell(nav, Dest.SETTINGS) { SettingsScreen(nav) } }

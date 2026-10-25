@@ -12,7 +12,7 @@ import com.sokoul.iptv.data.net.TmdbInfo
 
 enum class BrowseKind { HOME, MOVIES, SERIES }
 
-enum class RowStyle { POSTER, LANDSCAPE, TOP10, SAGAS, PLATFORMS, CONTINUE, CHANNELS, CATEGORIES }
+enum class RowStyle { POSTER, LANDSCAPE, TOP10, SAGAS, PLATFORMS, CONTINUE, CHANNELS, CATEGORIES, MOODS }
 
 /**
  * Une œuvre affichable (film ou série), toutes versions confondues : la version [id] ouvre la fiche.
@@ -155,7 +155,15 @@ fun TmdbInfo.toMeta(type: ContentType, now: Long = System.currentTimeMillis()) =
     poster = poster?.replace("/w500/", "/w342/"), backdrop = backdrop, logo = logo, rating = rating, year = year,
     runtimeMin = runtimeMin, seasons = seasons, collectionId = collectionId, collectionName = collectionName,
     certification = certification, fetchedAt = now,
+    originalLanguage = originalLanguage, genreIds = packIds(genreIds), voteCount = voteCount,
+    keywords = keywords?.let(::packKeywords),
 )
+
+/** « ,28,12, » : une requête `LIKE '%,28,%'` ne confond pas 28 et 280. */
+fun packIds(ids: List<Int>): String? = if (ids.isEmpty()) null else ids.joinToString(",", ",", ",")
+
+/** « |heist|car chase| » (liste vide : « | », indexé mais sans mot-clé). */
+fun packKeywords(k: List<String>): String = k.filter { it.isNotBlank() && '|' !in it }.joinToString("|", "|", "|").ifEmpty { "|" }
 
 /** Identifiant TMDB porté par une clé de regroupement « tmdb:123 ». */
 fun tmdbIdOfKey(key: String): Int? = if (key.startsWith("tmdb:")) key.removePrefix("tmdb:").toIntOrNull() else null
