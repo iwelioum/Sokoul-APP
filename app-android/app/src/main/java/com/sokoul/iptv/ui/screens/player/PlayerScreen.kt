@@ -109,6 +109,12 @@ import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.components.dpadClickable
 import com.sokoul.iptv.ui.nav.MultiviewRoute
+import com.sokoul.iptv.ui.screens.tv.ChannelOverlay
+import com.sokoul.iptv.ui.screens.tv.GroupsPanel
+import com.sokoul.iptv.ui.screens.tv.MiniGuide
+import com.sokoul.iptv.ui.screens.tv.ZapBanner
+import androidx.compose.material.icons.filled.CalendarViewWeek
+import androidx.compose.material.icons.filled.Search
 import com.sokoul.iptv.ui.nav.PlayerRoute
 import com.sokoul.iptv.ui.theme.LocalIsTv
 import com.sokoul.iptv.ui.theme.LocalLayout
@@ -154,6 +160,13 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     var infoTick by remember { mutableIntStateOf(0) }
     var listVisible by remember { mutableStateOf(false) }
     var listIndex by remember { mutableIntStateOf(0) }
+    // univers TV : groupes (◀ dans la liste), mini-guide (▶), bandeau de zapping
+    var groupsVisible by remember { mutableStateOf(false) }
+    var groupIndex by remember { mutableIntStateOf(0) }
+    var guideVisible by remember { mutableStateOf(false) }
+    val zapPending by vm.zapPending.collectAsStateWithLifecycle()
+    val groups by vm.groups.collectAsStateWithLifecycle()
+    val currentGroup by vm.currentGroup.collectAsStateWithLifecycle()
     var numberBuffer by remember { mutableStateOf("") }
     var menu by remember { mutableStateOf<Menu?>(null) }
     var episodesVisible by remember { mutableStateOf(false) }
@@ -237,12 +250,13 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             infoVisible = false
         }
     }
-    LaunchedEffect(listVisible, listIndex) {
-        if (listVisible) { delay(12_000); listVisible = false }
+    LaunchedEffect(listVisible, listIndex, groupsVisible, groupIndex) {
+        if (listVisible || groupsVisible) { delay(12_000); listVisible = false; groupsVisible = false }
     }
+    LaunchedEffect(guideVisible) { if (guideVisible) { delay(15_000); guideVisible = false } }
     LaunchedEffect(numberBuffer) {
         if (numberBuffer.isNotEmpty()) {
-            delay(1_600)
+            delay(com.sokoul.iptv.ui.screens.tv.NUMBER_SETTLE_MS)
             numberBuffer.toIntOrNull()?.let { vm.jumpToNumber(it); showInfo() }
             numberBuffer = ""
         }
@@ -281,6 +295,10 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         // Retour ferme seulement l'écran de pause (sans montrer la barre) : un second Retour quitte le lecteur
         pauseScreen -> { pauseScreen = false; true }
         tracksVisible -> { tracksVisible = false; true }
+        // zapping en cours : on reste sur la chaîne regardée
+        zapPending != null -> vm.cancelZap()
+        groupsVisible -> { groupsVisible = false; listVisible = true; true }
+        guideVisible -> { guideVisible = false; true }
         episodesVisible -> { episodesVisible = false; true }
         listVisible -> { listVisible = false; true }
         numberBuffer.isNotEmpty() -> { numberBuffer = ""; true }
@@ -288,7 +306,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         infoVisible && !ui.isLive && isTv -> { infoVisible = false; true }
         else -> false
     }
-    BackHandler(enabled = pauseScreen || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
+    BackHandler(enabled = pauseScreen || zapPending != null || groupsVisible || guideVisible || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
     // touche Retour interceptée avant Compose : sinon elle retire seulement le focus de la barre (télécommande « muette »)
     var backDownConsumed by remember { mutableStateOf(false) }
     // filet de sécurité : le lecteur ne reste jamais sans focus (hors menus, qui ont leur propre fenêtre)
@@ -337,6 +355,13 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     return@onPreviewKeyEvent true
                 }
                 if (e.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK && menu == null) {
+                    // appui long : tout fermer d'un coup et revenir à la vidéo
+                    if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 1 && ui.isLive) {
+                        vm.cancelZap(); listVisible = false; groupsVisible = false; guideVisible = false; tracksVisible = false; numberBuffer = ""; infoVisible = false
+                        backDownConsumed = true
+                        return@onPreviewKeyEvent true
+                    }
+                    if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount > 1) return@onPreviewKeyEvent true
                     if (e.type == KeyEventType.KeyDown) { backDownConsumed = e.nativeKeyEvent.repeatCount == 0 && backConsumed(); return@onPreviewKeyEvent backDownConsumed }
                     if (e.type == KeyEventType.KeyUp && backDownConsumed) { backDownConsumed = false; return@onPreviewKeyEvent true }
                     return@onPreviewKeyEvent false
@@ -373,9 +398,12 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     return@onKeyEvent true
                 }
                 if (ui.isLive) liveKey(
-                    code, repeat, listVisible, zapList, ui,
-                    setListIndex = { listIndex = it(listIndex) }, setList = { listVisible = it }, hideInfo = { infoVisible = false },
-                    showInfo = ::showInfo, vm = vm, currentListIndex = { listIndex },
+                    code, repeat, LivePanels(listVisible, groupsVisible, guideVisible), zapList, groups, ui,
+                    setListIndex = { listIndex = it(listIndex) }, setGroupIndex = { groupIndex = it(groupIndex) },
+                    setPanels = { p -> listVisible = p.list; groupsVisible = p.groups; guideVisible = p.guide },
+                    hideInfo = { infoVisible = false }, showInfo = ::showInfo, vm = vm,
+                    currentListIndex = { listIndex }, currentGroupIndex = { groupIndex },
+                    openGroups = { groupIndex = groups.indexOfFirst { it.id == currentGroup }.coerceAtLeast(0) },
                 ) else {
                     // VOD : commandes affichées → la navigation au focus prend la main
                     if (infoVisible || !isDpad(code)) return@onKeyEvent false
@@ -448,7 +476,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 SeekFeedback(last - seekOrigin, last)
             }
 
-            val controlsShown = infoVisible && !listVisible && !episodesVisible && !tracksVisible && !errorShown && !pauseScreen && !showNextCard
+            val controlsShown = infoVisible && !listVisible && !groupsVisible && !guideVisible && zapPending == null && !episodesVisible && !tracksVisible && !errorShown && !pauseScreen && !showNextCard
             if (!ui.isLive) {
                 AnimatedVisibility(
                     controlsShown, Modifier.align(Alignment.TopCenter),
@@ -499,8 +527,33 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     )
                 }
             }
-            AnimatedVisibility(listVisible, Modifier.align(Alignment.CenterStart), enter = slideInHorizontally { -it }, exit = slideOutHorizontally { -it }) {
-                ChannelListOverlay(zapList, listIndex, ui.channel?.id) { i -> zapList.getOrNull(i)?.let { vm.playChannel(it) }; listVisible = false }
+            // univers TV : liste des chaînes, groupes, mini-guide, bandeau de zapping
+            val side = if (l.isCompact) 8.dp else 40.dp
+            AnimatedVisibility(listVisible, Modifier.align(Alignment.CenterStart).padding(start = side), enter = slideInHorizontally(Motion.enter()) { -it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { -it } + fadeOut(Motion.exit())) {
+                var nowMap by remember { mutableStateOf<Map<String, com.sokoul.iptv.data.db.ProgramEntity>>(emptyMap()) }
+                LaunchedEffect(zapList) { nowMap = vm.nowFor(zapList) }
+                ChannelOverlay(
+                    groups.firstOrNull { it.id == currentGroup }?.name ?: "Chaînes", zapList, listIndex, ui.channel?.id, nowMap,
+                ) { i -> zapList.getOrNull(i)?.let { vm.playChannel(it) }; listVisible = false }
+            }
+            AnimatedVisibility(groupsVisible, Modifier.align(Alignment.CenterStart).padding(start = side), enter = fadeIn(Motion.enter()), exit = fadeOut(Motion.exit())) {
+                GroupsPanel(groups, groupIndex, currentGroup) { i -> groups.getOrNull(i)?.let { vm.selectGroup(it.id) }; groupsVisible = false; listIndex = 0; listVisible = true }
+            }
+            AnimatedVisibility(guideVisible && ui.channel != null, Modifier.align(Alignment.CenterEnd).padding(end = side), enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit())) {
+                val c = ui.channel
+                if (c != null) {
+                    var programs by remember(c.id) { mutableStateOf<List<com.sokoul.iptv.data.db.ProgramEntity>?>(null) }
+                    LaunchedEffect(c.id) { programs = vm.upcoming(c) }
+                    MiniGuide(c, programs, rememberNow(30_000))
+                }
+            }
+            // bandeau de zapping (ou de saisie d'un numéro) : la chaîne visée, avant l'ouverture du flux
+            val typed = numberBuffer.toIntOrNull()?.let { n -> zapList.firstOrNull { it.number == n } }
+            val banner = zapPending ?: typed
+            AnimatedVisibility(banner != null, Modifier.align(Alignment.BottomStart).padding(start = side, bottom = if (l.isCompact) 16.dp else 40.dp), enter = fadeIn(tween(Motion.FAST)), exit = fadeOut(Motion.exit())) {
+                var lastBanner by remember { mutableStateOf(banner) }
+                if (banner != null) lastBanner = banner
+                lastBanner?.let { ZapBanner(it, number = if (zapPending == null && typed != null) numberBuffer else null) }
             }
             AnimatedVisibility(episodesVisible, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
                 EpisodesPanel(episodes, ui.currentSe, ui.seriesBackdrop ?: ui.image, Modifier, tmdb = tmdbEpisodes, onSeason = vm::loadTmdbSeason) { e -> episodesVisible = false; vm.playEpisodeNow(e) }
@@ -518,7 +571,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             AnimatedVisibility(pauseScreen, enter = fadeIn(tween(Motion.SLOW)), exit = fadeOut(Motion.exit())) {
                 PauseScreen(ui, position, duration)
             }
-            if (numberBuffer.isNotEmpty()) {
+            if (numberBuffer.isNotEmpty() && typed == null) {
                 Text(
                     numberBuffer, Modifier.align(Alignment.TopEnd).padding(32.dp).background(SokoulColors.black(0.8f), Radius.Card).padding(horizontal = 22.dp, vertical = 10.dp),
                     fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Color.White,
@@ -557,13 +610,20 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             buildList {
                 if (!ui.isLive) add(MenuOption("Depuis le début", Icons.Default.Replay) { vm.restartFromBeginning() })
                 if (ui.versionLabel != null) add(MenuOption("Version : ${ui.versionLabel}", Icons.Default.Layers) { scope.launch { delay(50); menu = Menu.VERSION } })
-                if (ui.isLive) add(MenuOption("Audio et sous-titres", Icons.Default.ClosedCaption) { tracksVisible = true })
+                // direct : d'abord ce que propose une box TV (guide, enregistrer, favori, recherche, enregistrements)
+                if (ui.isLive) {
+                    add(MenuOption("Guide TV", Icons.Default.CalendarViewWeek) { nav.navigate(com.sokoul.iptv.ui.nav.GuideRoute) })
+                    add(MenuOption("Enregistrer", Icons.Default.FiberManualRecord) { scope.launch { delay(50); menu = Menu.RECORD } })
+                    add(MenuOption(if (ui.isFavorite) "Retirer des favoris" else "Ajouter aux favoris", if (ui.isFavorite) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite() })
+                    add(MenuOption("Rechercher une chaîne", Icons.Default.Search) { nav.navigate(com.sokoul.iptv.ui.nav.SearchRoute) })
+                    add(MenuOption("Enregistrements", Icons.Default.VideoLibrary) { nav.navigate(com.sokoul.iptv.ui.nav.RecordingsRoute) })
+                    if (ui.canCatchup && ui.nowNext?.now != null) add(MenuOption("Revoir depuis le début du programme", Icons.Default.History) { vm.restartCurrentProgram() })
+                    add(MenuOption("Audio et sous-titres", Icons.Default.ClosedCaption) { tracksVisible = true })
+                    // tactile : pas de touche ◀ pour revenir à la chaîne précédente
+                    if (l.isTouch) add(MenuOption("Chaîne précédente", Icons.Default.SwapVert) { vm.previous() })
+                }
                 add(MenuOption("Format d'image : ${resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
                 if (ui.isLive) {
-                    add(MenuOption(if (ui.isFavorite) "Retirer des favoris" else "Ajouter aux favoris", if (ui.isFavorite) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite() })
-                    if (ui.canCatchup && ui.nowNext?.now != null) add(MenuOption("Revoir depuis le début du programme", Icons.Default.History) { vm.restartCurrentProgram() })
-                    add(MenuOption("Enregistrer", Icons.Default.FiberManualRecord) { scope.launch { delay(50); menu = Menu.RECORD } })
-                    add(MenuOption("Chaîne précédente", Icons.Default.SwapVert) { vm.previous() })
                     add(MenuOption("Ajouter au multi-écran", Icons.Default.GridView) { vm.addToMultiview()?.let { toast(context, it) }; nav.navigate(MultiviewRoute) })
                 } else {
                     if (ui.channel != null) add(MenuOption("Retour au direct", Icons.Default.LiveTv) { vm.backToLive() })
@@ -624,34 +684,75 @@ internal fun vodPills(
     add(PlayerAction("Plus", Icons.Default.MoreHoriz, onClick = onMore))
 }
 
-/** Touches du direct : zapping, liste des chaînes. */
+/** Panneaux du direct ouverts (un seul à la fois). */
+internal data class LivePanels(val list: Boolean = false, val groups: Boolean = false, val guide: Boolean = false) {
+    val any get() = list || groups || guide
+}
+
+/**
+ * Touches du direct, comme une box TV :
+ * - ▲▼ zappent (sens réglable), CH+ / CH− aussi ; ◀ = chaîne précédente ; ▶ = mini-guide ;
+ * - OK = liste des chaînes ; dans la liste, ◀ = groupes, ▶ = mini-guide, OK = regarder.
+ */
 private fun liveKey(
-    code: Int, repeat: Int, listVisible: Boolean, zapList: List<ChannelEntity>, ui: PlayerUi,
-    setListIndex: ((Int) -> Int) -> Unit, setList: (Boolean) -> Unit, hideInfo: () -> Unit, showInfo: () -> Unit,
-    vm: PlayerViewModel, currentListIndex: () -> Int,
+    code: Int, repeat: Int, panels: LivePanels, zapList: List<ChannelEntity>, groups: List<LiveGroup>, ui: PlayerUi,
+    setListIndex: ((Int) -> Int) -> Unit, setGroupIndex: ((Int) -> Int) -> Unit, setPanels: (LivePanels) -> Unit,
+    hideInfo: () -> Unit, showInfo: () -> Unit, vm: PlayerViewModel,
+    currentListIndex: () -> Int, currentGroupIndex: () -> Int, openGroups: () -> Unit,
 ): Boolean {
     val last = (zapList.size - 1).coerceAtLeast(0)
+    val lastGroup = (groups.size - 1).coerceAtLeast(0)
     fun openList() {
         setListIndex { zapList.indexOfFirst { it.id == ui.channel?.id }.coerceAtLeast(0) }
-        setList(true); hideInfo()
+        setPanels(LivePanels(list = true)); hideInfo()
+    }
+    fun move(d: Int) {
+        when {
+            panels.groups -> setGroupIndex { (it + d).coerceIn(0, lastGroup) }
+            panels.list -> setListIndex { (it + d).coerceIn(0, last) }
+        }
     }
     return when (code) {
-        KeyEvent.KEYCODE_DPAD_UP -> { if (listVisible) setListIndex { (it - 1).coerceAtLeast(0) } else vm.zap(-1); true }
-        KeyEvent.KEYCODE_DPAD_DOWN -> { if (listVisible) setListIndex { (it + 1).coerceAtMost(last) } else vm.zap(1); true }
+        KeyEvent.KEYCODE_DPAD_UP -> { if (panels.list || panels.groups) move(-1) else vm.zap(com.sokoul.iptv.ui.screens.tv.zapDelta(up = true, inverted = vm.zapInverted)); true }
+        KeyEvent.KEYCODE_DPAD_DOWN -> { if (panels.list || panels.groups) move(1) else vm.zap(com.sokoul.iptv.ui.screens.tv.zapDelta(up = false, inverted = vm.zapInverted)); true }
         KeyEvent.KEYCODE_CHANNEL_UP -> { vm.zap(1); true }
         KeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.zap(-1); true }
-        KeyEvent.KEYCODE_PAGE_UP -> { if (listVisible) setListIndex { (it - 10).coerceAtLeast(0) }; true }
-        KeyEvent.KEYCODE_PAGE_DOWN -> { if (listVisible) setListIndex { (it + 10).coerceAtMost(last) }; true }
+        KeyEvent.KEYCODE_PAGE_UP -> { move(-10); true }
+        KeyEvent.KEYCODE_PAGE_DOWN -> { move(10); true }
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
             if (repeat > 0) return true
-            if (listVisible) {
-                zapList.getOrNull(currentListIndex())?.let { vm.playChannel(it) }
-                setList(false)
-            } else openList()
+            when {
+                panels.groups -> groups.getOrNull(currentGroupIndex())?.let { g ->
+                    vm.selectGroup(g.id)
+                    setListIndex { 0 }
+                    setPanels(LivePanels(list = true))
+                }
+                panels.list -> {
+                    zapList.getOrNull(currentListIndex())?.let { vm.playChannel(it) }
+                    setPanels(LivePanels())
+                }
+                panels.guide -> setPanels(LivePanels())
+                else -> openList()
+            }
             true
         }
-        KeyEvent.KEYCODE_DPAD_LEFT -> { if (listVisible) setList(false) else openList(); true }
-        KeyEvent.KEYCODE_DPAD_RIGHT -> { setList(false); showInfo(); true }
+        KeyEvent.KEYCODE_DPAD_LEFT -> {
+            when {
+                panels.groups -> Unit
+                panels.list -> { openGroups(); setPanels(LivePanels(groups = true)) }
+                panels.guide -> setPanels(LivePanels())
+                else -> vm.previous()
+            }
+            true
+        }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            when {
+                panels.groups -> setPanels(LivePanels(list = true))
+                panels.guide -> Unit
+                else -> { setPanels(LivePanels(guide = true)); hideInfo() }
+            }
+            true
+        }
         else -> false
     }
 }
@@ -701,46 +802,13 @@ private fun LiveInfoBar(ui: PlayerUi) {
             if (!compact) Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 24.dp)) {
                 Text(formatClock(now), style = MaterialTheme.typography.headlineSmall)
                 if (ui.videoInfo.isNotBlank()) Text(ui.videoInfo, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                if (LocalLayout.current.isTv) Text("◀ liste  ·  ▲▼ zapper  ·  Menu options", Modifier.padding(top = 6.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall)
+                if (LocalLayout.current.isTv) Text("OK chaînes  ·  ◀ précédente  ·  ▶ programme  ·  Menu options", Modifier.padding(top = 6.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
 }
 
 
-@Composable
-private fun ChannelListOverlay(channels: List<ChannelEntity>, highlighted: Int, currentId: String?, onPick: (Int) -> Unit) {
-    val state = rememberLazyListState()
-    LaunchedEffect(highlighted) {
-        val visible = state.layoutInfo.visibleItemsInfo
-        val first = visible.firstOrNull()?.index ?: 0
-        val last = visible.lastOrNull()?.index ?: 0
-        if (highlighted <= first || highlighted >= last) state.scrollToItem((highlighted - 4).coerceAtLeast(0))
-    }
-    LazyColumn(
-        Modifier.fillMaxWidth(0.9f).widthIn(max = 420.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(SokoulColors.bg(0.95f), SokoulColors.bg(0.8f)))).padding(vertical = 24.dp),
-        state = state,
-    ) {
-        itemsIndexed(channels, key = { _, c -> c.id }) { i, c ->
-            val hl = i == highlighted
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp)
-                    .background(if (hl) SokoulColors.Accent else Color.Transparent, Radius.Card)
-                    .pointerInput(i) { detectTapGestures { onPick(i) } }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(c.number.toString(), Modifier.width(48.dp), color = if (hl) Color.White else SokoulColors.TextMuted, style = MaterialTheme.typography.titleSmall)
-                ChannelLogo(c.logo, c.name, Modifier.size(56.dp, 34.dp))
-                Text(
-                    c.name, Modifier.padding(start = 12.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (hl) Color.White else SokoulColors.TextPrimary, fontWeight = if (c.id == currentId) FontWeight.Bold else FontWeight.Normal,
-                )
-                if (c.id == currentId) Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp), tint = if (hl) Color.White else SokoulColors.Accent)
-            }
-        }
-    }
-}
 
 
 /**

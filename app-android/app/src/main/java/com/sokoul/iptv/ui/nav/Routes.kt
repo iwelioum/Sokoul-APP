@@ -8,6 +8,8 @@ import kotlinx.serialization.Serializable
 @Serializable object MoviesRoute
 @Serializable object SeriesRoute
 @Serializable object MyListRoute
+/** Univers TV : ouvre la dernière chaîne en plein écran (écran de passage, hors historique). */
+@Serializable object TvRoute
 @Serializable object SearchRoute
 @Serializable object RecordingsRoute
 @Serializable object SettingsRoute

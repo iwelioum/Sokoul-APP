@@ -310,6 +310,22 @@ fun SettingsScreen(nav: NavHostController) {
             }
         }
 
+        section("Télévision")
+        item {
+            SettingRow("Au démarrage", if (s.resumeLastChannel) "Dernière chaîne regardée" else "Accueil", "Pour ceux qui allument la box pour regarder la télé") {
+                choice = "Au démarrage" to listOf(false to "Accueil", true to "Dernière chaîne regardée").map { (v, label) ->
+                    MenuOption(label, selected = v == s.resumeLastChannel) { vm.update { it.copy(resumeLastChannel = v) } }
+                }
+            }
+        }
+        item {
+            SettingRow("Sens du zapping", zapLabel(s.zapInverted)) {
+                choice = "Sens du zapping" to listOf(false, true).map { v ->
+                    MenuOption(zapLabel(v), selected = v == s.zapInverted) { vm.update { it.copy(zapInverted = v) } }
+                }
+            }
+        }
+
         section("Guide TV et mises à jour")
         item {
             SettingRow("Décalage horaire du guide", offsetLabel(s.epgOffsetMinutes), "À ajuster si les programmes sont décalés") {
@@ -658,3 +674,6 @@ internal fun sourceStatus(
     svc == ApiService.XMLTVFR -> "Facultatif"
     else -> "Prêt"
 }
+
+/** ▲ = chaîne précédente dans la liste (numéro plus petit), comme sur la plupart des box. */
+private fun zapLabel(inverted: Boolean) = if (inverted) "▲ chaîne suivante · ▼ précédente" else "▲ chaîne précédente · ▼ suivante"

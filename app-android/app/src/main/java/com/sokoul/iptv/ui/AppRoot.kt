@@ -29,6 +29,7 @@ import com.sokoul.iptv.ui.nav.LiveRoute
 import com.sokoul.iptv.ui.nav.MovieDetailRoute
 import com.sokoul.iptv.ui.nav.MoviesRoute
 import com.sokoul.iptv.ui.nav.MyListRoute
+import com.sokoul.iptv.ui.nav.TvRoute
 import com.sokoul.iptv.data.repo.GridSpec
 import com.sokoul.iptv.ui.nav.MultiviewRoute
 import com.sokoul.iptv.ui.nav.PlayKind
@@ -69,11 +70,15 @@ import javax.inject.Inject
 @HiltViewModel
 class RootViewModel @Inject constructor(
     playlists: PlaylistRepository,
+    private val settings: com.sokoul.iptv.data.SettingsStore,
     private val catalog: com.sokoul.iptv.data.repo.CatalogRepository,
 ) : ViewModel() {
     /** null = chargement ; false = aucune playlist (premier lancement). */
     val hasPlaylist: StateFlow<Boolean?> = playlists.playlists.map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Réglage « Au démarrage : dernière chaîne regardée ». */
+    suspend fun startOnTv(): Boolean = settings.current().resumeLastChannel
 
     /** Demande externe : ignorée si la chaîne n'existe pas (le lecteur applique ensuite le contrôle parental). */
     suspend fun isPlayable(p: PlayIntent): Boolean = catalog.channel(p.playlistId, p.channelId) != null
@@ -92,6 +97,9 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                 // destination de départ figée : l'ajout de la 1re playlist ne doit pas réinitialiser la navigation
                 val start = remember { if (hasPlaylist == true) HomeRoute else PlaylistEditRoute(firstRun = true) }
                 AppNavHost(nav, start = start)
+                // TV : « Au démarrage : dernière chaîne » → la télé s'allume sur la chaîne (Retour = Accueil)
+                val isTv = com.sokoul.iptv.ui.theme.LocalLayout.current.isTv
+                LaunchedEffect(Unit) { if (isTv && start == HomeRoute && vm.startOnTv()) nav.navigateOnce(TvRoute) }
                 val play by pendingPlay.collectAsStateWithLifecycle()
                 LaunchedEffect(play) {
                     play?.let {
@@ -117,6 +125,7 @@ private fun AppNavHost(nav: NavHostController, start: Any) {
         composable<GuideRoute> { Shell(nav, Dest.GUIDE) { GuideScreen(nav) } }
         composable<MoviesRoute> { Shell(nav, Dest.MOVIES, edgeToEdge = true) { BrowseScreen(nav, hiltViewModel<MoviesBrowseViewModel>(), "Films") } }
         composable<SeriesRoute> { Shell(nav, Dest.SERIES, edgeToEdge = true) { BrowseScreen(nav, hiltViewModel<SeriesBrowseViewModel>(), "Séries") } }
+        composable<TvRoute> { com.sokoul.iptv.ui.screens.tv.TvLauncher(nav) }
         composable<MyListRoute> {
             Shell(nav, Dest.MY_LIST, edgeToEdge = true) {
                 BrowseGridScreen(

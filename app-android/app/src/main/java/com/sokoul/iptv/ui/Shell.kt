@@ -106,10 +106,6 @@ fun NavHostController.goTo(dest: Dest) {
 @Composable
 fun useSideRail(): Boolean = LocalLayout.current.window != WindowClass.COMPACT
 
-/** Largeur occupée par le menu replié sur TV (le contenu commence après). */
-val TvRailCollapsed = 72.dp
-private val TvRailExpanded = 236.dp
-
 /** [bare] : page secondaire d'une rubrique (catégories du fournisseur) — sur TV, ni onglets ni menu. */
 @Composable
 fun Shell(nav: NavHostController, current: Dest, edgeToEdge: Boolean = false, bare: Boolean = false, content: @Composable () -> Unit) {
@@ -118,94 +114,14 @@ fun Shell(nav: NavHostController, current: Dest, edgeToEdge: Boolean = false, ba
         // TV : univers Streaming = onglets en haut ; recherche et réglages = plein écran, Retour ramène
         WindowClass.TV -> when (current) {
             in StreamingDests -> if (bare) Box(Modifier.fillMaxSize()) { content() } else StreamingShell(nav, current, content)
-            Dest.SEARCH, Dest.SETTINGS -> Box(Modifier.fillMaxSize()) { content() }
-            // univers TV : le menu reste jusqu'à l'écran TV plein écran (étape 3)
-            else -> Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().padding(start = TvRailCollapsed)) { content() }
-                TvRail(current) { nav.goTo(it) }
-            }
+            // recherche, réglages et univers TV (guide, enregistrements) : plein écran, Retour ramène
+            else -> Box(Modifier.fillMaxSize()) { content() }
         }
         WindowClass.MEDIUM, WindowClass.EXPANDED -> Row(Modifier.fillMaxSize()) {
             TabletRail(current) { nav.goTo(it) }
             Box(Modifier.fillMaxSize().then(if (edgeToEdge) Modifier else Modifier.statusBarsPadding())) { content() }
         }
         WindowClass.COMPACT -> PhoneShell(nav, current, edgeToEdge, content)
-    }
-}
-
-/**
- * Menu TV façon Google TV / Netflix : replié en icônes, il se déplie au-dessus du contenu
- * (voile dégradé) dès qu'il reçoit le focus, puis se replie quand on revient au contenu.
- */
-@Composable
-private fun TvRail(current: Dest, onSelect: (Dest) -> Unit) {
-    val selectedFocus = remember { FocusRequester() }
-    var open by remember { mutableStateOf(false) }
-    val width by animateDpAsState(if (open) TvRailExpanded else TvRailCollapsed, tween(Motion.MEDIUM, easing = Motion.Emphasized), label = "rail")
-    val scrim by animateFloatAsState(if (open) 1f else 0f, tween(Motion.MEDIUM), label = "scrim")
-    Box(Modifier.fillMaxSize()) {
-        // voile sur le contenu quand le menu est ouvert
-        if (scrim > 0f) {
-            Box(
-                Modifier.fillMaxHeight().width(TvRailExpanded + 220.dp).graphicsLayer { alpha = scrim }
-                    .background(Brush.horizontalGradient(listOf(SokoulColors.bg(0.95f), SokoulColors.bg(0.8f), Color.Transparent)))
-            )
-        }
-        Column(
-            Modifier.fillMaxHeight().width(width)
-                .background(
-                    if (open) Brush.horizontalGradient(listOf(SokoulColors.Background, SokoulColors.bg(0.94f)))
-                    else Brush.horizontalGradient(listOf(SokoulColors.bg(0.9f), SokoulColors.bg(0.6f)))
-                )
-                .padding(vertical = 20.dp, horizontal = 12.dp)
-                .onFocusChanged { open = it.hasFocus }
-                .focusProperties { enter = { selectedFocus } }
-                .focusGroup(),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            // monogramme / logo
-            Row(Modifier.height(40.dp).padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                SokoulMark(size = 32.dp)
-                AnimatedVisibility(open, enter = fadeIn(tween(Motion.MEDIUM)), exit = fadeOut(tween(Motion.FAST))) {
-                    Text(
-                        "SOKOUL", Modifier.padding(start = 12.dp), color = SokoulColors.TextPrimary,
-                        fontWeight = FontWeight.Black, letterSpacing = 3.sp, fontSize = 16.sp, maxLines = 1,
-                    )
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-            Dest.entries.forEach { d ->
-                val selected = d == current
-                if (d == Dest.RECORDINGS) Spacer(Modifier.weight(1f))
-                FocusSurface(style = FocusStyle.Chip,
-                    onClick = { onSelect(d) },
-                    modifier = Modifier.fillMaxWidth().height(44.dp).then(if (selected) Modifier.focusRequester(selectedFocus) else Modifier),
-                    color = Color.Transparent,
-                    focusedColor = Color.White,
-                    shape = Radius.Card,
-                ) { focused ->
-                    Row(Modifier.fillMaxSize().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        val tint = when {
-                            focused -> SokoulColors.OnLight
-                            selected -> SokoulColors.TextPrimary
-                            else -> SokoulColors.TextMuted
-                        }
-                        Box(contentAlignment = Alignment.BottomCenter) {
-                            Icon(d.icon, d.label, Modifier.size(24.dp), tint = tint)
-                            // repère de la rubrique ouverte quand le menu est replié
-                            if (selected && !open) Box(Modifier.padding(top = 30.dp).size(5.dp).background(SokoulColors.Accent, CircleShape))
-                        }
-                        if (open) {
-                            Text(
-                                d.label, Modifier.padding(start = 16.dp), maxLines = 1, color = tint,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

@@ -34,7 +34,6 @@ import com.sokoul.iptv.ui.Shell
 import com.sokoul.iptv.ui.TAB_SETTLE_MS
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.nav.HomeRoute
-import com.sokoul.iptv.ui.nav.LiveRoute
 import com.sokoul.iptv.ui.nav.MoviesRoute
 import com.sokoul.iptv.ui.nav.MyListRoute
 import com.sokoul.iptv.ui.nav.SearchRoute
@@ -79,6 +78,8 @@ class ShellUiTest {
     }
 
     private fun setUp() {
+        // sortir de la fenêtre anti-double-appui de navigateOnce laissée par un test précédent
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(2))
         rule.mainClock.autoAdvance = false
         rule.setContent {
             CompositionLocalProvider(LocalLayout provides computeLayout(960, 540, isTv = true), LocalReducedMotion provides true) {
@@ -90,7 +91,7 @@ class ShellUiTest {
                     composable<MyListRoute> { Shell(nav, Dest.MY_LIST) { Page(Dest.MY_LIST) } }
                     composable<SearchRoute> { Shell(nav, Dest.SEARCH) { Text("Page recherche") } }
                     composable<SettingsRoute> { Shell(nav, Dest.SETTINGS) { Text("Page réglages") } }
-                    composable<LiveRoute> { LaunchedEffect(Unit) { opened[Dest.LIVE] = (opened[Dest.LIVE] ?: 0) + 1 }; Text("Page TV") }
+                    composable<com.sokoul.iptv.ui.nav.TvRoute> { LaunchedEffect(Unit) { opened[Dest.LIVE] = (opened[Dest.LIVE] ?: 0) + 1 }; Text("Page TV") }
                 }
             }
         }

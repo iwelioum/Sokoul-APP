@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -134,6 +135,23 @@ class PlayerViewModel @Inject constructor(
     private val _zapList = MutableStateFlow<List<ChannelEntity>>(emptyList())
     val zapList: StateFlow<List<ChannelEntity>> = _zapList.asStateFlow()
 
+    // --- univers TV : zapping « vraie box », groupes, mini-guide ---
+    /** Zapping : bandeau immédiat, flux ouvert après l'arrêt (flux en cours fermé dès le 1er appui). */
+    private val zapper = com.sokoul.iptv.ui.screens.tv.Zapper(
+        viewModelScope,
+        onStart = { nowNextJob?.cancel(); _player.value?.stop() },
+        onCommit = { playChannel(it) },
+    )
+    val zapPending: StateFlow<ChannelEntity?> = zapper.pending
+    /** Réglage « Sens du zapping ». */
+    var zapInverted = false
+        private set
+    private val _groups = MutableStateFlow<List<LiveGroup>>(emptyList())
+    /** Groupes du direct : favoris et toutes les chaînes d'abord, puis ceux du fournisseur. */
+    val groups: StateFlow<List<LiveGroup>> = _groups.asStateFlow()
+    private val _group = MutableStateFlow<String?>(null)
+    val currentGroup: StateFlow<String?> = _group.asStateFlow()
+
     private var playlist: PlaylistEntity? = null
     private var previousChannel: ChannelEntity? = null
     private var episodes: List<EpisodeEntity> = emptyList()
@@ -152,6 +170,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsStore.current()
             autoplayNext = settings.autoplayNextEpisode
+            zapInverted = settings.zapInverted
             resizeMode.value = settings.resizeMode
             val sp = StreamPlayer(factory.create(settings), factory, viewModelScope, gate)
             sp.player.addListener(listener)
@@ -235,7 +254,9 @@ class PlayerViewModel @Inject constructor(
         when (route.kind) {
             PlayKind.LIVE -> {
                 val c = catalog.channel(p.id, route.id) ?: throw IllegalStateException("Chaîne introuvable")
-                viewModelScope.launch { _zapList.value = catalog.channelList(p.id, route.categoryId) }
+                _group.value = route.categoryId ?: c.categoryId
+                viewModelScope.launch { _zapList.value = catalog.channelList(p.id, _group.value) }
+                viewModelScope.launch { loadGroups(p.id) }
                 playChannel(c)
             }
             PlayKind.CATCHUP -> {
@@ -389,16 +410,46 @@ class PlayerViewModel @Inject constructor(
         _ui.update { it.copy(isFavorite = ids.any { f -> f.type == ContentType.LIVE && f.itemId == c.id }) }
     }
 
-    fun zap(delta: Int) {
-        val list = _zapList.value
-        val current = _ui.value.channel ?: return
-        if (list.isEmpty()) return
-        val i = list.indexOfFirst { it.id == current.id }
-        val next = list[((if (i < 0) 0 else i) + delta).mod(list.size)]
-        playChannel(next)
+    /** ▲▼ / CH± : bandeau tout de suite, flux après [com.sokoul.iptv.ui.screens.tv.ZAP_SETTLE_MS] sans appui. */
+    fun zap(delta: Int) = zapper.step(_zapList.value, _ui.value.channel, delta)
+
+    /** ◀ en plein écran : alterner entre les deux dernières chaînes. */
+    fun previous() { previousChannel?.let { zapper.select(it) } }
+
+    /** Retour pendant le zapping : on reste sur la chaîne regardée (son flux est rouvert). */
+    fun cancelZap(): Boolean {
+        if (!zapper.cancel()) return false
+        _ui.value.channel?.let { playChannel(it) }
+        return true
     }
 
-    fun previous() { previousChannel?.let { playChannel(it) } }
+    private suspend fun loadGroups(pid: Long) {
+        val cats = catalog.categories(pid, ContentType.LIVE).first().filter { !it.hidden }
+        _groups.value = listOf(
+            LiveGroup(com.sokoul.iptv.data.repo.SpecialCategory.FAVORITES, "Favoris"),
+            LiveGroup(com.sokoul.iptv.data.repo.SpecialCategory.ALL, "Toutes les chaînes"),
+        ) + cats.map { LiveGroup(it.categoryId, it.name) }
+    }
+
+    /** Groupe choisi dans la liste des chaînes : la liste et le zapping portent sur lui. */
+    fun selectGroup(id: String) {
+        val p = playlist ?: return
+        viewModelScope.launch {
+            _group.value = id
+            _zapList.value = catalog.channelList(p.id, id)
+        }
+    }
+
+    /** Programme en cours de chaque chaîne de la liste (par identifiant de chaîne). */
+    suspend fun nowFor(list: List<ChannelEntity>): Map<String, com.sokoul.iptv.data.db.ProgramEntity> =
+        runCatching { epg.nowFor(route.playlistId, list) }.getOrDefault(emptyMap())
+
+    /** Mini-guide : programmes de la chaîne regardée sur les prochaines heures. */
+    suspend fun upcoming(c: ChannelEntity, hours: Int = 8): List<com.sokoul.iptv.data.db.ProgramEntity> {
+        val now = System.currentTimeMillis()
+        return runCatching { epg.range(route.playlistId, c, now - 3 * 3_600_000L, now + hours * 3_600_000L) }.getOrDefault(emptyList())
+            .filter { it.end > now }.take(8)
+    }
 
     fun jumpToNumber(n: Int) {
         viewModelScope.launch {
@@ -872,3 +923,6 @@ internal fun onlineSubtitleLabel(r: SubtitleResult): String {
         ?.replace(Regex("[._]+"), " ")?.replace(Regex("""\s+"""), " ")?.trim()
     return listOfNotNull(name, if (r.hearingImpaired) "SDH" else null, r.service.label, release?.take(40)).joinToString(" · ")
 }
+
+/** Groupe de chaînes proposé dans la liste du direct. */
+data class LiveGroup(val id: String, val name: String)
