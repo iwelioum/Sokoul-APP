@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -116,7 +117,7 @@ fun VodControls(
         if (l.isTouch) {
             TouchScrubber(shown, duration, onSeekTo, onInteract)
         } else {
-            Scrubber(shown, duration, preview != null, buffering, scrubberFocus, onSeekStep, onPlayPause)
+            Scrubber(shown, duration, preview != null, buffering, scrubberFocus, firstButtonFocus, onSeekStep, onPlayPause)
         }
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(formatDuration(shown), color = SokoulColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
@@ -136,7 +137,9 @@ fun VodControls(
         ) {
             items(actions.size) { i ->
                 val a = actions[i]
-                PlayerButton(a, if (i == 0) Modifier.focusRequester(firstButtonFocus) else Modifier, compact = l.isCompact)
+                // ▲ depuis n'importe quel bouton : retour sur la barre de progression
+                val up = if (l.isTouch) Modifier else Modifier.focusProperties { this.up = scrubberFocus }
+                PlayerButton(a, (if (i == 0) Modifier.focusRequester(firstButtonFocus) else Modifier).then(up), compact = l.isCompact)
             }
         }
     }
@@ -153,7 +156,7 @@ private fun VersionBadge(label: String) {
 /** Barre de progression pilotée au D-pad ; épaissie et repère visible au focus. */
 @Composable
 private fun Scrubber(
-    position: Long, duration: Long, previewing: Boolean, buffering: Boolean, focus: FocusRequester,
+    position: Long, duration: Long, previewing: Boolean, buffering: Boolean, focus: FocusRequester, downFocus: FocusRequester,
     onSeekStep: (Long) -> Unit, onPlayPause: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -161,6 +164,8 @@ private fun Scrubber(
     BoxWithConstraints(
         Modifier.fillMaxWidth().height(28.dp)
             .focusRequester(focus)
+            // ▼ : toujours le premier bouton (Lecture/Pause), pas celui qui se trouve au milieu de l'écran
+            .focusProperties { down = downFocus }
             .onFocusChanged { focused = it.isFocused }
             .onKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false

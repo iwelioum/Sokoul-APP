@@ -385,7 +385,7 @@ interface LibraryDao {
     @Query(
         """
         SELECT * FROM progress p WHERE p.playlistId = :pid AND p.manual = 0 AND (
-            (p.type = 'MOVIE' AND p.finished = 0 AND p.positionMs >= 30000)
+            (p.type = 'MOVIE' AND p.finished = 0 AND p.positionMs > 30000)
             OR (p.type = 'SERIES' AND p.updatedAt = (
               SELECT MAX(q.updatedAt) FROM progress q WHERE q.playlistId = p.playlistId AND q.type = 'SERIES' AND q.parentId = p.parentId AND q.manual = 0)))
         ORDER BY p.updatedAt DESC LIMIT :limit

@@ -80,6 +80,13 @@ import com.sokoul.iptv.data.repo.tmdbSized
 import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.CardRow
 import com.sokoul.iptv.ui.components.EmptyState
+import com.sokoul.iptv.ui.components.FocusMemory
+import com.sokoul.iptv.ui.components.focusMemory
+import com.sokoul.iptv.ui.components.rememberFocusMemory
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.ui.focus.focusRequester
 import com.sokoul.iptv.ui.components.FocusSurface
 import com.sokoul.iptv.ui.components.HeroCarousel
 import com.sokoul.iptv.ui.components.LandscapeCard
@@ -119,6 +126,9 @@ fun NavHostController.openWork(w: Work) {
     navigateOnce(if (w.type == ContentType.MOVIE) MovieDetailRoute(w.id) else SeriesDetailRoute(w.id))
 }
 
+// délai avant de changer le panneau d'aperçu et le fond : pas de rafale d'images quand on maintient le D-pad
+private const val SPOT_DEBOUNCE_MS = 220L
+
 /** Panneau d'information de la carte focalisée (TV). */
 private data class Spot(
     val title: String,
@@ -141,6 +151,7 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val l = LocalLayout.current
     val p = ui.playlist
+    val retryFocus = remember { FocusRequester() }
     if (!ui.loading && p == null) {
         EmptyState(Icons.Default.LiveTv, "Aucune playlist", "Ajoutez un abonnement dans les réglages pour commencer.") {
             AppButton("Réglages", { nav.navigate(SettingsRoute) }, primary = true)
@@ -153,6 +164,13 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
         }
         return
     }
+    if (ui.failed && ui.rows.all { it.isEmpty }) {
+        EmptyState(Icons.Default.Refresh, "Impossible d'afficher cette page", "Vérifiez la connexion internet de l'appareil, puis réessayez.") {
+            AppButton("Réessayer", vm::retry, primary = true, icon = Icons.Default.Refresh, modifier = Modifier.focusRequester(retryFocus))
+        }
+        LaunchedEffect(Unit) { delay(100); runCatching { retryFocus.requestFocus() } }
+        return
+    }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -160,6 +178,12 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     var spot by remember { mutableStateOf<Spot?>(null) }
     var inRows by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<Work?>(null) }
+    // carte d'où l'on est parti (fiche, grille, lecteur) : le focus y revient au retour
+    val memory = rememberFocusMemory()
+    var initialFocusDone by rememberSaveable { mutableStateOf(false) }
+    // images d'ambiance et panneau d'aperçu : mis à jour quand le défilement au D-pad se pose
+    var shownSpot by remember { mutableStateOf<Spot?>(null) }
+    LaunchedEffect(spot) { if (shownSpot != null) delay(SPOT_DEBOUNCE_MS); shownSpot = spot }
     val spotHeight = (l.heightDp * 0.44f).dp
     val spotPx = with(density) { spotHeight.roundToPx() }
 
@@ -184,9 +208,9 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
         // fond d'ambiance (TV) : l'œuvre focalisée, très atténuée, derrière les rangées
         if (l.isTv) {
-            val ambient by animateFloatAsState(if (inRows && spot?.image != null) 1f else 0f, tween(Motion.SLOW), label = "ambient")
+            val ambient by animateFloatAsState(if (inRows && shownSpot?.image != null) 1f else 0f, tween(Motion.SLOW), label = "ambient")
             if (ambient > 0f) {
-                AnimatedContent(spot?.image, transitionSpec = { fadeIn(tween(Motion.SLOW)) togetherWith fadeOut(tween(Motion.SLOW)) }, label = "amb") { img ->
+                AnimatedContent(shownSpot?.image, transitionSpec = { fadeIn(tween(Motion.SLOW)) togetherWith fadeOut(tween(Motion.SLOW)) }, label = "amb") { img ->
                     // sous le panneau seulement, avec un fondu en haut : pas de ligne de coupure visible
                     Box(Modifier.fillMaxSize().padding(top = spotHeight - 1.dp)) {
                         Box(Modifier.fillMaxSize().graphicsLayer { alpha = ambient * 0.22f }) {
@@ -208,9 +232,11 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                     } else if (hero.isNotEmpty()) {
                         HeroCarousel(
                             hero, onPlay = play, onInfo = open, playFocus = playFocus,
+                            active = !inRows && listState.firstVisibleItemIndex == 0,
                             label = { i, w -> if (ui.heroRanked && i < 10) "N° ${i + 1} des ${if (w.type == ContentType.MOVIE) "films" else "séries"} cette semaine" else null },
                             onFocused = {
                                 inRows = false
+                                memory.forget()
                                 if (l.isTv) scope.launch { listState.animateScrollToItem(0) }
                             },
                         )
@@ -240,19 +266,27 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                                     onOpen = open, onSeeAll = { seeAll(row) },
                                     onSpot = { spot = it },
                                     onMenu = { menuFor = it },
+                                    memory = memory,
                                 )
                             }
                         }
                     }
                 }
                 if (ui.loading) items(3) { SkeletonRow(landscape = it == 1) }
+                if (ui.failed) item("failed") {
+                    Row(Modifier.padding(horizontal = l.margin, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Une partie de la page n'a pas pu se charger.", Modifier.weight(1f, fill = false), color = SokoulColors.TextSecondary)
+                        Spacer(Modifier.width(12.dp))
+                        AppButton("Réessayer", vm::retry, icon = Icons.Default.Refresh)
+                    }
+                }
             }
         }
 
         // TV : panneau d'information de la carte focalisée, au-dessus des rangées
         if (l.isTv) {
             val shown by animateFloatAsState(if (inRows) 1f else 0f, tween(Motion.MEDIUM), label = "spot")
-            if (shown > 0f) SpotPanel(spot, spotHeight, Modifier.graphicsLayer { alpha = shown })
+            if (shown > 0f) SpotPanel(shownSpot, spotHeight, Modifier.graphicsLayer { alpha = shown })
         } else {
             TopBar(title, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, l.heroHeight.value * density.density, vm.kind, nav)
         }
@@ -270,12 +304,19 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
             onDismiss = { menuFor = null },
         )
     }
-    // TV : focus initial sur « Lecture » (après la première mise en page du héros)
-    LaunchedEffect(hero.isNotEmpty()) {
-        if (hero.isEmpty() || !l.isTv) return@LaunchedEffect
+    // TV : focus initial sur « Lecture » une seule fois ; au retour, sur la carte d'où l'on vient
+    LaunchedEffect(hero.isNotEmpty(), rows.isNotEmpty()) {
+        if (!l.isTv) return@LaunchedEffect
+        if (memory.last != null) {
+            repeat(6) {
+                delay(80)
+                if (memory.restore()) { initialFocusDone = true; return@LaunchedEffect }
+            }
+        }
+        if ((initialFocusDone && memory.last == null) || hero.isEmpty()) return@LaunchedEffect
         repeat(5) {
-            kotlinx.coroutines.delay(80)
-            if (runCatching { playFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            delay(80)
+            if (runCatching { playFocus.requestFocus() }.isSuccess) { initialFocusDone = true; return@LaunchedEffect }
         }
     }
 }
@@ -289,45 +330,51 @@ private fun RowView(
     onSeeAll: () -> Unit,
     onSpot: (Spot) -> Unit,
     onMenu: (Work) -> Unit,
+    memory: FocusMemory,
 ) {
     val l = LocalLayout.current
+    fun m(key: Any) = Modifier.focusMemory(memory, "${row.id}|$key")
     val pid = vm.ui.value.playlist?.id ?: 0
     val seeAllAction = if (row.seeAll != null) onSeeAll else null
     Column(Modifier.padding(top = l.rowSpacing / 2, bottom = l.rowSpacing / 2)) {
         if (row.style != RowStyle.PLATFORMS) RowHeader(row.title, row.tagline, row.platform, seeAllAction)
         val tvSeeAll: (@Composable () -> Unit)? = if (l.isTv && seeAllAction != null) {
-            { SeeAllCard(seeAllAction, landscape = row.style == RowStyle.LANDSCAPE || row.style == RowStyle.CONTINUE) }
+            { Box(m("__see_all")) { SeeAllCard(seeAllAction, landscape = row.style == RowStyle.LANDSCAPE || row.style == RowStyle.CONTINUE) } }
         } else null
         when (row.style) {
             RowStyle.POSTER -> CardRow(row.works, { it.uid }, trailing = tvSeeAll) { _, w ->
-                WorkCard(w, { onOpen(w) }, showPlatform = row.platform == null, onFocus = { onSpot(w.toSpot()) }, onLongClick = { onMenu(w) })
+                WorkCard(w, { onOpen(w) }, m(w.uid), showPlatform = row.platform == null, onFocus = { onSpot(w.toSpot()) }, onLongClick = { onMenu(w) })
             }
             RowStyle.LANDSCAPE -> CardRow(row.works, { it.uid }, trailing = tvSeeAll) { _, w ->
-                LandscapeCard(w, { onOpen(w) }, onFocus = { onSpot(w.toSpot()) }, onLongClick = { onMenu(w) })
+                LandscapeCard(w, { onOpen(w) }, m(w.uid), onFocus = { onSpot(w.toSpot()) }, onLongClick = { onMenu(w) })
             }
             RowStyle.CONTINUE -> CardRow(row.works, { it.uid }) { _, w ->
                 LandscapeCard(
                     w, { w.resume?.let { r -> nav.navigateOnce(com.sokoul.iptv.ui.screens.home.resumeRoute(pid, r)) } ?: onOpen(w) },
+                    m(w.uid),
                     onFocus = { onSpot(w.toSpot().copy(meta = w.subtitle)) }, onLongClick = { onMenu(w) },
                 )
             }
             RowStyle.TOP10 -> CardRow(row.works, { it.uid }, trailing = tvSeeAll) { i, w ->
-                Top10Card(i + 1, w, { onOpen(w) }, onFocus = { onSpot(w.toSpot().copy(meta = "N° ${i + 1} cette semaine · " + w.metaLine())) })
+                Top10Card(
+                    i + 1, w, { onOpen(w) }, m(w.uid),
+                    onFocus = { onSpot(w.toSpot().copy(meta = "N° ${i + 1} cette semaine · " + w.metaLine())) }, onLongClick = { onMenu(w) },
+                )
             }
             RowStyle.SAGAS -> CardRow(row.sagas, { it.id }) { _, s ->
-                SagaTile(
+                Box(m(s.id)) { SagaTile(
                     s, { nav.navigateOnce(BrowseGridRoute(s.name, GridSpec.Saga(s.id).encode())) },
                     onFocus = { onSpot(Spot(s.name, meta = "Saga · ${s.count} films disponibles", image = s.backdrop)) },
-                )
+                ) }
             }
             RowStyle.PLATFORMS -> CardRow(row.platforms, { it.platform.name }) { _, t ->
-                PlatformTileView(
+                Box(m(t.platform.name)) { PlatformTileView(
                     t, { nav.navigateOnce(BrowseGridRoute(t.platform.label, GridSpec.Plat(t.type, t.platform).encode())) },
                     onFocus = { onSpot(Spot(t.platform.label, meta = "Plateforme", overview = t.platform.tagline, platform = t.platform)) },
-                )
+                ) }
             }
             RowStyle.CHANNELS -> CardRow(row.channels, { it.channel.id }) { _, c ->
-                Box(Modifier.onFocusChanged { if (it.isFocused) onSpot(Spot(c.channel.name, meta = "En direct", overview = c.now?.title)) }) {
+                Box(m(c.channel.id).onFocusChanged { if (it.hasFocus) onSpot(Spot(c.channel.name, meta = "En direct", overview = c.now?.title)) }) {
                     ChannelCard(c.channel, c.now) { nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.channel.id, categoryId = SpecialCategory.FAVORITES)) }
                 }
             }
@@ -338,14 +385,14 @@ private fun RowView(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     item("all") {
-                        Chip("Toutes les catégories", Icons.AutoMirrored.Filled.List, accent = true, onFocus = { onSpot(Spot("Toutes les catégories", overview = row.tagline)) }) {
+                        Box(m("all")) { Chip("Toutes les catégories", Icons.AutoMirrored.Filled.List, accent = true, onFocus = { onSpot(Spot("Toutes les catégories", overview = row.tagline)) }) {
                             nav.navigate(AllCategoriesRoute(type.name))
-                        }
+                        } }
                     }
                     items(row.chips, key = { it.first }) { (id, label) ->
-                        Chip(label, onFocus = { onSpot(Spot(label, meta = "Catégorie")) }) {
+                        Box(m(id)) { Chip(label, onFocus = { onSpot(Spot(label, meta = "Catégorie")) }) {
                             nav.navigateOnce(BrowseGridRoute(label, GridSpec.Cats(type, listOf(id), byPosition = true).encode()))
-                        }
+                        } }
                     }
                 }
             }

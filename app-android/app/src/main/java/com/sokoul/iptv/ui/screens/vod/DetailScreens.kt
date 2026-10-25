@@ -862,7 +862,8 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>) {
 }
 
 @Composable
-private fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+/** Pastille sélectionnable (saisons, versions, tris). */
+fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     FocusSurface(
         onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = RoundedCornerShape(50), focusScale = 1.06f, borderWidth = 2.dp,
         color = if (selected) Color.White else SokoulColors.SurfaceHigh, focusedColor = if (selected) Color.White else SokoulColors.SurfaceHigher,

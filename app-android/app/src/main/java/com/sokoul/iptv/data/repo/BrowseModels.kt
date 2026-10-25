@@ -1,5 +1,6 @@
 package com.sokoul.iptv.data.repo
 
+import androidx.compose.runtime.Immutable
 import com.sokoul.iptv.data.db.ChannelEntity
 import com.sokoul.iptv.data.db.ContentType
 import com.sokoul.iptv.data.db.MovieEntity
@@ -17,6 +18,7 @@ enum class RowStyle { POSTER, LANDSCAPE, TOP10, SAGAS, PLATFORMS, CONTINUE, CHAN
  * Une œuvre affichable (film ou série), toutes versions confondues : la version [id] ouvre la fiche.
  * Les champs TMDB (fond, logo, accroche…) sont ajoutés par [withMeta] quand ils sont connus.
  */
+@Immutable
 data class Work(
     val type: ContentType,
     val id: String,
@@ -48,12 +50,16 @@ data class Work(
     val uid get() = "${type.name}|$key"
 }
 
+@Immutable
 data class SagaCard(val id: Int, val name: String, val backdrop: String?, val poster: String?, val count: Int)
 
+@Immutable
 data class PlatformTile(val platform: Platform, val type: ContentType?, val titles: Int)
 
+@Immutable
 data class ChannelTile(val channel: ChannelEntity, val now: ProgramEntity?)
 
+@Immutable
 data class BrowseRow(
     val id: String,
     val title: String,
@@ -73,7 +79,9 @@ data class BrowseRow(
     val isEmpty get() = works.isEmpty() && sagas.isEmpty() && platforms.isEmpty() && channels.isEmpty() && chips.isEmpty()
 }
 
-data class BrowsePage(val hero: List<Work>, val rows: List<BrowseRow>)
+/** [partial] : construite sans certaines rangées TMDB (lentes ou en panne), non mise en cache. */
+@Immutable
+data class BrowsePage(val hero: List<Work>, val rows: List<BrowseRow>, val partial: Boolean = false)
 
 /** En-tête d'une grille « Tout voir » (saga, plateforme). */
 data class GridHeader(val title: String, val subtitle: String? = null, val overview: String? = null, val backdrop: String? = null, val platform: Platform? = null)

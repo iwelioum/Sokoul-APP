@@ -11,8 +11,6 @@ import com.sokoul.iptv.data.repo.BrowseRow
 import com.sokoul.iptv.data.repo.CatalogRepository
 import com.sokoul.iptv.data.repo.ChannelTile
 import com.sokoul.iptv.data.repo.EnrichmentRepository
-import com.sokoul.iptv.data.repo.EpisodeResolver
-import com.sokoul.iptv.data.repo.SeriesAction
 import com.sokoul.iptv.data.repo.EpgRepository
 import com.sokoul.iptv.data.repo.GridSpec
 import com.sokoul.iptv.data.repo.LibraryRepository
@@ -23,12 +21,8 @@ import com.sokoul.iptv.data.repo.VodRepository
 import com.sokoul.iptv.data.repo.Work
 import com.sokoul.iptv.data.repo.toWork
 import com.sokoul.iptv.ui.ParentalGate
-import com.sokoul.iptv.ui.nav.MovieDetailRoute
-import com.sokoul.iptv.ui.nav.PlayKind
-import com.sokoul.iptv.ui.nav.PlayerRoute
-import com.sokoul.iptv.ui.nav.SeriesDetailRoute
-import com.sokoul.iptv.ui.screens.home.resumeRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
@@ -57,6 +51,8 @@ data class BrowseUi(
     /** Le héros vient du classement de la semaine (« N° 1 des films… »). */
     val heroRanked: Boolean = false,
     val rows: List<BrowseRow> = emptyList(),
+    /** La page n'a pas pu être construite (aucune page précédente à montrer). */
+    val failed: Boolean = false,
 )
 
 /**
@@ -84,12 +80,14 @@ abstract class BrowseViewModel(
     private val page = MutableStateFlow<BrowsePage?>(null)
     private val playlist: StateFlow<PlaylistEntity?> = playlists.active.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val resolved = MutableStateFlow(false)
+    private val failed = MutableStateFlow(false)
 
     private val live: Flow<List<BrowseRow>> = playlist.flatMapLatest { p -> if (p == null) flowOf(emptyList()) else liveRows(p.id) }
 
-    val ui: StateFlow<BrowseUi> = combine(playlist, page, live, resolved) { p, pg, lv, done ->
+    val ui: StateFlow<BrowseUi> = combine(playlist, page, live, resolved, failed) { p, pg, lv, done, err ->
         BrowseUi(
-            loading = pg == null && (p != null || !done),
+            loading = pg == null && !err && (p != null || !done),
+            failed = err && pg == null,
             playlist = p,
             hero = pg?.hero.orEmpty(),
             heroRanked = pg?.hero?.firstOrNull()?.let { h -> pg.rows.any { it.style == RowStyle.TOP10 && it.works.firstOrNull()?.uid == h.uid } } == true,
@@ -97,18 +95,34 @@ abstract class BrowseViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, BrowseUi())
 
+    /** Relance manuelle (« Réessayer ») : reconstruit la page sans passer par le cache. */
+    private val reload = MutableStateFlow(0)
+
+    fun retry() { reload.value++ }
+
     init {
         viewModelScope.launch {
-            combine(playlists.active, parental.unlocked) { p, u -> p to u }
-                .distinctUntilChanged { a, b -> a.first?.id == b.first?.id && a.first?.lastSync == b.first?.lastSync && a.second == b.second }
-                .collectLatest { (p, _) ->
+            var shownFor: Long? = null
+            combine(playlists.active, parental.unlocked, reload) { p, u, r -> Triple(p, u, r) }
+                .distinctUntilChanged { a, b ->
+                    a.first?.id == b.first?.id && a.first?.lastSync == b.first?.lastSync && a.second == b.second && a.third == b.third
+                }
+                .collectLatest { (p, _, r) ->
                     resolved.value = true
-                    page.value = null
+                    failed.value = false
+                    // même playlist (synchro, contrôle parental) : l'ancienne page reste affichée jusqu'à la nouvelle
+                    if (p?.id != shownFor) page.value = null
+                    shownFor = p?.id
                     if (p == null) return@collectLatest
                     var base = try {
-                        repo.page(p, kind)
+                        repo.page(p, kind, force = r > 0, onPartial = { partial -> page.value = decorate(p.id, partial) })
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        Timber.w(e, "Page $kind"); BrowsePage(emptyList(), emptyList())
+                        Timber.w(e, "Page $kind")
+                        // une page déjà affichée vaut mieux qu'un écran d'erreur
+                        if (page.value == null) failed.value = true
+                        return@collectLatest
                     }
                     page.value = decorate(p.id, base)
                     enrich.request(p.id, priority(base))
@@ -173,40 +187,14 @@ abstract class BrowseViewModel(
 
     // --- actions ---------------------------------------------------------------------------------
 
-    /** « Lecture » : meilleure version d'un film, ou reprise de la série (sinon sa fiche). */
-    suspend fun playRoute(w: Work): Any {
-        val pid = playlist.value?.id ?: return detailRoute(w)
-        w.resume?.let { return resumeRoute(pid, it) }
-        return when (w.type) {
-            ContentType.MOVIE -> {
-                val m = catalog.movie(pid, w.id) ?: return detailRoute(w)
-                val best = vod.orderedMovies(pid, vod.movieVersions(pid, m)).firstOrNull() ?: m
-                PlayerRoute(PlayKind.MOVIE, pid, best.id)
-            }
-            else -> {
-                // même logique que le bouton de la fiche : reprise, sinon épisode suivant (liste en cache uniquement)
-                val s = catalog.seriesItem(pid, w.id) ?: return detailRoute(w)
-                val ids = vod.orderedSeries(pid, vod.seriesVersions(pid, s)).map { it.id }
-                val all = vod.episodesIn(pid, ids)
-                val merged = VodRepository.mergeEpisodes(all, ids)
-                val action = EpisodeResolver.primaryAction(merged, EpisodeResolver.progressBySe(vod.seriesProgressIn(pid, ids), all))
-                when (action) {
-                    null, is SeriesAction.Start, is SeriesAction.Rewatch -> detailRoute(w)
-                    else -> PlayerRoute(PlayKind.EPISODE, pid, action.episode.id, parentId = action.episode.seriesId)
-                }
-            }
-        }
-    }
+    private val actions = WorkActions(catalog, vod)
 
-    private fun detailRoute(w: Work): Any = if (w.type == ContentType.MOVIE) MovieDetailRoute(w.id) else SeriesDetailRoute(w.id)
+    /** « Lecture » : meilleure version d'un film, ou reprise de la série (sinon sa fiche). */
+    suspend fun playRoute(w: Work): Any = actions.playRoute(playlist.value?.id, w)
 
     fun toggleList(w: Work) = viewModelScope.launch {
         val pid = playlist.value?.id ?: return@launch
-        val ids = when (w.type) {
-            ContentType.MOVIE -> catalog.movie(pid, w.id)?.let { m -> vod.movieVersions(pid, m).map { it.id } }
-            else -> catalog.seriesItem(pid, w.id)?.let { s -> vod.seriesVersions(pid, s).map { it.id } }
-        } ?: listOf(w.id)
-        vod.toggleFavorite(pid, w.type, ids, w.id)
+        actions.toggleList(pid, w)
     }
 }
 

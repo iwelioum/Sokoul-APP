@@ -188,7 +188,7 @@ class TmdbClient @Inject constructor(
         }
 
     private suspend fun <T> safe(block: suspend () -> T): T? = withContext(Dispatchers.IO) {
-        try { block() } catch (e: Exception) { Timber.w(e, "TMDB indisponible"); null }
+        try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { Timber.w(e, "TMDB indisponible"); null }
     }
 
     private suspend fun get(apiKey: String, path: String, params: Map<String, String>, language: String = "fr-FR", ttlMs: Long = 7 * 24 * HOUR): JsonObject? {
@@ -203,7 +203,8 @@ class TmdbClient @Inject constructor(
         if (cached != null && now - cached.fetchedAt < ttlMs) {
             return json.parseToJsonElement(cached.json) as? JsonObject
         }
-        val text = http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+        // appel annulable : une page qui n'attend plus TMDB coupe aussi la requête (sinon jusqu'à 60 s de blocage)
+        val text = http.newCall(Request.Builder().url(url).build()).await().use { resp ->
             if (!resp.isSuccessful) return cached?.let { json.parseToJsonElement(it.json) as? JsonObject }
             resp.body?.string() ?: return null
         }
@@ -290,4 +291,15 @@ class TmdbClient @Inject constructor(
         const val IMG = "https://image.tmdb.org/t/p"
         private const val HOUR = 3600_000L
     }
+}
+
+/** Exécute la requête sans bloquer de thread ; l'annulation de la coroutine annule l'appel HTTP. */
+internal suspend fun okhttp3.Call.await(): okhttp3.Response = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+    cont.invokeOnCancellation { runCatching { cancel() } }
+    enqueue(object : okhttp3.Callback {
+        override fun onFailure(call: okhttp3.Call, e: java.io.IOException) { if (cont.isActive) cont.resumeWith(Result.failure(e)) }
+        override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+            if (cont.isActive) cont.resumeWith(Result.success(response)) else response.close()
+        }
+    })
 }

@@ -92,6 +92,8 @@ fun HeroCarousel(
     label: (Int, Work) -> String? = { _, _ -> null },
     playFocus: FocusRequester? = null,
     onFocused: () -> Unit = {},
+    /** `false` quand le héros est hors écran ou masqué : le défilement automatique s'arrête. */
+    active: Boolean = true,
 ) {
     if (works.isEmpty()) return
     val l = LocalLayout.current
@@ -105,9 +107,9 @@ fun HeroCarousel(
 
     // défilement automatique, mis en pause pendant un glissé au doigt
     // clé = page stabilisée : currentPage change à mi-animation et annulerait le défilement en cours
-    LaunchedEffect(state.settledPage, dragged, n) {
+    LaunchedEffect(state.settledPage, dragged, n, active) {
         fill.snapTo(0f)
-        if (n < 2 || dragged) return@LaunchedEffect
+        if (n < 2 || dragged || !active) return@LaunchedEffect
         fill.animateTo(1f, tween(Motion.HERO_INTERVAL_MS.toInt(), easing = LinearEasing))
         state.animateScrollToPage(state.settledPage + 1, animationSpec = tween(1000, easing = Motion.Emphasized))
     }
@@ -146,11 +148,11 @@ fun HeroCarousel(
             }
             if (n > 1) {
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val active = state.currentPage % n
+                    val activeDot = state.currentPage % n
                     repeat(n) { i ->
-                        val width by animateDpAsState(if (i == active) 28.dp else 8.dp, tween(Motion.MEDIUM), label = "dot")
+                        val width by animateDpAsState(if (i == activeDot) 28.dp else 8.dp, tween(Motion.MEDIUM), label = "dot")
                         Box(Modifier.width(width).height(4.dp).background(Color(0x55FFFFFF), RoundedCornerShape(2.dp))) {
-                            if (i == active) Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(Color.White, RoundedCornerShape(2.dp)))
+                            if (i == activeDot) Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(Color.White, RoundedCornerShape(2.dp)))
                         }
                     }
                 }

@@ -286,10 +286,10 @@ fun LandscapeCard(
 
 /** Carte du Top 10 : grand chiffre détouré, affiche par-dessus. */
 @Composable
-fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, onFocus: (() -> Unit)? = null) {
+fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = Modifier, onFocus: (() -> Unit)? = null, onLongClick: (() -> Unit)? = null) {
     val l = LocalLayout.current
     val posterH = l.poster * 1.5f
-    Row(Modifier.width(l.poster * 1.62f), verticalAlignment = Alignment.Bottom) {
+    Row(modifier.width(l.poster * 1.62f), verticalAlignment = Alignment.Bottom) {
         Box(Modifier.width(l.poster * 0.62f).height(posterH), contentAlignment = Alignment.BottomEnd) {
             val size = (posterH.value * 0.78f).sp
             Text(
@@ -298,7 +298,7 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, onFocus: (() -> Unit)?
                 color = Color(0xFF8A8AA3),
             )
         }
-        WorkCard(work, onClick, width = l.poster, onFocus = onFocus)
+        WorkCard(work, onClick, width = l.poster, onFocus = onFocus, onLongClick = onLongClick)
     }
 }
 

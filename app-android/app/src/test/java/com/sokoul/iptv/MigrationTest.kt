@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Mise à jour de la base installée (v1 → v2) : aucune donnée perdue. */
+/** Mises à jour de la base installée (v1 → v4) : aucune donnée perdue. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class MigrationTest {
@@ -60,6 +60,28 @@ class MigrationTest {
         assertEquals(1, count("SELECT COUNT(*) FROM favorites"))
         assertEquals(2, count("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('tmdb_meta','tmdb_match')"))
         assertEquals(0, count("SELECT COUNT(*) FROM tmdb_meta"))
+        db.close()
+    }
+
+    @Test fun `migration 3 vers 4 rattache la progression aux saisons et repere les marquages manuels`() {
+        val name = dbName + "4"
+        helper.createDatabase(name, 3).apply {
+            execSQL("INSERT INTO playlists (id, name, type, url, lastSync, lastEpgSync, liveCount, movieCount, seriesCount, createdAt) VALUES (1, 'p', 'XTREAM', 'http://h', 0, 0, 0, 1, 1, 0)")
+            execSQL("INSERT INTO episodes (playlistId, seriesId, id, season, episode, title, plot, image, durationSecs, extension, streamUrl, rating) VALUES (1, 's', 'e1', 2, 5, 'Ep', NULL, NULL, NULL, 'mkv', NULL, NULL)")
+            execSQL("INSERT INTO progress (playlistId, type, itemId, parentId, title, subtitle, image, positionMs, durationMs, updatedAt, finished) VALUES (1, 'SERIES', 'e1', 's', 'Serie', NULL, NULL, 600000, 2400000, 9, 0)")
+            execSQL("INSERT INTO progress (playlistId, type, itemId, parentId, title, subtitle, image, positionMs, durationMs, updatedAt, finished) VALUES (1, 'SERIES', 'e2', 's', 'Serie', NULL, NULL, 1, 1, 10, 1)")
+            execSQL("INSERT INTO progress (playlistId, type, itemId, parentId, title, subtitle, image, positionMs, durationMs, updatedAt, finished) VALUES (1, 'MOVIE', 'm1', NULL, 'Film', NULL, NULL, 60000, 600000, 11, 0)")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(name, 4, true, *Migrations.ALL)
+        fun str(sql: String) = db.query(sql).use { it.moveToFirst(); if (it.isNull(0)) null else it.getString(0) }
+        assertEquals("2|5|0", str("SELECT season || '|' || episode || '|' || manual FROM progress WHERE itemId = 'e1'"))
+        // épisode inconnu de la liste : pas de saison, mais le marquage manuel est reconnu
+        assertEquals(null, str("SELECT season FROM progress WHERE itemId = 'e2'"))
+        assertEquals("1", str("SELECT manual FROM progress WHERE itemId = 'e2'"))
+        assertEquals("0", str("SELECT manual FROM progress WHERE itemId = 'm1'"))
+        assertEquals(null, str("SELECT season FROM progress WHERE itemId = 'm1'"))
+        assertEquals("3", str("SELECT COUNT(*) FROM progress"))
         db.close()
     }
 }

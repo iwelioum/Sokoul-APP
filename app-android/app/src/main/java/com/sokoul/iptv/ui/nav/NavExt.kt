@@ -16,7 +16,7 @@ const val NAVIGATION_DEBOUNCE_MS = 700L
  */
 fun NavController.navigateOnce(route: Any) {
     val now = SystemClock.elapsedRealtime()
-    if (now - lastNavigationAt < NAVIGATION_DEBOUNCE_MS) return
+    if (now - lastNavigationAt in 0 until NAVIGATION_DEBOUNCE_MS) return
     if (route is PlayerRoute && currentBackStackEntry?.destination?.hasRoute(PlayerRoute::class) == true) return
     lastNavigationAt = now
     navigate(route)

@@ -11,6 +11,10 @@ import com.sokoul.iptv.data.net.TmdbClient
 import com.sokoul.iptv.data.net.TmdbItem
 import com.sokoul.iptv.ui.ParentalGate
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -81,13 +85,18 @@ class BrowseRepository @Inject constructor(
     private data class CacheKey(val pid: Long, val kind: BrowseKind, val sync: Long, val open: Boolean, val grouping: Boolean)
     private val cache = ConcurrentHashMap<CacheKey, Pair<Long, BrowsePage>>()
     private val net = Semaphore(EnrichmentRepository.PARALLEL)
+    // délais d'affichage progressif (réduits dans les tests)
+    internal var quickMs = QUICK_MS
+    internal var tmdbBudgetMs = TMDB_BUDGET_MS
 
     /** Page construite (cache mémoire 20 min, invalidé par une synchronisation ou le contrôle parental). */
-    suspend fun page(p: PlaylistEntity, kind: BrowseKind, force: Boolean = false): BrowsePage {
+    suspend fun page(p: PlaylistEntity, kind: BrowseKind, force: Boolean = false, onPartial: (suspend (BrowsePage) -> Unit)? = null): BrowsePage {
         val key = CacheKey(p.id, kind, p.lastSync, parental.canAccessLocked(), settings.current().groupDuplicates)
         val now = System.currentTimeMillis()
         if (!force) cache[key]?.let { (t, page) -> if (now - t < CACHE_MS) return page }
-        val page = build(p.id, kind)
+        val page = build(p.id, kind, onPartial)
+        // page dégradée (TMDB en panne) : pas de cache, la prochaine visite retentera
+        if (page.partial) return page
         cache.keys.removeAll { it.pid == p.id && it.kind == kind }
         cache[key] = now to page
         return page
@@ -229,18 +238,18 @@ class BrowseRepository @Inject constructor(
 
     // --- construction des pages -------------------------------------------------------------------
 
-    private suspend fun build(pid: Long, kind: BrowseKind): BrowsePage = coroutineScope {
+    private suspend fun build(pid: Long, kind: BrowseKind, onPartial: (suspend (BrowsePage) -> Unit)?): BrowsePage = withContext(Dispatchers.Default) {
         val started = System.currentTimeMillis()
         val page = when (kind) {
-            BrowseKind.MOVIES -> typedPage(pid, ContentType.MOVIE)
-            BrowseKind.SERIES -> typedPage(pid, ContentType.SERIES)
-            BrowseKind.HOME -> homePage(pid)
+            BrowseKind.MOVIES -> typedPage(pid, ContentType.MOVIE, onPartial)
+            BrowseKind.SERIES -> typedPage(pid, ContentType.SERIES, onPartial)
+            BrowseKind.HOME -> homePage(pid, onPartial)
         }
         Timber.d("Page $kind : ${page.rows.size} rangées en ${System.currentTimeMillis() - started} ms")
         page
     }
 
-    private suspend fun typedPage(pid: Long, type: ContentType): BrowsePage = coroutineScope {
+    private suspend fun typedPage(pid: Long, type: ContentType, onPartial: (suspend (BrowsePage) -> Unit)?): BrowsePage = coroutineScope {
         val c = ctx(pid, type)
         val movies = type == ContentType.MOVIE
         val noun = if (movies) "films" else "séries"
@@ -293,7 +302,9 @@ class BrowseRepository @Inject constructor(
             }
         }
 
-        val trending = trendingD.await()
+        val tmdbParts = listOfNotNull(trendingD, topRatedD, bywD, sagasD)
+        progressive(tmdbParts, onPartial) {
+        val trending = trendingD.v(emptyList())
         val top10 = trending.take(10)
         val popular = trending.drop(10)
         val newRow = BrowseRow(
@@ -311,13 +322,13 @@ class BrowseRepository @Inject constructor(
         val topRatedRow = BrowseRow(
             "toprated", if (movies) "Les chefs-d'œuvre" else "Séries cultes",
             if (movies) "Les films les mieux notés de tous les temps." else "Les séries les mieux notées de tous les temps.",
-            works = topRatedD.await(), seeAll = GridSpec.Ids(type, topRatedD.await().map { it.id }).encode(),
+            works = topRatedD.v(emptyList()), seeAll = GridSpec.Ids(type, topRatedD.v(emptyList()).map { it.id }).encode(),
         )
-        val sagaRow = BrowseRow("sagas", "Sagas cultes", "Toute l'histoire, dans l'ordre.", RowStyle.SAGAS, sagas = sagasD?.await().orEmpty())
+        val sagaRow = BrowseRow("sagas", "Sagas cultes", "Toute l'histoire, dans l'ordre.", RowStyle.SAGAS, sagas = sagasD?.v(emptyList()).orEmpty())
         val platformRows = platformRowsD.awaitAll()
         val themeRows = themeRowsD.map { it.first to it.second.await() }
         val yearRows = yearRowsD.awaitAll()
-        val byw = bywD.await()
+        val byw = bywD.v(null)
 
         // rythme : plateformes, genres et listes alternent ; les thèmes de saison passent devant
         val seasonalRows = themeRows.filter { (t, _) -> (t == Theme.HORROR && season == Season.HALLOWEEN) || t == Theme.CHRISTMAS }.map { it.second }
@@ -352,9 +363,10 @@ class BrowseRepository @Inject constructor(
 
         val hero = heroFrom(top10 + popular, rows)
         BrowsePage(hero, rows)
+        }
     }
 
-    private suspend fun homePage(pid: Long): BrowsePage = coroutineScope {
+    private suspend fun homePage(pid: Long, onPartial: (suspend (BrowsePage) -> Unit)?): BrowsePage = coroutineScope {
         val m = ctx(pid, ContentType.MOVIE)
         val s = ctx(pid, ContentType.SERIES)
         val tmD = async { runCatching { m.trending() }.getOrDefault(emptyList()) }
@@ -368,8 +380,9 @@ class BrowseRepository @Inject constructor(
         val newSeriesD = async { s.recent(24) }
         val platforms = Platform.entries.filter { p -> m.visible.any { p.matches(it.name) } || s.visible.any { p.matches(it.name) } }
 
-        val tm = tmD.await()
-        val ts = tsD.await()
+        progressive(listOf(tmD, tsD, bywD, sagasD), onPartial) {
+        val tm = tmD.v(emptyList())
+        val ts = tsD.v(emptyList())
         val rows = ArrayList<BrowseRow>()
         rows += BrowseRow(
             "top10-m", "Top 10 des films cette semaine", "Les films que tout le monde regarde.", RowStyle.TOP10, tm.take(10),
@@ -384,12 +397,12 @@ class BrowseRepository @Inject constructor(
             "top10-s", "Top 10 des séries cette semaine", "Les séries dont tout le monde parle.", RowStyle.TOP10, ts.take(10),
             seeAll = GridSpec.Ids(ContentType.SERIES, ts.map { it.id }).encode(),
         )
-        bywD.await()?.let { rows += it }
+        bywD.v(null)?.let { rows += it }
         rows += BrowseRow(
             "new-s", "Nouveaux épisodes", "Vos séries continuent : les derniers épisodes sont là.", works = newSeriesD.await(),
             seeAll = GridSpec.Recent(ContentType.SERIES).encode(),
         )
-        rows += BrowseRow("sagas", "Sagas cultes", "Toute l'histoire, dans l'ordre.", RowStyle.SAGAS, sagas = sagasD.await())
+        rows += BrowseRow("sagas", "Sagas cultes", "Toute l'histoire, dans l'ordre.", RowStyle.SAGAS, sagas = sagasD.v(emptyList()))
         rows += BrowseRow("popular-m", "Films populaires", "À voir absolument cette semaine.", RowStyle.LANDSCAPE, tm.drop(10))
         rows += BrowseRow("popular-s", "Séries populaires", "Le prochain marathon commence ici.", RowStyle.LANDSCAPE, ts.drop(10))
 
@@ -399,7 +412,26 @@ class BrowseRepository @Inject constructor(
             while (a.hasNext() || b.hasNext()) { if (a.hasNext()) add(a.next()); if (b.hasNext()) add(b.next()) }
         }
         BrowsePage(heroFrom(mixed, rows), rows)
+        }
     }
+
+    /**
+     * Affichage progressif : si TMDB tarde (plus de [QUICK_MS]), une première page sans ses rangées est
+     * envoyée à [onPartial] ; on attend ensuite TMDB au plus [TMDB_BUDGET_MS] avant de rendre la page finale.
+     */
+    private suspend fun progressive(parts: List<Deferred<*>>, onPartial: (suspend (BrowsePage) -> Unit)?, assemble: suspend () -> BrowsePage): BrowsePage {
+        if (onPartial != null && withTimeoutOrNull(quickMs) { parts.forEach { it.join() } } == null) onPartial(assemble().copy(partial = true))
+        if (withTimeoutOrNull(tmdbBudgetMs) { parts.forEach { it.join() } } == null) {
+            Timber.w("TMDB trop lent : page affichée sans les rangées manquantes")
+            parts.forEach { if (!it.isCompleted) it.cancel() }
+            return assemble().copy(partial = true)
+        }
+        return assemble()
+    }
+
+    /** Valeur d'un calcul terminé, sinon [default] (rangée TMDB pas encore arrivée ou en échec). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun <T> Deferred<T>.v(default: T): T = if (isCompleted && !isCancelled) runCatching { getCompleted() }.getOrDefault(default) else default
 
     /** Héros : œuvres du moment, sinon premières œuvres des rangées (6 au plus). */
     private fun heroFrom(preferred: List<Work>, rows: List<BrowseRow>): List<Work> {
@@ -523,6 +555,9 @@ class BrowseRepository @Inject constructor(
         const val HERO_SIZE = 6
         const val GRID_LIMIT = 300
         private const val CACHE_MS = 20 * 60_000L
+        // au-delà, la page s'affiche sans attendre TMDB ; TMDB a ensuite [TMDB_BUDGET_MS] pour compléter
+        const val QUICK_MS = 1_500L
+        const val TMDB_BUDGET_MS = 12_000L
 
         /** Clés de regroupement possibles d'un résultat TMDB (identifiant, titre français/original à ±1 an). */
         fun candidateKeys(item: TmdbItem): List<String> {
