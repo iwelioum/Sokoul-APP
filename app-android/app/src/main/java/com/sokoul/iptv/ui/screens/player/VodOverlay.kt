@@ -137,7 +137,7 @@ fun VodTopBar(ui: PlayerUi, leading: List<PlayerAction>) {
 @Composable
 private fun VersionBadge(label: String) {
     Text(
-        label, Modifier.padding(start = 10.dp).border(1.dp, SokoulColors.GlassHeavy, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
+        label, Modifier.padding(start = 10.dp).border(1.dp, SokoulColors.GlassHeavy, Radius.Tiny).padding(horizontal = 6.dp, vertical = 1.dp),
         style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextSecondary,
     )
 }
@@ -297,7 +297,7 @@ private fun Scrubber(
             .semantics { contentDescription = "Position de lecture, ${formatDuration(position)}" + if (duration > 0) " sur ${formatDuration(duration)}" else "" },
         contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.fillMaxWidth().height(track).clip(RoundedCornerShape(4.dp)).background(SokoulColors.GlassLight)) {
+        Box(Modifier.fillMaxWidth().height(track).clip(Radius.Tiny).background(SokoulColors.GlassLight)) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(if (previewing) Color.White else SokoulColors.Accent))
         }
         val knobSize = 18.dp
@@ -311,7 +311,7 @@ private fun Scrubber(
             Text(
                 formatDuration(position),
                 Modifier.offset(x = ((maxWidth * fraction) - bubble / 2).coerceIn(0.dp, maxWidth - bubble), y = (-30).dp).width(bubble)
-                    .background(Color.White, Radius.Small).padding(vertical = 3.dp),
+                    .background(Color.White, Radius.Card).padding(vertical = 3.dp),
                 color = SokoulColors.OnLight, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
             )
         }
@@ -410,7 +410,7 @@ fun SeekFeedback(deltaMs: Long, target: Long, modifier: Modifier = Modifier) {
 /** Rappel « Reprise à … » (contenu seul : l'apparition est animée par l'écran). */
 @Composable
 fun ResumeHint(fromMs: Long, modifier: Modifier = Modifier) {
-    Column(modifier.padding(24.dp).background(SokoulColors.Scrim, Radius.Medium).padding(horizontal = 16.dp, vertical = 10.dp)) {
+    Column(modifier.padding(24.dp).background(SokoulColors.Scrim, Radius.Card).padding(horizontal = 16.dp, vertical = 10.dp)) {
         Text("Reprise à ${formatDuration(fromMs)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         Text("« Depuis le début » dans ⋯ Plus", color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
     }
@@ -421,7 +421,7 @@ fun ResumeHint(fromMs: Long, modifier: Modifier = Modifier) {
 fun PauseScreen(ui: PlayerUi, position: Long, duration: Long) {
     val l = LocalLayout.current
     val now = rememberNow(15_000)
-    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(SokoulColors.ScrimStrong, SokoulColors.Scrim, Color(0x33000000))))) {
+    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(SokoulColors.ScrimStrong, SokoulColors.Scrim, SokoulColors.black(0.2f))))) {
         Text(formatClock(now), Modifier.align(Alignment.TopEnd).padding(32.dp), style = MaterialTheme.typography.titleLarge)
         Column(Modifier.align(Alignment.BottomStart).padding(start = l.margin, bottom = 56.dp, end = l.margin).widthIn(max = 640.dp)) {
             Text("EN PAUSE", color = SokoulColors.Accent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -476,7 +476,7 @@ fun StatusOverlay(state: StreamState, error: String?, retryFocus: FocusRequester
                 CircularProgressIndicator(color = SokoulColors.Warning)
                 Text(
                     "Connexion perdue, nouvelle tentative (${state.attempt})…",
-                    Modifier.padding(top = 12.dp).background(SokoulColors.Scrim, Radius.Small).padding(horizontal = 12.dp, vertical = 4.dp),
+                    Modifier.padding(top = 12.dp).background(SokoulColors.Scrim, Radius.Card).padding(horizontal = 12.dp, vertical = 4.dp),
                     color = Color.White,
                 )
             }
@@ -497,7 +497,7 @@ private fun DelayedSpinner(color: Color) {
 @Composable
 private fun ErrorCard(title: String, message: String, hint: String?, buttons: @Composable () -> Unit) {
     Column(
-        Modifier.padding(24.dp).widthIn(max = 600.dp).background(SokoulColors.Panel, RoundedCornerShape(20.dp)).padding(28.dp),
+        Modifier.padding(24.dp).widthIn(max = 600.dp).background(SokoulColors.Panel, Radius.Panel).padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
@@ -538,9 +538,9 @@ fun NextUpCard(
     val l = LocalLayout.current
     val view = EpisodeMerge.merge(next, tmdb, null)
     // largeur d'abord (moitié de l'écran), plafond ensuite : dans l'autre ordre la carte ne fait que 260 dp
-    Column(modifier.fillMaxWidth(if (l.isCompact) 0.94f else 0.5f).widthIn(max = 560.dp).background(SokoulColors.Panel, Radius.Large).padding(14.dp)) {
+    Column(modifier.fillMaxWidth(if (l.isCompact) 0.94f else 0.5f).widthIn(max = 560.dp).background(SokoulColors.Panel, Radius.Panel).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(if (l.isCompact) 112.dp else 168.dp).aspectRatio(16f / 9f).clip(Radius.Small).background(SokoulColors.SurfaceHigher).semantics { contentDescription = "Vignette de l'épisode ${next.episode}" }) {
+            Box(Modifier.width(if (l.isCompact) 112.dp else 168.dp).aspectRatio(16f / 9f).clip(Radius.Card).background(SokoulColors.SurfaceHigher).semantics { contentDescription = "Vignette de l'épisode ${next.episode}" }) {
                 NetImage(view.image ?: fallbackImage, null, Modifier.fillMaxSize()) {
                     NetImage(fallbackImage, null, Modifier.fillMaxSize()) { Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.TextMuted) }
                 }
@@ -632,7 +632,7 @@ fun EpisodesPanel(
                     color = if (isCurrent) SokoulColors.AccentSoft else Color.Transparent, focusedColor = SokoulColors.SurfaceHigher, focusScale = 1.02f, borderWidth = 2.dp,
                 ) { _ ->
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.width(120.dp).aspectRatio(16f / 9f).clip(Radius.Small).background(SokoulColors.SurfaceHigher)) {
+                        Box(Modifier.width(120.dp).aspectRatio(16f / 9f).clip(Radius.Card).background(SokoulColors.SurfaceHigher)) {
                             NetImage(view.image ?: fallbackImage, null, Modifier.fillMaxSize()) { NetImage(fallbackImage, null, Modifier.fillMaxSize()) }
                             if (isCurrent) Icon(Icons.Default.PlayArrow, null, Modifier.align(Alignment.Center).size(28.dp).background(SokoulColors.Scrim, CircleShape), tint = Color.White)
                         }

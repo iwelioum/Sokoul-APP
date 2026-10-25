@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui
 
+import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -135,14 +136,14 @@ private fun TvRail(current: Dest, onSelect: (Dest) -> Unit) {
         if (scrim > 0f) {
             Box(
                 Modifier.fillMaxHeight().width(TvRailExpanded + 220.dp).graphicsLayer { alpha = scrim }
-                    .background(Brush.horizontalGradient(listOf(Color(0xF20A0A0F), Color(0xCC0A0A0F), Color.Transparent)))
+                    .background(Brush.horizontalGradient(listOf(SokoulColors.bg(0.95f), SokoulColors.bg(0.8f), Color.Transparent)))
             )
         }
         Column(
             Modifier.fillMaxHeight().width(width)
                 .background(
-                    if (open) Brush.horizontalGradient(listOf(SokoulColors.Background, Color(0xF00A0A0F)))
-                    else Brush.horizontalGradient(listOf(Color(0xE60A0A0F), Color(0x990A0A0F)))
+                    if (open) Brush.horizontalGradient(listOf(SokoulColors.Background, SokoulColors.bg(0.94f)))
+                    else Brush.horizontalGradient(listOf(SokoulColors.bg(0.9f), SokoulColors.bg(0.6f)))
                 )
                 .padding(vertical = 20.dp, horizontal = 12.dp)
                 .onFocusChanged { open = it.hasFocus }
@@ -153,7 +154,7 @@ private fun TvRail(current: Dest, onSelect: (Dest) -> Unit) {
             // monogramme / logo
             Row(Modifier.height(40.dp).padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(32.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, Color(0xFFB36CFF))), RoundedCornerShape(9.dp)),
+                    Modifier.size(32.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, SokoulColors.AccentEnd)), Radius.Card),
                     contentAlignment = Alignment.Center,
                 ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp) }
                 AnimatedVisibility(open, enter = fadeIn(tween(Motion.MEDIUM)), exit = fadeOut(tween(Motion.FAST))) {
@@ -172,13 +173,13 @@ private fun TvRail(current: Dest, onSelect: (Dest) -> Unit) {
                     modifier = Modifier.fillMaxWidth().height(44.dp).then(if (selected) Modifier.focusRequester(selectedFocus) else Modifier),
                     color = Color.Transparent,
                     focusedColor = Color.White,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = Radius.Card,
                     focusScale = 1f,
                     borderWidth = 0.dp,
                 ) { focused ->
                     Row(Modifier.fillMaxSize().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         val tint = when {
-                            focused -> Color(0xFF0A0A0F)
+                            focused -> SokoulColors.OnLight
                             selected -> SokoulColors.TextPrimary
                             else -> SokoulColors.TextMuted
                         }
@@ -210,7 +211,7 @@ private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Box(
-            Modifier.padding(bottom = 10.dp).size(36.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, Color(0xFFB36CFF))), RoundedCornerShape(10.dp)),
+            Modifier.padding(bottom = 10.dp).size(36.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, SokoulColors.AccentEnd)), Radius.Card),
             contentAlignment = Alignment.Center,
         ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp) }
         Dest.entries.forEach { d ->
@@ -221,13 +222,13 @@ private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
                 modifier = Modifier.size(76.dp, 58.dp),
                 color = Color.Transparent,
                 focusedColor = SokoulColors.SurfaceHigher,
-                shape = RoundedCornerShape(14.dp),
+                shape = Radius.Card,
                 focusScale = 1f,
                 borderWidth = 0.dp,
             ) { focused ->
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
-                        Modifier.size(52.dp, 30.dp).background(if (selected) SokoulColors.AccentSoft else Color.Transparent, RoundedCornerShape(15.dp)),
+                        Modifier.size(52.dp, 30.dp).background(if (selected) SokoulColors.AccentSoft else Color.Transparent, Radius.Card),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(d.icon, d.label, Modifier.size(22.dp), tint = if (selected || focused) SokoulColors.Accent else SokoulColors.TextSecondary)
@@ -250,7 +251,7 @@ private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolea
     Column(Modifier.fillMaxSize().background(SokoulColors.Background)) {
         // écrans à héros : bord à bord, l'image passe sous la barre d'état
         Box(Modifier.weight(1f).fillMaxWidth().then(if (edgeToEdge) Modifier else Modifier.statusBarsPadding())) { content() }
-        NavigationBar(containerColor = Color(0xFF0D0D14), tonalElevation = 0.dp, modifier = Modifier.navigationBarsPadding().height(64.dp)) {
+        NavigationBar(containerColor = SokoulColors.Surface, tonalElevation = 0.dp, modifier = Modifier.navigationBarsPadding().height(64.dp)) {
             val colors = NavigationBarItemDefaults.colors(
                 indicatorColor = SokoulColors.AccentSoft, selectedIconColor = SokoulColors.TextPrimary, selectedTextColor = SokoulColors.TextPrimary,
                 unselectedIconColor = SokoulColors.TextMuted, unselectedTextColor = SokoulColors.TextMuted,

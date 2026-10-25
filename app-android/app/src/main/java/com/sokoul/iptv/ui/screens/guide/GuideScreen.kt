@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.guide
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
 import android.view.KeyEvent
 import android.widget.Toast
@@ -508,7 +510,7 @@ private fun GuideRow(
     Row(Modifier.fillMaxWidth().height(height).padding(vertical = 2.dp)) {
         Row(
             Modifier.width(channelCol).fillMaxHeight()
-                .background(if (rowFocused) SokoulColors.SurfaceHigher else SokoulColors.Surface, RoundedCornerShape(8.dp))
+                .background(if (rowFocused) SokoulColors.SurfaceHigher else SokoulColors.Surface, Radius.Card)
                 .tap(onChannelClick)
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -528,7 +530,7 @@ private fun GuideRow(
                 val focused = rowFocused
                 Box(
                     Modifier.fillMaxSize().padding(end = 2.dp)
-                        .background(if (focused) SokoulColors.Accent else SokoulColors.SurfaceHigh, RoundedCornerShape(6.dp))
+                        .background(if (focused) SokoulColors.Accent else SokoulColors.SurfaceHigh, Radius.Tiny)
                         .tap { onProgramClick(null) }
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.CenterStart,
@@ -550,8 +552,8 @@ private fun GuideRow(
                 }
                 Box(
                     Modifier.offset(x = x).width(w - 2.dp).fillMaxHeight()
-                        .background(bg, RoundedCornerShape(6.dp))
-                        .then(if (focused) Modifier.border(2.dp, SokoulColors.Focus, RoundedCornerShape(6.dp)) else Modifier)
+                        .background(bg, Radius.Tiny)
+                        .then(if (focused) Modifier.border(2.dp, SokoulColors.Focus, Radius.Tiny) else Modifier)
                         .tap { onProgramClick(p) }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                 ) {
@@ -566,7 +568,7 @@ private fun GuideRow(
                         }
                         Text(
                             formatRange(p.start, p.end), style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                            color = if (focused) Color(0xDDFFFFFF) else SokoulColors.TextMuted,
+                            color = if (focused) SokoulColors.white(0.87f) else SokoulColors.TextMuted,
                         )
                     }
                     if (live) {

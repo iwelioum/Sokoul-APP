@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.components
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -91,7 +93,7 @@ fun NetImage(
         modifier = modifier,
         contentScale = contentScale,
         alignment = alignment,
-        loading = { Box(Modifier.fillMaxSize().shimmer(RoundedCornerShape(0.dp))) },
+        loading = { Box(Modifier.fillMaxSize().shimmer(Radius.None)) },
         error = { Box(Modifier.fillMaxSize(), contentAlignment = alignment) { fallback() } },
     )
 }
@@ -99,7 +101,7 @@ fun NetImage(
 /** Logo de chaîne avec repli sur les initiales. */
 @Composable
 fun ChannelLogo(url: String?, name: String, modifier: Modifier = Modifier) {
-    Box(modifier.clip(RoundedCornerShape(8.dp)).background(SokoulColors.SurfaceHigher), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(Radius.Card).background(SokoulColors.SurfaceHigher), contentAlignment = Alignment.Center) {
         NetImage(url, name, Modifier.fillMaxSize().padding(4.dp), ContentScale.Fit) {
             Text(
                 initials(name), color = SokoulColors.TextSecondary, fontWeight = FontWeight.Bold,
@@ -133,7 +135,7 @@ fun PosterCard(
     onFocus: (() -> Unit)? = null,
 ) {
     Column(modifier.width(width)) {
-        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = RoundedCornerShape(10.dp)) { _ ->
+        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card) { _ ->
             Box(Modifier.fillMaxWidth().aspectRatio(if (landscape) 16f / 9f else 2f / 3f)) {
                 NetImage(image, title, Modifier.fillMaxSize()) {
                     Text(
@@ -144,12 +146,12 @@ fun PosterCard(
                 if (badge != null) {
                     Text(
                         badge, Modifier.align(Alignment.TopEnd).padding(6.dp)
-                            .background(Color(0xCC000000), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                            .background(SokoulColors.black(0.8f), Radius.Tiny).padding(horizontal = 6.dp, vertical = 2.dp),
                         color = Color.White, style = MaterialTheme.typography.labelSmall,
                     )
                 }
                 if (progress != null && progress > 0f) {
-                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color(0x66000000))) {
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(SokoulColors.black(0.4f))) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(SokoulColors.Accent))
                     }
                 }
@@ -196,9 +198,9 @@ fun AppButton(
     FocusSurface(
         onClick = { if (enabled) onClick() },
         modifier = modifier.then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
-        shape = RoundedCornerShape(50),
+        shape = Radius.Pill,
         color = if (primary) SokoulColors.Accent else SokoulColors.SurfaceHigher,
-        focusedColor = if (primary) SokoulColors.Accent else Color(0xFF34344A),
+        focusedColor = if (primary) SokoulColors.Accent else SokoulColors.SurfaceHigher,
         focusScale = 1.05f,
     ) { _ ->
         Row(
@@ -218,7 +220,7 @@ fun AppButton(
 @Composable
 fun Tag(text: String, color: Color = SokoulColors.SurfaceHigher, textColor: Color = SokoulColors.TextPrimary) {
     Text(
-        text, Modifier.background(color, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+        text, Modifier.background(color, Radius.Tiny).padding(horizontal = 8.dp, vertical = 3.dp),
         style = MaterialTheme.typography.labelMedium, color = textColor,
     )
 }
@@ -298,7 +300,7 @@ fun FormField(
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else keyboardType, imeAction = imeAction, autoCorrectEnabled = false),
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }, onGo = { onDone?.invoke() }),
-        shape = RoundedCornerShape(12.dp),
+        shape = Radius.Card,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = SokoulColors.Accent,
             unfocusedBorderColor = SokoulColors.Divider,
@@ -318,7 +320,7 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val first = remember { FocusRequester() }
         Column(
-            Modifier.fillMaxWidth(0.92f).widthIn(max = 520.dp).clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(20.dp)
+            Modifier.fillMaxWidth(0.92f).widthIn(max = 520.dp).clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(20.dp)
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) Text(subtitle, Modifier.padding(top = 4.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
@@ -351,7 +353,7 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
 fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         val focus = remember { FocusRequester() }
-        Column(Modifier.clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(24.dp)) {
+        Column(Modifier.clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(24.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
             Text(message, Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary)
             Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -372,7 +374,7 @@ fun PinDialog(title: String, onResult: (String) -> Unit, onDismiss: () -> Unit, 
     Dialog(onDismissRequest = onDismiss) {
         val first = remember { FocusRequester() }
         Column(
-            Modifier.clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(24.dp)
+            Modifier.clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(24.dp)
                 // touches numériques de la télécommande (0-9) et retour arrière
                 .onPreviewKeyEvent { e ->
                     if (e.nativeKeyEvent.action != android.view.KeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
@@ -427,5 +429,5 @@ fun PinDialog(title: String, onResult: (String) -> Unit, onDismiss: () -> Unit, 
     }
 }
 
-val BottomFade = Brush.verticalGradient(listOf(Color.Transparent, Color(0xE60A0A0F), SokoulColors.Background))
-val LeftFade = Brush.horizontalGradient(listOf(SokoulColors.Background, Color(0xCC0A0A0F), Color.Transparent))
+val BottomFade = Brush.verticalGradient(listOf(Color.Transparent, SokoulColors.bg(0.9f), SokoulColors.Background))
+val LeftFade = Brush.horizontalGradient(listOf(SokoulColors.Background, SokoulColors.bg(0.8f), Color.Transparent))

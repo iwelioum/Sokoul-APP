@@ -116,10 +116,3 @@ object Motion {
     fun <T> exit() = androidx.compose.animation.core.tween<T>(FAST, 0, Accelerate)
 }
 
-/** Rayons d'angle communs. */
-object Radius {
-    val Small = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-    val Medium = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-    val Large = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-    val Pill = androidx.compose.foundation.shape.RoundedCornerShape(50)
-}

@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.components
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -151,8 +153,8 @@ fun HeroCarousel(
                     val activeDot = state.currentPage % n
                     repeat(n) { i ->
                         val width by animateDpAsState(if (i == activeDot) 28.dp else 8.dp, tween(Motion.MEDIUM), label = "dot")
-                        Box(Modifier.width(width).height(4.dp).background(Color(0x55FFFFFF), RoundedCornerShape(2.dp))) {
-                            if (i == activeDot) Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(Color.White, RoundedCornerShape(2.dp)))
+                        Box(Modifier.width(width).height(4.dp).background(SokoulColors.white(0.33f), Radius.Tiny)) {
+                            if (i == activeDot) Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(Color.White, Radius.Tiny))
                         }
                     }
                 }
@@ -187,9 +189,9 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
         ) {
             NetImage(image, w.title, Modifier.fillMaxSize(), alignment = if (compact) Alignment.TopCenter else Alignment.TopEnd)
             if (compact) {
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x99000000), 0.18f to Color.Transparent, 0.55f to Color.Transparent, 0.86f to Color(0xF20A0A0F), 1f to SokoulColors.Background)))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to SokoulColors.black(0.6f), 0.18f to Color.Transparent, 0.55f to Color.Transparent, 0.86f to SokoulColors.bg(0.95f), 1f to SokoulColors.Background)))
             } else {
-                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.Background, 0.30f to Color(0xD90A0A0F), 0.62f to Color.Transparent)))
+                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.Background, 0.30f to SokoulColors.bg(0.85f), 0.62f to Color.Transparent)))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to SokoulColors.Background)))
             }
         }
@@ -203,7 +205,7 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
         ) {
             if (label != null) {
                 Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.background(SokoulColors.Live, RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                    Box(Modifier.background(SokoulColors.Live, Radius.Tiny).padding(horizontal = 5.dp, vertical = 1.dp)) {
                         Text("TOP", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
                     }
                     Text(label, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextPrimary, fontWeight = FontWeight.Bold)
@@ -240,7 +242,7 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
                     if (w.certification != null && !compact) {
                         Text(
                             certificationLabel(w.certification),
-                            Modifier.background(Color(0x33FFFFFF), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp),
+                            Modifier.background(SokoulColors.white(0.2f), Radius.Tiny).padding(horizontal = 5.dp),
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
@@ -280,7 +282,7 @@ private fun HeroTitle(title: String, compact: Boolean) {
         title, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = if (compact) TextAlign.Center else TextAlign.Start,
         style = TextStyle(
             fontSize = l.heroTitle, lineHeight = l.heroTitle * 1.08f, fontWeight = FontWeight.Black, letterSpacing = (-0.8).sp,
-            color = Color.White, shadow = Shadow(Color(0x99000000), blurRadius = 12f),
+            color = Color.White, shadow = Shadow(SokoulColors.black(0.6f), blurRadius = 12f),
         ),
     )
 }
@@ -290,17 +292,17 @@ private fun HeroTitle(title: String, compact: Boolean) {
 fun HeroButton(text: String, icon: ImageVector, primary: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val l = LocalLayout.current
     FocusSurface(
-        onClick = onClick, modifier = modifier, shape = RoundedCornerShape(if (l.isTv) 10.dp else 8.dp),
+        onClick = onClick, modifier = modifier, shape = Radius.Card,
         // TV : seul l'élément focalisé est blanc (sinon le bouton principal semble sélectionné à la place du focus)
-        color = if (primary && !l.isTv) Color.White else if (primary) Color(0x73FFFFFF) else Color(0x59FFFFFF),
-        focusedColor = if (primary || l.isTv) Color.White else Color(0x8CFFFFFF),
+        color = if (primary && !l.isTv) Color.White else if (primary) SokoulColors.white(0.45f) else SokoulColors.white(0.35f),
+        focusedColor = if (primary || l.isTv) Color.White else SokoulColors.white(0.55f),
         focusScale = 1.08f, borderWidth = if (primary || l.isTv) 0.dp else 2.dp,
     ) { focused ->
         Row(
             Modifier.height(if (l.isCompact) 42.dp else 44.dp).padding(horizontal = if (l.isCompact) 18.dp else 22.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val c = if ((primary && !l.isTv) || (l.isTv && focused)) Color(0xFF0A0A0F) else Color.White
+            val c = if ((primary && !l.isTv) || (l.isTv && focused)) SokoulColors.OnLight else Color.White
             Icon(icon, null, Modifier.size(22.dp), tint = c)
             Spacer(Modifier.width(8.dp))
             Text(text, color = c, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)

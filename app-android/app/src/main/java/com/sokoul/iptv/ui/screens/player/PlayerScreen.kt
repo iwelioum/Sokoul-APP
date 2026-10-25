@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.player
 
+import com.sokoul.iptv.ui.theme.Radius
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -519,7 +520,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             }
             if (numberBuffer.isNotEmpty()) {
                 Text(
-                    numberBuffer, Modifier.align(Alignment.TopEnd).padding(32.dp).background(Color(0xCC000000), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 10.dp),
+                    numberBuffer, Modifier.align(Alignment.TopEnd).padding(32.dp).background(SokoulColors.black(0.8f), Radius.Card).padding(horizontal = 22.dp, vertical = 10.dp),
                     fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Color.White,
                 )
             }
@@ -665,7 +666,7 @@ private fun LiveInfoBar(ui: PlayerUi) {
     val compact = LocalLayout.current.isCompact
     val side = if (compact) 16.dp else 40.dp
     Box(
-        Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000), Color(0xF2000000))))
+        Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, SokoulColors.black(0.9f), SokoulColors.black(0.95f))))
             .padding(start = side, end = side, top = if (compact) 40.dp else 60.dp, bottom = if (compact) 20.dp else 32.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -684,8 +685,8 @@ private fun LiveInfoBar(ui: PlayerUi) {
                     Text(p.title, style = MaterialTheme.typography.titleLarge, color = SokoulColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
                         Text(formatClock(p.start), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
-                        Box(Modifier.padding(horizontal = 10.dp).weight(1f).height(4.dp).background(Color(0x33FFFFFF), RoundedCornerShape(2.dp))) {
-                            Box(Modifier.fillMaxHeight().fillMaxWidth(ui.nowNext.progress(now)).background(SokoulColors.Accent, RoundedCornerShape(2.dp)))
+                        Box(Modifier.padding(horizontal = 10.dp).weight(1f).height(4.dp).background(SokoulColors.white(0.2f), Radius.Tiny)) {
+                            Box(Modifier.fillMaxHeight().fillMaxWidth(ui.nowNext.progress(now)).background(SokoulColors.Accent, Radius.Tiny))
                         }
                         Text(formatClock(p.end), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
                     }
@@ -717,14 +718,14 @@ private fun ChannelListOverlay(channels: List<ChannelEntity>, highlighted: Int, 
         if (highlighted <= first || highlighted >= last) state.scrollToItem((highlighted - 4).coerceAtLeast(0))
     }
     LazyColumn(
-        Modifier.fillMaxWidth(0.9f).widthIn(max = 420.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(Color(0xF20A0A0F), Color(0xCC0A0A0F)))).padding(vertical = 24.dp),
+        Modifier.fillMaxWidth(0.9f).widthIn(max = 420.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(SokoulColors.bg(0.95f), SokoulColors.bg(0.8f)))).padding(vertical = 24.dp),
         state = state,
     ) {
         itemsIndexed(channels, key = { _, c -> c.id }) { i, c ->
             val hl = i == highlighted
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp)
-                    .background(if (hl) SokoulColors.Accent else Color.Transparent, RoundedCornerShape(10.dp))
+                    .background(if (hl) SokoulColors.Accent else Color.Transparent, Radius.Card)
                     .pointerInput(i) { detectTapGestures { onPick(i) } }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -761,7 +762,7 @@ private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?,
     val t = text ?: return
     val l = LocalLayout.current
     Text(
-        t, modifier.padding(horizontal = 48.dp).background(Color(0xB3000000), RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
+        t, modifier.padding(horizontal = 48.dp).background(SokoulColors.black(0.7f), Radius.Tiny).padding(horizontal = 12.dp, vertical = 4.dp),
         color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         style = if (l.isTv) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
     )

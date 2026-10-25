@@ -308,7 +308,7 @@ private fun DetailBackdrop(hero: DetailHeroData, kb: Animatable<Float, *>, depth
             val l = LocalLayout.current
             NetImage(
                 tmdbSized(hero.poster, "w500"), hero.title,
-                Modifier.align(Alignment.CenterEnd).padding(end = l.margin * 2).fillMaxHeight(0.72f).aspectRatio(2f / 3f).clip(Radius.Large),
+                Modifier.align(Alignment.CenterEnd).padding(end = l.margin * 2).fillMaxHeight(0.72f).aspectRatio(2f / 3f).clip(Radius.Panel),
             )
         }
         // lisibilité du texte : dégradés à gauche et en bas (dans la même texture que l'image)
@@ -378,7 +378,7 @@ private fun HeroBlock(
         if (primary != null) {
             DetailPrimaryButton(primary, Modifier.focusMemory(memory, "play").then(if (l.isCompact) Modifier.weight(1f) else Modifier))
         } else if (primaryLoading) {
-            Box(Modifier.size(if (l.isCompact) 160.dp else 220.dp, 52.dp).shimmer(Radius.Medium).semantics { contentDescription = "Chargement" })
+            Box(Modifier.size(if (l.isCompact) 160.dp else 220.dp, 52.dp).shimmer(Radius.Card).semantics { contentDescription = "Chargement" })
         }
         if (!l.isCompact) actions.forEach { a -> DetailActionButton(a, Modifier.focusMemory(memory, a.key)) }
     }
@@ -404,7 +404,7 @@ private fun AvailabilityLine(services: List<Pair<String, Long?>>, modifier: Modi
         Text("Aussi sur", Modifier.align(Alignment.CenterVertically), style = MaterialTheme.typography.bodyMedium, color = SokoulColors.TextSecondary)
         services.take(MAX_SERVICES).forEach { (name, color) ->
             Row(
-                Modifier.background(SokoulColors.GlassLight.copy(alpha = 0.12f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+                Modifier.background(SokoulColors.GlassLight.copy(alpha = 0.12f), Radius.Pill).padding(horizontal = 10.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // contour clair : une couleur de marque sombre (Disney+) reste visible sur le fond
@@ -422,7 +422,7 @@ private const val MAX_SERVICES = 5
 private fun ExternalRating(source: String, value: String) {
     val imdb = source == "IMDb"
     Row(
-        Modifier.then(if (imdb) Modifier.background(Color(0xFFF5C518), RoundedCornerShape(4.dp)) else Modifier.border(1.dp, SokoulColors.TextMuted, RoundedCornerShape(4.dp)))
+        Modifier.then(if (imdb) Modifier.background(SokoulColors.Imdb, Radius.Tiny) else Modifier.border(1.dp, SokoulColors.TextMuted, Radius.Tiny))
             .padding(horizontal = 6.dp, vertical = 1.dp)
             .semantics(mergeDescendants = true) { contentDescription = "$source $value" },
         verticalAlignment = Alignment.CenterVertically,
@@ -471,7 +471,7 @@ private fun Dot() = Text("·", style = MaterialTheme.typography.labelLarge, colo
 private fun Badge(text: String, filled: Boolean) {
     Text(
         text,
-        Modifier.then(if (filled) Modifier.background(SokoulColors.GlassLight, RoundedCornerShape(4.dp)) else Modifier.border(1.dp, SokoulColors.TextSecondary, RoundedCornerShape(4.dp)))
+        Modifier.then(if (filled) Modifier.background(SokoulColors.GlassLight, Radius.Tiny) else Modifier.border(1.dp, SokoulColors.TextSecondary, Radius.Tiny))
             .padding(horizontal = 6.dp, vertical = 1.dp),
         style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = SokoulColors.TextPrimary,
     )
@@ -490,7 +490,7 @@ fun DetailPrimaryButton(a: PrimaryAction, modifier: Modifier = Modifier) {
     val l = LocalLayout.current
     FocusSurface(
         onClick = a.onClick, modifier = modifier.semantics { contentDescription = listOfNotNull(a.label, a.detail).joinToString(", ") },
-        shape = Radius.Medium, color = if (l.isTv) SokoulColors.GlassHeavy else Color.White, focusedColor = Color.White,
+        shape = Radius.Card, color = if (l.isTv) SokoulColors.GlassHeavy else Color.White, focusedColor = Color.White,
         focusScale = 1.06f, borderWidth = 0.dp,
     ) { focused ->
         val c = if (!l.isTv || focused) SokoulColors.OnLight else Color.White
@@ -505,7 +505,7 @@ fun DetailPrimaryButton(a: PrimaryAction, modifier: Modifier = Modifier) {
                 if (a.progress != null || a.detail != null) {
                     Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (a.progress != null) {
-                            Box(Modifier.width(72.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(c.copy(alpha = 0.28f))) {
+                            Box(Modifier.width(72.dp).height(3.dp).clip(Radius.Tiny).background(c.copy(alpha = 0.28f))) {
                                 Box(Modifier.fillMaxHeight().fillMaxWidth(a.progress.coerceIn(0.03f, 1f)).background(if (focused || !l.isTv) SokoulColors.Accent else Color.White))
                             }
                             Spacer(Modifier.width(8.dp))
@@ -544,7 +544,7 @@ fun DetailActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
 /** Action secondaire téléphone : icône au-dessus du libellé, comme les applis de streaming mobiles. */
 @Composable
 private fun PhoneActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
-    FocusSurface(onClick = a.onClick, modifier = modifier.widthIn(min = 72.dp), shape = Radius.Medium, color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigh, focusScale = 1f, borderWidth = 0.dp) { _ ->
+    FocusSurface(onClick = a.onClick, modifier = modifier.widthIn(min = 72.dp), shape = Radius.Card, color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigh, focusScale = 1f, borderWidth = 0.dp) { _ ->
         Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             MorphIcon(a.icon, Color.White, 26)
             Text(a.label, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextSecondary, maxLines = 1)
@@ -691,7 +691,7 @@ fun SeasonTabs(
                         style = MaterialTheme.typography.titleSmall, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                         color = when { focused -> SokoulColors.OnLight; selected -> SokoulColors.TextPrimary; else -> SokoulColors.TextSecondary },
                     )
-                    Box(Modifier.padding(top = 4.dp).width(line).height(3.dp).background(if (focused) SokoulColors.OnLight else SokoulColors.Accent, RoundedCornerShape(2.dp)))
+                    Box(Modifier.padding(top = 4.dp).width(line).height(3.dp).background(if (focused) SokoulColors.OnLight else SokoulColors.Accent, Radius.Tiny))
                 }
             }
         }
@@ -775,7 +775,7 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
     Column(Modifier.width(w)) {
         FocusSurface(
             onClick = onClick, onLongClick = onLongClick, modifier = modifier.fillMaxWidth().aspectRatio(16f / 9f).semantics { contentDescription = "Épisode ${ev.entity.episode} : ${ev.title}" + if (watched) ", vu" else "" },
-            shape = Radius.Medium, color = SokoulColors.SurfaceHigher, focusScale = 1.07f, borderWidth = 3.dp,
+            shape = Radius.Card, color = SokoulColors.SurfaceHigher, focusScale = 1.07f, borderWidth = 3.dp,
         ) { focused ->
             Box(Modifier.fillMaxSize()) {
                 NetImage(tmdbSized(ev.image, "w500"), null, Modifier.fillMaxSize().graphicsLayer { alpha = if (watched && !focused) 0.5f else 1f }) {
@@ -796,7 +796,7 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
                 if (current && !watched) {
                     Text(
                         if (resumable) "En cours" else "À suivre",
-                        Modifier.align(Alignment.TopStart).padding(8.dp).background(SokoulColors.Accent, Radius.Small).padding(horizontal = 8.dp, vertical = 2.dp),
+                        Modifier.align(Alignment.TopStart).padding(8.dp).background(SokoulColors.Accent, Radius.Card).padding(horizontal = 8.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White,
                     )
                 }
@@ -819,7 +819,7 @@ fun SynopsisDialog(title: String, text: String, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val close = remember { FocusRequester() }
         Column(
-            Modifier.fillMaxWidth(0.9f).widthIn(max = 760.dp).clip(Radius.Large).background(SokoulColors.Panel).padding(28.dp),
+            Modifier.fillMaxWidth(0.9f).widthIn(max = 760.dp).clip(Radius.Panel).background(SokoulColors.Panel).padding(28.dp),
         ) {
             Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
@@ -827,7 +827,7 @@ fun SynopsisDialog(title: String, text: String, onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge, color = SokoulColors.TextPrimary.copy(alpha = 0.92f),
             )
             Spacer(Modifier.height(20.dp))
-            FocusSurface(onClick = onDismiss, modifier = Modifier.focusRequester(close), shape = Radius.Medium, color = SokoulColors.GlassLight, focusedColor = Color.White, borderWidth = 0.dp) { f ->
+            FocusSurface(onClick = onDismiss, modifier = Modifier.focusRequester(close), shape = Radius.Card, color = SokoulColors.GlassLight, focusedColor = Color.White, borderWidth = 0.dp) { f ->
                 Text("Fermer", Modifier.padding(horizontal = 22.dp, vertical = 12.dp), color = if (f) SokoulColors.OnLight else Color.White, fontWeight = FontWeight.Bold)
             }
         }
@@ -840,18 +840,18 @@ fun SynopsisDialog(title: String, text: String, onDismiss: () -> Unit) {
 fun DetailSkeleton() {
     val l = LocalLayout.current
     Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-        if (l.isCompact) Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).shimmer(RoundedCornerShape(0.dp)))
+        if (l.isCompact) Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).shimmer(Radius.None))
         Column(
             Modifier.align(if (l.isCompact) Alignment.TopStart else Alignment.BottomStart)
                 .padding(start = l.margin, end = l.margin, bottom = 36.dp, top = if (l.isCompact) 280.dp else 0.dp)
                 .widthIn(max = 640.dp),
         ) {
-            Box(Modifier.fillMaxWidth(0.62f).height(if (l.isCompact) 38.dp else 72.dp).shimmer(Radius.Small))
-            Box(Modifier.padding(top = 16.dp).fillMaxWidth(0.45f).height(16.dp).shimmer(Radius.Small))
-            repeat(3) { Box(Modifier.padding(top = 12.dp).fillMaxWidth(if (it == 2) 0.6f else 1f).height(14.dp).shimmer(Radius.Small)) }
+            Box(Modifier.fillMaxWidth(0.62f).height(if (l.isCompact) 38.dp else 72.dp).shimmer(Radius.Card))
+            Box(Modifier.padding(top = 16.dp).fillMaxWidth(0.45f).height(16.dp).shimmer(Radius.Card))
+            repeat(3) { Box(Modifier.padding(top = 12.dp).fillMaxWidth(if (it == 2) 0.6f else 1f).height(14.dp).shimmer(Radius.Card)) }
             Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(220.dp, 54.dp).shimmer(Radius.Medium))
-                if (!l.isCompact) repeat(2) { Box(Modifier.size(150.dp, 54.dp).shimmer(Radius.Medium)) }
+                Box(Modifier.size(220.dp, 54.dp).shimmer(Radius.Card))
+                if (!l.isCompact) repeat(2) { Box(Modifier.size(150.dp, 54.dp).shimmer(Radius.Card)) }
             }
         }
     }
@@ -864,8 +864,8 @@ fun EpisodeShelfSkeleton() {
     Row(Modifier.padding(horizontal = l.margin, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
         repeat(if (l.isCompact) 1 else 4) {
             Column(Modifier.width(if (l.isCompact) 280.dp else l.landscape * 1.1f)) {
-                Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).shimmer(Radius.Medium))
-                Box(Modifier.padding(top = 10.dp).fillMaxWidth(0.7f).height(14.dp).shimmer(Radius.Small))
+                Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).shimmer(Radius.Card))
+                Box(Modifier.padding(top = 10.dp).fillMaxWidth(0.7f).height(14.dp).shimmer(Radius.Card))
             }
         }
     }

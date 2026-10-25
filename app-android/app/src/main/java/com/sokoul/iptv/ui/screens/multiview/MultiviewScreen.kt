@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.multiview
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -174,7 +176,7 @@ fun MultiviewScreen(nav: NavHostController) {
         val banner = notice ?: maxConn?.takeIf { it == 1 }?.let { "Votre abonnement n'autorise qu'une connexion : une seule case peut être lue à la fois." }
         if (banner != null) {
             Text(
-                banner, Modifier.fillMaxWidth().background(SokoulColors.Warning.copy(alpha = 0.18f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
+                banner, Modifier.fillMaxWidth().background(SokoulColors.Warning.copy(alpha = 0.18f), Radius.Card).padding(horizontal = 14.dp, vertical = 8.dp),
                 color = SokoulColors.TextPrimary, style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -189,7 +191,7 @@ fun MultiviewScreen(nav: NavHostController) {
                         onFocus = { audio = i; vm.focusAudio(i) },
                         modifier = Modifier.weight(1f).fillMaxSize().then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier),
                         color = SokoulColors.Surface,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = Radius.Card,
                         focusScale = 1f,
                         borderWidth = 3.dp,
                     ) { _ ->
@@ -273,7 +275,7 @@ private fun SlotView(slot: SlotState, hasAudio: Boolean) {
             else -> Unit
         }
         Row(
-            Modifier.align(Alignment.TopStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+            Modifier.align(Alignment.TopStart).padding(8.dp).background(SokoulColors.black(0.6f), Radius.Tiny).padding(horizontal = 8.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (hasAudio) Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(14.dp).padding(end = 4.dp), tint = SokoulColors.Accent)

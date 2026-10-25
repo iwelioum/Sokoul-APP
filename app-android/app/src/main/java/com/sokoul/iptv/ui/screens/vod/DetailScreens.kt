@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.vod
 
+import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -807,12 +808,12 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>) {
 /** Pastille sélectionnable (saisons, versions, tris). */
 fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     FocusSurface(
-        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = RoundedCornerShape(50), focusScale = 1.06f, borderWidth = 2.dp,
+        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Pill, focusScale = 1.06f, borderWidth = 2.dp,
         color = if (selected) Color.White else SokoulColors.SurfaceHigh, focusedColor = if (selected) Color.White else SokoulColors.SurfaceHigher,
     ) { _ ->
         Text(
             text, Modifier.padding(horizontal = 18.dp, vertical = 9.dp), style = MaterialTheme.typography.labelLarge,
-            color = if (selected) Color(0xFF0A0A0F) else SokoulColors.TextPrimary, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) SokoulColors.OnLight else SokoulColors.TextPrimary, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         )
     }
 }
@@ -820,7 +821,7 @@ fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onLongC
 @Composable
 private fun VersionChip(label: String, detail: String?, preferred: Boolean, first: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
     FocusSurface(
-        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = RoundedCornerShape(12.dp), focusScale = 1.05f, borderWidth = 2.dp,
+        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Card, focusScale = 1.05f, borderWidth = 2.dp,
         color = if (first) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher,
     ) { _ ->
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -842,16 +843,16 @@ private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boo
     Box(Modifier.padding(horizontal = l.margin, vertical = 5.dp)) {
         FocusSurface(
             onClick = onClick, onLongClick = onLongClick, modifier = modifier.fillMaxWidth().widthIn(max = 1100.dp),
-            color = if (current) Color(0x147C6CFF) else Color.Transparent, focusedColor = SokoulColors.SurfaceHigh, focusScale = 1.015f, borderWidth = 2.dp, shape = RoundedCornerShape(14.dp),
+            color = if (current) SokoulColors.AccentTint else Color.Transparent, focusedColor = SokoulColors.SurfaceHigh, focusScale = 1.015f, borderWidth = 2.dp, shape = Radius.Card,
         ) { focused ->
             Column(Modifier.padding(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.width(thumbW).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)).background(SokoulColors.SurfaceHigher)) {
+                    Box(Modifier.width(thumbW).aspectRatio(16f / 9f).clip(Radius.Card).background(SokoulColors.SurfaceHigher)) {
                         NetImage(tmdbSized(ev.image, "w500"), ev.title, Modifier.fillMaxSize().graphicsLayer { alpha = if (watched && !focused) 0.55f else 1f }) {
                             Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.TextMuted)
                         }
                         if (focused) {
-                            Box(Modifier.fillMaxSize().background(Color(0x55000000)), contentAlignment = Alignment.Center) {
+                            Box(Modifier.fillMaxSize().background(SokoulColors.black(0.33f)), contentAlignment = Alignment.Center) {
                                 Box(Modifier.size(40.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
                                     Icon(Icons.Default.PlayArrow, null, tint = Color.Black)
                                 }

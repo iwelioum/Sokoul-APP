@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.components
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -80,7 +82,7 @@ fun CategoryColumn(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (isSel) SokoulColors.AccentSoft else Color.Transparent,
                 focusedColor = SokoulColors.SurfaceHigher,
-                shape = RoundedCornerShape(10.dp),
+                shape = Radius.Card,
                 focusScale = 1.02f,
                 borderWidth = 2.dp,
             ) { _ ->
@@ -113,7 +115,7 @@ fun CategoryPickerButton(
             val focus = remember { FocusRequester() }
             val start = items.indexOfFirst { it.id == selected }.coerceAtLeast(0)
             val state = rememberLazyListState((start - 4).coerceAtLeast(0))
-            Column(Modifier.widthIn(min = 360.dp, max = 560.dp).clip(RoundedCornerShape(18.dp)).background(SokoulColors.SurfaceHigh).padding(vertical = 16.dp)) {
+            Column(Modifier.widthIn(min = 360.dp, max = 560.dp).clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(vertical = 16.dp)) {
                 Text("Groupes (${items.size})", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.titleLarge)
                 LazyColumn(Modifier.heightIn(max = 480.dp), state = state, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     itemsIndexed(items, key = { _, c -> c.id }) { i, c ->
@@ -156,7 +158,7 @@ fun CategoryChips(
                 onLongClick = onLongClick?.let { { it(c) } },
                 color = if (isSel) SokoulColors.Accent else SokoulColors.SurfaceHigh,
                 focusedColor = if (isSel) SokoulColors.Accent else SokoulColors.SurfaceHigher,
-                shape = RoundedCornerShape(50),
+                shape = Radius.Pill,
                 focusScale = 1.04f,
             ) { _ ->
                 Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.components
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -71,7 +73,7 @@ import com.sokoul.iptv.ui.theme.SokoulColors
 // --- chargement -------------------------------------------------------------------------------
 
 /** Reflet animé des squelettes de chargement. */
-fun Modifier.shimmer(shape: RoundedCornerShape = RoundedCornerShape(10.dp)): Modifier = composed {
+fun Modifier.shimmer(shape: RoundedCornerShape = Radius.Card): Modifier = composed {
     val t = rememberInfiniteTransition(label = "shimmer")
     val x by t.animateFloat(-1f, 2f, infiniteRepeatable(tween(1300, easing = LinearEasing)), label = "x")
     this.clip(shape).drawBehind {
@@ -90,7 +92,7 @@ fun Modifier.shimmer(shape: RoundedCornerShape = RoundedCornerShape(10.dp)): Mod
 fun SkeletonRow(landscape: Boolean = false) {
     val l = LocalLayout.current
     Column(Modifier.padding(vertical = l.rowSpacing / 2)) {
-        Box(Modifier.padding(start = l.margin, bottom = 12.dp).size(180.dp, 20.dp).shimmer(RoundedCornerShape(6.dp)))
+        Box(Modifier.padding(start = l.margin, bottom = 12.dp).size(180.dp, 20.dp).shimmer(Radius.Tiny))
         Row(Modifier.padding(start = l.margin), horizontalArrangement = Arrangement.spacedBy(l.gutter)) {
             repeat(8) {
                 val w = if (landscape) l.landscape else l.poster
@@ -120,7 +122,7 @@ fun RowHeader(title: String, tagline: String?, platform: Platform? = null, onSee
         // sur TV, « Tout voir » est une carte en fin de rangée (atteignable à la télécommande)
         if (onSeeAll != null && l.isTouch) {
             Row(
-                Modifier.clip(RoundedCornerShape(50)).dpadClickable(onSeeAll).padding(horizontal = 8.dp, vertical = 4.dp),
+                Modifier.clip(Radius.Pill).dpadClickable(onSeeAll).padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Tout voir", style = MaterialTheme.typography.labelLarge, color = SokoulColors.Accent)
@@ -151,16 +153,16 @@ fun <T> CardRow(items: List<T>, key: (T) -> Any, modifier: Modifier = Modifier, 
 fun PlatformBadge(p: Platform, modifier: Modifier = Modifier, large: Boolean = false) {
     Text(
         p.label.uppercase(),
-        modifier.background(Color(p.color), RoundedCornerShape(4.dp)).padding(horizontal = if (large) 7.dp else 5.dp, vertical = if (large) 2.dp else 1.dp),
+        modifier.background(Color(p.color), Radius.Tiny).padding(horizontal = if (large) 7.dp else 5.dp, vertical = if (large) 2.dp else 1.dp),
         color = if (p == Platform.HULU) Color.Black else Color.White,
         fontSize = if (large) 11.sp else 8.5.sp, fontWeight = FontWeight.Black, letterSpacing = 0.6.sp, maxLines = 1,
     )
 }
 
 @Composable
-private fun CornerBadge(text: String, modifier: Modifier = Modifier, color: Color = Color(0xD9000000)) {
+private fun CornerBadge(text: String, modifier: Modifier = Modifier, color: Color = SokoulColors.black(0.85f)) {
     Text(
-        text, modifier.background(color, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
+        text, modifier.background(color, Radius.Tiny).padding(horizontal = 5.dp, vertical = 1.dp),
         color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1,
     )
 }
@@ -177,7 +179,7 @@ fun Work.metaLine(withVersions: Boolean = true): String = listOfNotNull(
 @Composable
 private fun PosterFallback(title: String) {
     Box(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF262638), Color(0xFF15151F)))),
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SokoulColors.PlaceholderTop, SokoulColors.PlaceholderBottom))),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -209,7 +211,7 @@ fun WorkCard(
         FocusSurface(
             onClick = onClick, onLongClick = onLongClick, onFocus = onFocus,
             modifier = Modifier.onFocusChanged { focusedState = it.isFocused },
-            shape = RoundedCornerShape(10.dp), focusScale = 1.08f, borderWidth = 2.dp, color = SokoulColors.SurfaceHigh,
+            shape = Radius.Card, focusScale = 1.08f, borderWidth = 2.dp, color = SokoulColors.SurfaceHigh,
         ) { _ ->
             Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
                 NetImage(tmdbSized(work.poster, "w342"), work.title, Modifier.fillMaxSize()) { PosterFallback(work.title) }
@@ -231,7 +233,7 @@ fun WorkCard(
 
 @Composable
 fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(4.dp).background(Color(0x80000000))) {
+    Box(modifier.fillMaxWidth().height(4.dp).background(SokoulColors.black(0.5f))) {
         Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0.02f, 1f)).background(SokoulColors.Accent))
     }
 }
@@ -249,12 +251,12 @@ fun LandscapeCard(
     onLongClick: (() -> Unit)? = null,
 ) {
     Column(modifier.width(width)) {
-        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = RoundedCornerShape(12.dp), focusScale = 1.06f, borderWidth = 2.dp) { focused ->
+        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card, focusScale = 1.06f, borderWidth = 2.dp) { focused ->
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 val img = image ?: tmdbSized(work.backdrop, "w780")
                 if (img != null) NetImage(img, work.title, Modifier.fillMaxSize()) { PosterFallback(work.title) }
                 else NetImage(tmdbSized(work.poster, "w342"), work.title, Modifier.fillMaxSize(), alignment = Alignment.TopCenter) { PosterFallback(work.title) }
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color(0xE6000000))))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to SokoulColors.black(0.9f))))
                 Row(Modifier.align(Alignment.BottomStart).padding(10.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     if (work.logo != null) {
                         NetImage(
@@ -268,7 +270,7 @@ fun LandscapeCard(
                     Spacer(Modifier.weight(1f))
                     if (work.resume != null) {
                         Box(
-                            Modifier.size(30.dp).background(if (focused) Color.White else Color(0x99000000), RoundedCornerShape(50)),
+                            Modifier.size(30.dp).background(if (focused) Color.White else SokoulColors.black(0.6f), Radius.Pill),
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp), tint = if (focused) Color.Black else Color.White) }
                     }
@@ -295,7 +297,7 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = M
             Text(
                 rank.toString(), Modifier.offset(x = 14.dp, y = 10.dp), maxLines = 1, softWrap = false,
                 style = TextStyle(fontSize = size, fontWeight = FontWeight.Black, letterSpacing = (-6).sp, drawStyle = Stroke(width = 5f)),
-                color = Color(0xFF8A8AA3),
+                color = SokoulColors.TextSecondary,
             )
         }
         WorkCard(work, onClick, width = l.poster, onFocus = onFocus, onLongClick = onLongClick)
@@ -306,10 +308,10 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = M
 @Composable
 fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null) {
     val l = LocalLayout.current
-    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(l.landscape), shape = RoundedCornerShape(12.dp), focusScale = 1.06f, borderWidth = 2.dp) { _ ->
+    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(l.landscape), shape = Radius.Card, focusScale = 1.06f, borderWidth = 2.dp) { _ ->
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             NetImage(tmdbSized(saga.backdrop, "w780") ?: tmdbSized(saga.poster, "w342"), saga.name, Modifier.fillMaxSize()) { PosterFallback(saga.name) }
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.3f to Color(0x22000000), 1f to Color(0xF0000000))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.3f to SokoulColors.black(0.13f), 1f to SokoulColors.black(0.94f))))
             Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
                 Text("SAGA", color = SokoulColors.Gold, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
                 Text(saga.name.replace(" - Saga", "").replace(" (Collection)", ""), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -324,7 +326,7 @@ fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null)
 fun PlatformTileView(tile: PlatformTile, onClick: () -> Unit, onFocus: (() -> Unit)? = null) {
     val l = LocalLayout.current
     val w = if (l.isCompact) 132.dp else (l.landscape * 0.72f)
-    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(w), shape = RoundedCornerShape(14.dp), focusScale = 1.07f, borderWidth = 2.dp) { focused ->
+    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = Modifier.width(w), shape = Radius.Card, focusScale = 1.07f, borderWidth = 2.dp) { focused ->
         val p = tile.platform
         Box(
             Modifier.fillMaxWidth().aspectRatio(16f / 9f)
@@ -334,7 +336,7 @@ fun PlatformTileView(tile: PlatformTile, onClick: () -> Unit, onFocus: (() -> Un
             // reflet
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(if (focused) 0x40FFFFFF else 0x22FFFFFF), Color.Transparent))))
             Text(
-                p.label, color = if (p == Platform.HULU) Color(0xFF0B1F14) else Color.White,
+                p.label, color = if (p == Platform.HULU) SokoulColors.OnLight else Color.White,
                 fontSize = if (l.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp, maxLines = 1,
             )
         }
@@ -347,14 +349,14 @@ fun SeeAllCard(onClick: () -> Unit, landscape: Boolean = false) {
     val l = LocalLayout.current
     FocusSurface(
         onClick = onClick, modifier = Modifier.width(if (landscape) l.landscape * 0.6f else l.poster),
-        shape = RoundedCornerShape(10.dp), color = SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher, focusScale = 1.08f, borderWidth = 2.dp,
+        shape = Radius.Card, color = SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher, focusScale = 1.08f, borderWidth = 2.dp,
     ) { focused ->
         Column(
             Modifier.fillMaxWidth().aspectRatio(if (landscape) 1.2f else 2f / 3f),
             verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
-                Modifier.size(44.dp).background(if (focused) SokoulColors.Accent else SokoulColors.SurfaceHigher, RoundedCornerShape(50)),
+                Modifier.size(44.dp).background(if (focused) SokoulColors.Accent else SokoulColors.SurfaceHigher, Radius.Pill),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Color.White) }
             Text("Tout voir", Modifier.padding(top = 10.dp), style = MaterialTheme.typography.titleSmall)

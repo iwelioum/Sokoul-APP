@@ -13,7 +13,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +33,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.theme.SokoulColors
 
 private fun isSelectKey(code: Int) = code == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
@@ -95,7 +95,19 @@ private class PressState {
 }
 
 /**
- * Surface focalisable : agrandissement + liseré blanc au focus, lisible à 3 mètres.
+ * Les trois seuls effets de focus de l'app (un même geste = un même retour visuel partout) :
+ * - [Card] : affiches, vignettes, tuiles — agrandissement léger + liseré blanc ;
+ * - [Row] : lignes de liste (chaînes, réglages, épisodes, guide) — fond éclairci + barre d'accent à gauche ;
+ * - [Chip] : onglets, pastilles, boutons — fond blanc, texte sombre (le contenu lit `focused`).
+ */
+enum class FocusStyle(val scale: Float, val border: Dp, val accentBar: Boolean) {
+    Card(1.06f, 2.dp, false),
+    Row(1f, 0.dp, true),
+    Chip(1.05f, 0.dp, false),
+}
+
+/**
+ * Surface focalisable, dessinée selon un [FocusStyle].
  * Transition douce (ressort pour l'échelle, fondu pour la couleur et le liseré) calculée
  * à l'étape de dessin : aucune recomposition pendant l'animation.
  */
@@ -103,12 +115,18 @@ private class PressState {
 fun FocusSurface(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    style: FocusStyle = FocusStyle.Card,
     onLongClick: (() -> Unit)? = null,
-    shape: Shape = RoundedCornerShape(12.dp),
-    color: Color = SokoulColors.SurfaceHigh,
-    focusedColor: Color = color,
-    focusScale: Float = 1.06f,
-    borderWidth: Dp = 2.5.dp,
+    shape: Shape = if (style == FocusStyle.Chip) Radius.Pill else Radius.Card,
+    color: Color = if (style == FocusStyle.Card) SokoulColors.SurfaceHigh else Color.Transparent,
+    focusedColor: Color = when (style) {
+        FocusStyle.Card -> color
+        FocusStyle.Row -> SokoulColors.SurfaceHigher
+        FocusStyle.Chip -> SokoulColors.Focus
+    },
+    /** Obsolète (phase 9) : ignoré, le [style] décide. À retirer quand tous les appels sont migrés. */
+    @Suppress("UNUSED_PARAMETER") focusScale: Float? = null,
+    @Suppress("UNUSED_PARAMETER") borderWidth: Dp? = null,
     onFocus: (() -> Unit)? = null,
     content: @Composable (focused: Boolean) -> Unit,
 ) {
@@ -124,8 +142,10 @@ fun FocusSurface(
     Box(
         modifier
             .graphicsLayer {
-                val s = 1f + (focusScale - 1f) * progress.value
-                scaleX = s; scaleY = s
+                if (style.scale != 1f) {
+                    val s = 1f + (style.scale - 1f) * progress.value
+                    scaleX = s; scaleY = s
+                }
             }
             .onFocusChanged {
                 if (it.isFocused && !focused) onFocus?.invoke()
@@ -133,11 +153,19 @@ fun FocusSurface(
             }
             .drawWithCache {
                 val outline = shape.createOutline(size, layoutDirection, this)
-                val stroke = Stroke(borderWidth.toPx())
+                val stroke = Stroke(style.border.toPx())
+                val bar = FocusBarWidth.toPx()
                 onDrawBehind {
                     val p = progress.value.coerceIn(0f, 1f)
                     drawOutline(outline, androidx.compose.ui.graphics.lerp(bg, fbg, p))
-                    if (p > 0.01f) drawOutline(outline, SokoulColors.Focus.copy(alpha = p), style = stroke)
+                    if (p > 0.01f) {
+                        if (style.border.value > 0f) drawOutline(outline, SokoulColors.Focus.copy(alpha = p), style = stroke)
+                        if (style.accentBar) drawRect(
+                            SokoulColors.Accent.copy(alpha = p),
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, size.height * 0.2f),
+                            size = androidx.compose.ui.geometry.Size(bar, size.height * 0.6f),
+                        )
+                    }
                 }
             }
             .clip(shape)
@@ -145,6 +173,15 @@ fun FocusSurface(
     ) {
         content(focused)
     }
+}
+
+private val FocusBarWidth = 3.dp
+
+/** Couleur du texte et des icônes posés sur une surface [FocusStyle.Chip]. */
+fun onChip(focused: Boolean, enabled: Boolean = true): Color = when {
+    !enabled -> SokoulColors.TextMuted
+    focused -> SokoulColors.OnLight
+    else -> SokoulColors.TextPrimary
 }
 
 /** Mémorise un MutableInteractionSource (utile pour les champs texte). */

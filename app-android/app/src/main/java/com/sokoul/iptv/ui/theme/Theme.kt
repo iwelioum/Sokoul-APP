@@ -48,6 +48,20 @@ object SokoulColors {
     val OnLight = Color(0xFF0A0A0F)
     /** Teinte d'accent très légère (élément courant dans une liste). */
     val AccentTint = Color(0x147C6CFF)
+    /** Fin du dégradé de la marque (logo S). */
+    val AccentEnd = Color(0xFFB36CFF)
+    /** Jaune IMDb (badge de note). */
+    val Imdb = Color(0xFFF5C518)
+    /** Dégradé des cartes sans image. */
+    val PlaceholderTop = Color(0xFF262638)
+    val PlaceholderBottom = Color(0xFF15151F)
+
+    /** Fond d'écran assombri (dégradés et voiles posés sur les images). */
+    fun bg(alpha: Float) = Background.copy(alpha = alpha)
+    /** Noir transparent (ombres et voiles sur la vidéo). */
+    fun black(alpha: Float) = Color.Black.copy(alpha = alpha)
+    /** Blanc transparent (verre, traits fins). */
+    fun white(alpha: Float) = Color.White.copy(alpha = alpha)
 }
 
 private val scheme = darkColorScheme(

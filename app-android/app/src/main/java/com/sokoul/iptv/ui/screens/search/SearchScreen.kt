@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.search
 
+import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer

@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.browse
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -220,7 +222,7 @@ fun BrowseGridScreen(nav: NavHostController, title: String, spec: String) {
         }
         if (l.isTouch) {
             Box(
-                Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(RoundedCornerShape(50)).background(Color(0x80000000))
+                Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(Radius.Pill).background(SokoulColors.black(0.5f))
                     .dpadClickable({ nav.popBackStack() }),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = Color.White) }
@@ -279,15 +281,15 @@ private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: 
         return
     }
     val h = (l.heightDp * if (l.isCompact) 0.36f else 0.42f).dp
-    Box(Modifier.fillMaxWidth().height(h).padding(bottom = 8.dp).clip(RoundedCornerShape(if (l.isCompact) 0.dp else 16.dp))) {
+    Box(Modifier.fillMaxWidth().height(h).padding(bottom = 8.dp).clip(if (l.isCompact) Radius.None else Radius.Panel)) {
         val p = header!!.platform
         if (p != null) {
             Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(p.color), Color(p.accent), SokoulColors.Background))))
         } else {
             NetImage(tmdbSized(header.backdrop, "w1280"), null, Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xE60A0A0F), 0.6f to Color(0x660A0A0F), 1f to Color.Transparent)))
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.bg(0.9f), 0.6f to SokoulColors.bg(0.4f), 1f to Color.Transparent)))
         }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color(0xCC0A0A0F))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to SokoulColors.bg(0.8f))))
         Column(Modifier.align(Alignment.BottomStart).padding(20.dp).widthIn(max = l.heroTextWidth)) {
             if (p != null) PlatformBadge(p, Modifier.padding(bottom = 10.dp), large = true)
             else Text("SAGA", color = SokoulColors.Gold, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black)

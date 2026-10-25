@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.playlist
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -210,7 +212,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
 
             if (error != null) {
                 Row(
-                    Modifier.fillMaxWidth().background(SokoulColors.Live.copy(alpha = 0.15f), RoundedCornerShape(12.dp)).padding(14.dp),
+                    Modifier.fillMaxWidth().background(SokoulColors.Live.copy(alpha = 0.15f), Radius.Card).padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Default.ErrorOutline, null, tint = SokoulColors.Live)

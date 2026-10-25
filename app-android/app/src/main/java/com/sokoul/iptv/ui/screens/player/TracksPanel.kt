@@ -92,7 +92,7 @@ private fun TrackColumn(title: String, icon: ImageVector, options: List<TrackOpt
                     onClick = { onPick(o) },
                     modifier = Modifier.fillMaxWidth().then(if (i == selectedIndex) Modifier.focusRequester(entry) else Modifier)
                         .semantics { contentDescription = o.label + if (o.selected) ", sélectionné" else "" },
-                    shape = Radius.Medium, color = Color.Transparent, focusedColor = Color.White, focusScale = 1.03f, borderWidth = 0.dp,
+                    shape = Radius.Card, color = Color.Transparent, focusedColor = Color.White, focusScale = 1.03f, borderWidth = 0.dp,
                 ) { focused ->
                     val fg = if (focused) SokoulColors.OnLight else if (o.selected) SokoulColors.TextPrimary else SokoulColors.TextSecondary
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {

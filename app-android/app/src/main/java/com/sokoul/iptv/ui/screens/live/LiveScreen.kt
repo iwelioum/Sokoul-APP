@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.live
 
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -345,7 +347,7 @@ private fun ChannelRow(
     FocusSurface(
         onClick = onClick, onLongClick = onLongClick, onFocus = onFocus,
         modifier = modifier.fillMaxWidth(), color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigher,
-        shape = RoundedCornerShape(10.dp), focusScale = 1.015f, borderWidth = 2.dp,
+        shape = Radius.Card, focusScale = 1.015f, borderWidth = 2.dp,
     ) { focused ->
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -362,8 +364,8 @@ private fun ChannelRow(
                 if (now != null) {
                     Text(now.title, style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val f = ((time - now.start).toFloat() / (now.end - now.start).coerceAtLeast(1)).coerceIn(0f, 1f)
-                    Box(Modifier.padding(top = 4.dp).fillMaxWidth(0.6f).height(3.dp).background(Color(0x22FFFFFF), RoundedCornerShape(2.dp))) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(SokoulColors.Accent, RoundedCornerShape(2.dp)))
+                    Box(Modifier.padding(top = 4.dp).fillMaxWidth(0.6f).height(3.dp).background(SokoulColors.white(0.13f), Radius.Tiny)) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(SokoulColors.Accent, Radius.Tiny))
                     }
                 }
             }
@@ -392,8 +394,8 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modif
             Text("EN CE MOMENT", color = SokoulColors.Live, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             Text(now.title, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(formatRange(now.start, now.end) + (now.episode?.let { "  ·  $it" } ?: ""), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-            Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(4.dp).background(Color(0x22FFFFFF), RoundedCornerShape(2.dp))) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(nn.progress(time)).background(SokoulColors.Accent, RoundedCornerShape(2.dp)))
+            Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(4.dp).background(SokoulColors.white(0.13f), Radius.Tiny)) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(nn.progress(time)).background(SokoulColors.Accent, Radius.Tiny))
             }
             now.description?.let { Text(it, color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 7, overflow = TextOverflow.Ellipsis) }
         } else {

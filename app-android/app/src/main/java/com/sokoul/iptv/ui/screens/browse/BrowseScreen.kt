@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.browse
 
+import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -246,7 +247,7 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
             ) {
                 item("hero") {
                     if (ui.loading && hero.isEmpty()) {
-                        Box(Modifier.fillMaxWidth().height(l.heroHeight).shimmer(RoundedCornerShape(0.dp)))
+                        Box(Modifier.fillMaxWidth().height(l.heroHeight).shimmer(Radius.None))
                     } else if (hero.isNotEmpty()) {
                         HeroCarousel(
                             modifier = Modifier.graphicsLayer { alpha = if (spotShown.value >= 1f) 0f else 1f },
@@ -425,7 +426,7 @@ private fun RowView(
 @Composable
 private fun Chip(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, accent: Boolean = false, onFocus: () -> Unit = {}, onClick: () -> Unit) {
     FocusSurface(
-        onClick = onClick, onFocus = onFocus, shape = RoundedCornerShape(50), focusScale = 1.06f, borderWidth = 2.dp,
+        onClick = onClick, onFocus = onFocus, shape = Radius.Pill, focusScale = 1.06f, borderWidth = 2.dp,
         color = if (accent) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher,
     ) { _ ->
         Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -477,7 +478,7 @@ private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier
                 } else if (s?.platform != null) {
                     Box(Modifier.fillMaxWidth(0.68f).height(height).align(Alignment.TopEnd).background(Brush.linearGradient(listOf(Color(s.platform.color), Color(s.platform.accent)))))
                 }
-                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0.30f to SokoulColors.Background, 0.55f to Color(0xB30A0A0F), 0.80f to Color.Transparent)))
+                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0.30f to SokoulColors.Background, 0.55f to SokoulColors.bg(0.7f), 0.80f to Color.Transparent)))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.65f to Color.Transparent, 1f to SokoulColors.Background)))
                 }
                 if (s != null) {
@@ -517,13 +518,13 @@ private fun TopBar(title: String, firstIndex: Int, offset: Int, heroPx: Float, k
     Row(
         Modifier.fillMaxWidth()
             .background(SokoulColors.Background.copy(alpha = solid))
-            .background(Brush.verticalGradient(listOf(Color(0x99000000).copy(alpha = 0.6f * (1f - solid)), Color.Transparent)))
+            .background(Brush.verticalGradient(listOf(SokoulColors.black(0.6f).copy(alpha = 0.6f * (1f - solid)), Color.Transparent)))
             .statusBarsPadding().padding(horizontal = l.margin, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // le rail latéral (tablette) porte déjà le logo
         if (l.isCompact) Box(
-            Modifier.padding(end = 12.dp).size(30.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, Color(0xFFB36CFF))), RoundedCornerShape(8.dp)),
+            Modifier.padding(end = 12.dp).size(30.dp).background(Brush.linearGradient(listOf(SokoulColors.Accent, SokoulColors.AccentEnd)), Radius.Card),
             contentAlignment = Alignment.Center,
         ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp) }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1)
@@ -537,7 +538,7 @@ private fun TopBar(title: String, firstIndex: Int, offset: Int, heroPx: Float, k
 
 @Composable
 private fun TopIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Box(Modifier.size(44.dp).clip(RoundedCornerShape(50)).dpadClickable(onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(44.dp).clip(Radius.Pill).dpadClickable(onClick), contentAlignment = Alignment.Center) {
         Icon(icon, label, Modifier.size(24.dp), tint = Color.White)
     }
 }
@@ -548,7 +549,7 @@ private fun ExpiryBanner(expiresAt: Long) {
     val l = LocalLayout.current
     if (expiresAt - now > 7 * 24 * 3600_000L) return
     Row(
-        Modifier.padding(horizontal = l.margin, vertical = 6.dp).background(SokoulColors.Warning.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
+        Modifier.padding(horizontal = l.margin, vertical = 6.dp).background(SokoulColors.Warning.copy(alpha = 0.14f), Radius.Card)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
