@@ -78,6 +78,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
@@ -194,10 +196,18 @@ fun DetailScaffold(
     val entered = rememberSaveable { mutableStateOf(reduced) }
     LaunchedEffect(Unit) { delay(Motion.STAGGER * 8L + Motion.MEDIUM); entered.value = true }
 
-    val kb = remember { Animatable(1f) }
-    LaunchedEffect(hero.backdrop, reduced) {
-        if (reduced) return@LaunchedEffect
-        kb.snapTo(1f); kb.animateTo(1.08f, tween(26_000, easing = LinearEasing))
+    val heroPx = with(density) { l.heightDp.dp.toPx() }
+    // 0 = premier écran, 1 = sections au premier plan (fond assombri)
+    val depth by remember { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else (listState.firstVisibleItemScrollOffset / (heroPx * 0.5f)).coerceIn(0f, 1f) } }
+    val deep by remember { derivedStateOf { depth > 0f } }
+
+    // Ken Burns : lent zoom du fond, une seule fois ; en pause dès qu'on descend dans la fiche
+    // (le fond est alors assombri et le défilement doit rester fluide sur les box)
+    val kb = remember(hero.backdrop) { Animatable(1f) }
+    LaunchedEffect(kb, reduced, deep) {
+        if (reduced || deep || kb.value >= KB_MAX) return@LaunchedEffect
+        val left = ((KB_MAX - kb.value) / (KB_MAX - 1f) * KB_MS).toInt().coerceAtLeast(1)
+        kb.animateTo(KB_MAX, tween(left, easing = LinearEasing))
     }
 
     if (l.isCompact) {
@@ -205,9 +215,6 @@ fun DetailScaffold(
         return
     }
 
-    val heroPx = with(density) { l.heightDp.dp.toPx() }
-    // 0 = premier écran, 1 = sections au premier plan (fond assombri et flouté)
-    val depth by remember { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else (listState.firstVisibleItemScrollOffset / (heroPx * 0.5f)).coerceIn(0f, 1f) } }
     // défilement piloté par le focus : en-tête → tout en haut ; sections → placées vers le haut de l'écran
     val heroFocused = remember { booleanArrayOf(true) }
     val spec = remember {
@@ -256,44 +263,55 @@ fun DetailScaffold(
     }
 }
 
-/** Fond plein cadre : Ken Burns, dégradés de lisibilité, assombri et flouté quand on descend. */
+private const val KB_MAX = 1.08f
+private const val KB_MS = 26_000
+
+/** Fond plein cadre : Ken Burns, dégradés de lisibilité, assombri quand on descend. */
 @Composable
 private fun DetailBackdrop(hero: DetailHeroData, kb: Animatable<Float, *>, depthProvider: () -> Float, reduced: Boolean) {
     val img = hero.backdrop
-    Box(Modifier.fillMaxSize()) {
+    // Tout le fond (image + dégradés) est rendu une fois dans une texture (calque matériel) : au défilement,
+    // seule l'opacité du calque change, sans redessiner l'image ni les dégradés plein écran (mesuré : c'était
+    // la cause des images en retard sur Google TV Streamer). Le fond s'assombrit en laissant voir le noir derrière.
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            compositingStrategy = CompositingStrategy.Offscreen
+            alpha = 1f - 0.7f * depthProvider()
+            // Ken Burns appliqué à la texture entière (dégradés compris) : agrandir une texture prête ne la redessine pas
+            scaleX = kb.value; scaleY = kb.value
+        }
+    ) {
         if (img != null) {
-            Box(
-                Modifier.fillMaxSize().clipToBounds().graphicsLayer {
-                    val d = depthProvider()
-                    scaleX = kb.value; scaleY = kb.value
-                    alpha = 1f - 0.55f * d
-                    // flou par paliers (moins de travail pour le GPU des box) ; Android 12+ uniquement
-                    val r = if (reduced || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) 0f else ((d * 6).roundToInt() * 4).toFloat()
-                    renderEffect = if (r > 0f) BlurEffect(r, r, TileMode.Clamp) else null
-                },
-            ) {
-                // image de la carte (déjà en cache) d'abord, la version haute définition par-dessus en fondu
-                NetImage(tmdbSized(img, "w780"), null, Modifier.fillMaxSize())
-                NetImage(tmdbSized(img, "w1280"), null, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize()) {
+                // image de la carte (déjà en cache) d'abord ; dès que la haute définition est prête, la petite
+                // n'est plus dessinée (une seule image plein écran à rendre)
+                var hiReady by remember(img) { mutableStateOf(false) }
+                if (!hiReady) NetImage(tmdbSized(img, "w780"), null, Modifier.fillMaxSize())
+                coil.compose.AsyncImage(
+                    tmdbSized(img, "w1280"), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                    onSuccess = { hiReady = true },
+                )
             }
         } else if (hero.poster != null) {
             // pas de fond : l'affiche floutée en plein cadre, puis l'affiche nette à droite
             NetImage(tmdbSized(hero.poster, "w342"), null, Modifier.fillMaxSize().graphicsLayer {
                 alpha = 0.35f
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) renderEffect = BlurEffect(60f, 60f, TileMode.Clamp)
+                if (!reduced && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) renderEffect = BlurEffect(60f, 60f, TileMode.Clamp)
             })
             val l = LocalLayout.current
             NetImage(
                 tmdbSized(hero.poster, "w500"), hero.title,
-                Modifier.align(Alignment.CenterEnd).padding(end = l.margin * 2).fillMaxHeight(0.72f).aspectRatio(2f / 3f)
-                    .graphicsLayer { alpha = 1f - depthProvider() }.clip(Radius.Large),
+                Modifier.align(Alignment.CenterEnd).padding(end = l.margin * 2).fillMaxHeight(0.72f).aspectRatio(2f / 3f).clip(Radius.Large),
             )
         }
-        // lisibilité du texte : à gauche et en bas
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.Background, 0.34f to SokoulColors.Background.copy(alpha = 0.86f), 0.68f to Color.Transparent)))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.42f to Color.Transparent, 1f to SokoulColors.Background)))
-        // voile supplémentaire quand les sections passent au premier plan
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = depthProvider() }.background(SokoulColors.Background.copy(alpha = 0.55f)))
+        // lisibilité du texte : dégradés à gauche et en bas (dans la même texture que l'image)
+        Box(
+            Modifier.fillMaxSize().drawWithCache {
+                val left = Brush.horizontalGradient(0f to SokoulColors.Background, 0.34f to SokoulColors.Background.copy(alpha = 0.86f), 0.68f to Color.Transparent)
+                val bottom = Brush.verticalGradient(0.42f to Color.Transparent, 1f to SokoulColors.Background)
+                onDrawBehind { drawRect(left); drawRect(bottom) }
+            }
+        )
     }
 }
 

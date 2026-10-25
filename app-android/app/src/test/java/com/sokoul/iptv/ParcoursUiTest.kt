@@ -75,7 +75,7 @@ class ParcoursUiTest {
     @Test fun `erreur de lecture le bouton Reessayer prend le focus`() {
         var retried = 0
         rule.setContent {
-            StatusOverlay(StreamState.Failed("Serveur injoignable"), null, { 0L }, remember { FocusRequester() }, { retried++ }, {})
+            StatusOverlay(StreamState.Failed("Serveur injoignable"), null, remember { FocusRequester() }, { retried++ }, {})
         }
         rule.mainClock.advanceTimeBy(300)
         rule.onNodeWithText("Réessayer").assertIsFocused()
@@ -88,7 +88,7 @@ class ParcoursUiTest {
         var retried = 0
         val until = System.currentTimeMillis() + 30_000
         rule.setContent {
-            StatusOverlay(StreamState.Failed("Refus 403", refused = true, retryAtMs = until), null, { 30_000L }, remember { FocusRequester() }, { retried++ }, {})
+            StatusOverlay(StreamState.Failed("Refus 403", refused = true, retryAtMs = until), null, remember { FocusRequester() }, { retried++ }, {})
         }
         rule.mainClock.advanceTimeBy(300)
         rule.onNodeWithText("Le fournisseur refuse la connexion").assertExists()
@@ -109,17 +109,15 @@ class ParcoursUiTest {
         val scrubber = FocusRequester()
         rule.setContent {
             VodControls(
-                ui = PlayerUi(title = "Film", subtitle = "S1 · É3"), position = 60_000, duration = 600_000, preview = null, buffering = false,
-                scrubberFocus = scrubber, firstButtonFocus = remember { FocusRequester() },
-                actions = listOf(
-                    PlayerAction("Pause", Icons.Default.PlayArrow, primary = true) { clicked += "Pause" },
-                    PlayerAction("Sous-titres", Icons.Default.Subtitles) { clicked += "Sous-titres" },
-                ),
-                onSeekStep = { seeks += it }, onSeekTo = {}, onPlayPause = { clicked += "OK" }, onInteract = {},
+                position = 60_000, duration = 600_000, preview = null, buffering = false, playing = true,
+                scrubberFocus = scrubber, playFocus = remember { FocusRequester() },
+                onBack10 = {}, onPlayPause = { clicked += "Pause" }, onFwd30 = {},
+                pills = listOf(PlayerAction("Sous-titres", Icons.Default.Subtitles) { clicked += "Sous-titres" }),
+                onSeekStep = { seeks += it }, onSeekTo = {}, onInteract = {},
             )
         }
         rule.runOnIdle { scrubber.requestFocus() }
-        rule.onNodeWithContentDescription("Position de lecture").assertIsFocused()
+        rule.onNodeWithContentDescription("Position de lecture", substring = true).assertIsFocused()
         // ◀ ▶ sur la barre = recul / avance
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
         rule.onRoot().performKeyInput { pressKey(Key.DirectionLeft) }
@@ -128,14 +126,15 @@ class ParcoursUiTest {
         rule.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         rule.onNodeWithContentDescription("Pause").assertIsFocused()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
         rule.onNodeWithContentDescription("Sous-titres").assertIsFocused()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         rule.runOnIdle { assertEquals(listOf("Sous-titres"), clicked) }
         // ▲ : retour sur la barre, OK = lecture/pause
         rule.onRoot().performKeyInput { pressKey(Key.DirectionUp) }
-        rule.onNodeWithContentDescription("Position de lecture").assertIsFocused()
+        rule.onNodeWithContentDescription("Position de lecture", substring = true).assertIsFocused()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.runOnIdle { assertEquals(listOf("Sous-titres", "OK"), clicked) }
+        rule.runOnIdle { assertEquals(listOf("Sous-titres", "Pause"), clicked) }
     }
 
     @Composable

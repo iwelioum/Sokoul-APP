@@ -74,6 +74,10 @@ data class PlayerUi(
     val currentSe: Pair<Int, Int>? = null,
     /** Fin d'épisode sans lecture automatique : la carte « Épisode suivant » reste affichée. */
     val endedWithNext: Boolean = false,
+    /** Fond de la série : image de secours de la carte « Épisode suivant » et du panneau des épisodes. */
+    val seriesBackdrop: String? = null,
+    /** Résumé de l'épisode en cours (écran de pause). */
+    val overview: String? = null,
 )
 
 @HiltViewModel
@@ -263,7 +267,7 @@ class PlayerViewModel @Inject constructor(
             it.copy(
                 title = m.title, subtitle = listOfNotNull(m.year?.toString(), m.quality, m.language).joinToString(" · ").ifEmpty { null },
                 image = m.poster, isLive = false, resumedFromMs = startMs,
-                versionLabel = if (movieVersions.size > 1) versionLabel(m) else null,
+                versionLabel = if (movieVersions.size > 1) versionLabel(m) else null, seriesBackdrop = null, overview = null,
             )
         }
         play(resolver.movie(p, m), m.title, startMs)
@@ -453,6 +457,7 @@ class PlayerViewModel @Inject constructor(
                 title = title, subtitle = "S${e.season} · É${e.episode} · $clean", image = e.image ?: series?.poster,
                 isLive = false, channel = null, nextEpisode = EpisodeResolver.nextAfter(episodes, e.season to e.episode),
                 resumedFromMs = resume, currentSe = e.season to e.episode, endedWithNext = false,
+                seriesBackdrop = series?.backdrop ?: series?.poster, overview = e.plot?.takeIf { it.isNotBlank() } ?: series?.plot,
             )
         }
         play(resolver.episode(p, e), e.title, resume)
@@ -573,9 +578,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun describe(f: Format, type: Int): String {
-        val lang = f.language?.let { java.util.Locale(it).getDisplayLanguage(java.util.Locale.FRENCH).replaceFirstChar { c -> c.uppercase() } }
+        val lang = trackLanguageName(f.language)
         val parts = listOfNotNull(
-            f.label ?: lang ?: "Piste",
+            f.label?.takeIf { it.isNotBlank() } ?: lang ?: if (type == C.TRACK_TYPE_AUDIO) "Piste principale" else "Sous-titres",
             if (type == C.TRACK_TYPE_AUDIO) when (f.channelCount) { 1 -> "mono"; 2 -> "stéréo"; 6 -> "5.1"; 8 -> "7.1"; else -> null } else null,
             f.sampleMimeType?.substringAfter('/')?.uppercase()?.replace("MP4A-LATM", "AAC"),
         )
@@ -628,4 +633,14 @@ class PlayerViewModel @Inject constructor(
         sp?.release()
         super.onCleared()
     }
+}
+
+/**
+ * Nom français d'une langue de piste (« fre » / « fr » → « Français »). Null pour les codes sans langue
+ * (« und » indéterminée, « mul », « zxx ») ou inconnus : on n'affiche jamais un code brut comme « Und ».
+ */
+internal fun trackLanguageName(code: String?): String? {
+    val c = code?.trim()?.lowercase()?.takeIf { it.isNotEmpty() && it !in setOf("und", "mul", "zxx", "mis", "qaa") } ?: return null
+    val name = java.util.Locale(c).getDisplayLanguage(java.util.Locale.FRENCH)
+    return name.takeIf { it.isNotBlank() && !it.equals(c, ignoreCase = true) }?.replaceFirstChar { it.uppercase() }
 }

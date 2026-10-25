@@ -174,20 +174,24 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
     Box(Modifier.fillMaxSize().graphicsLayer { clip = true }) {
         val image = if (compact) tmdbSized(w.poster, "w780") ?: tmdbSized(w.backdrop, "w1280")
         else tmdbSized(w.backdrop, "w1280") ?: tmdbSized(w.poster, "w780")
-        NetImage(
-            image, w.title,
+        // image + dégradés rendus une fois dans une texture (calque matériel) ; Ken Burns et parallaxe ne font
+        // que déplacer/agrandir cette texture : plus aucun dégradé plein écran redessiné à chaque image
+        // (mesuré sur Google TV Streamer : c'était la principale cause d'images en retard)
+        Box(
             Modifier.fillMaxSize().graphicsLayer {
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
                 scaleX = kb.value; scaleY = kb.value
                 // parallaxe : l'image glisse moins vite que la page
                 translationX = offset * size.width * 0.35f
-            },
-            alignment = if (compact) Alignment.TopCenter else Alignment.TopEnd,
-        )
-        if (compact) {
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x99000000), 0.18f to Color.Transparent, 0.55f to Color.Transparent, 0.86f to Color(0xF20A0A0F), 1f to SokoulColors.Background)))
-        } else {
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.Background, 0.30f to Color(0xD90A0A0F), 0.62f to Color.Transparent)))
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to SokoulColors.Background)))
+            }
+        ) {
+            NetImage(image, w.title, Modifier.fillMaxSize(), alignment = if (compact) Alignment.TopCenter else Alignment.TopEnd)
+            if (compact) {
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x99000000), 0.18f to Color.Transparent, 0.55f to Color.Transparent, 0.86f to Color(0xF20A0A0F), 1f to SokoulColors.Background)))
+            } else {
+                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.Background, 0.30f to Color(0xD90A0A0F), 0.62f to Color.Transparent)))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to SokoulColors.Background)))
+            }
         }
         // texte
         Column(

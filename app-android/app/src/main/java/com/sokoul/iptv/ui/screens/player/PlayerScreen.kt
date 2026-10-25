@@ -8,6 +8,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import com.sokoul.iptv.ui.theme.Motion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -39,6 +43,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPicture
@@ -114,7 +119,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-private enum class Menu { MAIN, AUDIO, SUBS, ASPECT, RECORD, INFO, VERSION }
+private enum class Menu { MAIN, ASPECT, RECORD, INFO, VERSION }
 
 private val resizeModes = listOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT to "Adapter",
@@ -156,10 +161,15 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     var seekPreview by remember { mutableStateOf<Long?>(null) }
     var nextCountdown by remember { mutableStateOf<Int?>(null) }
     var nextDismissedFor by remember { mutableStateOf<String?>(null) }
-    var seekFlash by remember { mutableStateOf<String?>(null) }
+    var tracksVisible by remember { mutableStateOf(false) }
+    // pause prolongée (TV) : écran « En pause » à la place de la barre
+    var pauseScreen by remember { mutableStateOf(false) }
+    // position au début d'un saut sans barre (pour afficher le cumul « +1 min 30 »)
+    var seekOrigin by remember { mutableLongStateOf(0L) }
+    val tracks by vm.tracks.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
     val scrubberFocus = remember { FocusRequester() }
-    val firstButtonFocus = remember { FocusRequester() }
+    val playFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
     val nextFocus = remember { FocusRequester() }
 
@@ -173,7 +183,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val showNextCard = !ui.isLive && ui.nextEpisode != null && ui.nextEpisode?.id != nextDismissedFor &&
         (ui.endedWithNext || nextCountdown != null)
     // un panneau ou une carte a le focus : les flèches servent à s'y déplacer
-    val modal = menu != null || episodesVisible || showNextCard || errorShown || ui.needsPin
+    val modal = menu != null || episodesVisible || tracksVisible || showNextCard || errorShown || ui.needsPin
 
     // --- intégration système : PiP, MediaSession, plein écran, arrière-plan ---
     DisposableEffect(Unit) {
@@ -211,9 +221,18 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     }
 
     // masquage automatique, jamais pendant une pause ni quand un panneau est ouvert
-    LaunchedEffect(infoVisible, infoTick, menu, listVisible, isPlaying, episodesVisible) {
-        if (infoVisible && menu == null && !listVisible && !episodesVisible && (isPlaying || ui.isLive)) {
+    LaunchedEffect(infoVisible, infoTick, menu, listVisible, isPlaying, episodesVisible, tracksVisible) {
+        if (infoVisible && menu == null && !listVisible && !episodesVisible && !tracksVisible && (isPlaying || ui.isLive)) {
             delay(if (ui.isLive) 6_000 else 5_000); infoVisible = false
+        }
+    }
+    // 10 s de pause sans toucher la télécommande : écran « En pause » (TV, à la demande seulement)
+    LaunchedEffect(isPlaying, infoTick, modal, streamState) {
+        pauseScreen = false
+        if (isTv && !ui.isLive && !isPlaying && !modal && exo != null && streamState is StreamState.Playing) {
+            delay(10_000)
+            pauseScreen = true
+            infoVisible = false
         }
     }
     LaunchedEffect(listVisible, listIndex) {
@@ -227,7 +246,6 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         }
     }
     LaunchedEffect(ui.channel?.id) { if (ui.isLive) showInfo() }
-    LaunchedEffect(seekFlash) { if (seekFlash != null) { delay(700); seekFlash = null } }
     // position / durée pour les contenus à la demande + compte à rebours de l'épisode suivant
     LaunchedEffect(exo, ui.isLive) {
         while (exo != null && !ui.isLive) {
@@ -253,6 +271,8 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
 
     // « Retour » : ferme d'abord ce qui est ouvert (panneau, liste, saisie, barre), sinon quitte le lecteur
     fun backConsumed(): Boolean = when {
+        pauseScreen -> { pauseScreen = false; showInfo(); true }
+        tracksVisible -> { tracksVisible = false; true }
         episodesVisible -> { episodesVisible = false; true }
         listVisible -> { listVisible = false; true }
         numberBuffer.isNotEmpty() -> { numberBuffer = ""; true }
@@ -260,7 +280,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         infoVisible && !ui.isLive && isTv -> { infoVisible = false; true }
         else -> false
     }
-    BackHandler(enabled = episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
+    BackHandler(enabled = pauseScreen || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
     // touche Retour interceptée avant Compose : sinon elle retire seulement le focus de la barre (télécommande « muette »)
     var backDownConsumed by remember { mutableStateOf(false) }
     // filet de sécurité : le lecteur ne reste jamais sans focus (hors menus, qui ont leur propre fenêtre)
@@ -271,12 +291,16 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         runCatching { if (infoVisible && !ui.isLive && !l.isTouch && !modal) scrubberFocus.requestFocus() else focus.requestFocus() }
     }
 
-    fun seekBy(deltaMs: Long) {
+    /**
+     * Saut avec aperçu : les appuis se cumulent puis le déplacement est appliqué une seule fois.
+     * [reveal] = afficher la barre (saut depuis la barre) ; sinon retour visuel latéral seulement.
+     */
+    fun seekBy(deltaMs: Long, reveal: Boolean = true) {
         val p = exo ?: return
+        if (seekPreview == null) seekOrigin = p.currentPosition
         val base = seekPreview ?: p.currentPosition
-        val target = (base + deltaMs).coerceIn(0, (p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE) - 1_000)
-        seekPreview = target
-        showInfo()
+        seekPreview = clampSeek(base + deltaMs, p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L)
+        if (reveal) showInfo() else infoTick++
     }
 
     fun playPause() {
@@ -295,6 +319,14 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     Box(
         Modifier.fillMaxSize().background(Color.Black)
             .onPreviewKeyEvent { e ->
+                // écran de pause : la première touche le ferme (OK reprend la lecture, les autres montrent la barre)
+                if (pauseScreen && e.type == KeyEventType.KeyDown) {
+                    val code = e.nativeKeyEvent.keyCode
+                    pauseScreen = false
+                    if (isSelect(code) || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY) playPause() else showInfo()
+                    backDownConsumed = code == KeyEvent.KEYCODE_BACK
+                    return@onPreviewKeyEvent true
+                }
                 if (e.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK && menu == null) {
                     if (e.type == KeyEventType.KeyDown) { backDownConsumed = e.nativeKeyEvent.repeatCount == 0 && backConsumed(); return@onPreviewKeyEvent backDownConsumed }
                     if (e.type == KeyEventType.KeyUp && backDownConsumed) { backDownConsumed = false; return@onPreviewKeyEvent true }
@@ -339,8 +371,8 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     // VOD : commandes affichées → la navigation au focus prend la main
                     if (infoVisible || !isDpad(code)) return@onKeyEvent false
                     when (code) {
-                        KeyEvent.KEYCODE_DPAD_LEFT -> { seekBy(-seekStep(repeat, back = true)); true }
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> { seekBy(seekStep(repeat, back = false)); true }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> { seekBy(-seekStep(repeat, back = true), reveal = false); true }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> { seekBy(seekStep(repeat, back = false), reveal = false); true }
                         KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { showInfo(); true }
                         else -> { if (repeat == 0) playPause(); true }
                     }
@@ -351,11 +383,8 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 detectTapGestures(
                     onTap = { if (infoVisible || listVisible) { infoVisible = false; listVisible = false } else showInfo() },
                     onDoubleTap = { offset ->
-                        if (!ui.isLive) {
-                            val back = offset.x < size.width / 2
-                            exo?.let { p -> p.seekTo((p.currentPosition + if (back) -10_000L else 30_000L).coerceAtLeast(0)) }
-                            seekFlash = if (back) "−10 s" else "+30 s"
-                        }
+                        // double-tap : même chemin que le D-pad (cumul, bornes, un seul déplacement)
+                        if (!ui.isLive) seekBy(if (offset.x < size.width / 2) -10_000L else 30_000L, reveal = false)
                     },
                 )
             }
@@ -381,7 +410,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         }
 
         if (!inPip) {
-            if (!ui.needsPin) StatusOverlay(streamState, ui.error, vm::providerWaitMs, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() })
+            if (!ui.needsPin) StatusOverlay(streamState, ui.error, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() })
             if (ui.needsPin) {
                 com.sokoul.iptv.ui.components.PinDialog(
                     "Contenu verrouillé — code parental",
@@ -391,34 +420,63 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 )
             }
 
-            // reprise : rappel discret en haut à gauche
-            if (!ui.isLive && ui.resumedFromMs > 0 && !infoVisible && !resumeHintDone) ResumeHint(ui.resumedFromMs, Modifier.align(Alignment.TopStart))
-            seekFlash?.let { SeekFlash(it, Modifier.align(Alignment.Center)) }
-            if (!ui.isLive && seekPreview != null && !infoVisible) SeekFlash(formatDuration(seekPreview ?: 0), Modifier.align(Alignment.Center))
+            // reprise : rappel discret en haut à gauche, qui glisse et s'efface
+            AnimatedVisibility(
+                !ui.isLive && ui.resumedFromMs > 0 && !infoVisible && !resumeHintDone && !pauseScreen, Modifier.align(Alignment.TopStart),
+                enter = slideInVertically(Motion.enter()) { -it / 2 } + fadeIn(Motion.enter()), exit = fadeOut(Motion.exit()),
+            ) { ResumeHint(ui.resumedFromMs) }
 
-            AnimatedVisibility(infoVisible && !listVisible && !episodesVisible && !errorShown, Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
+            // saut sans barre (D-pad, double-tap) : retour latéral cumulé
+            val previewTarget = seekPreview
+            AnimatedVisibility(
+                !ui.isLive && previewTarget != null && !infoVisible, Modifier.fillMaxHeight().align(if ((previewTarget ?: 0) >= seekOrigin) Alignment.CenterEnd else Alignment.CenterStart),
+                enter = fadeIn(Motion.enter()), exit = fadeOut(Motion.exit()),
+            ) {
+                var last by remember { mutableLongStateOf(0L) }
+                if (previewTarget != null) last = previewTarget
+                SeekFeedback(last - seekOrigin, last)
+            }
+
+            val controlsShown = infoVisible && !listVisible && !episodesVisible && !tracksVisible && !errorShown && !pauseScreen && !showNextCard
+            if (!ui.isLive) {
+                AnimatedVisibility(
+                    controlsShown, Modifier.align(Alignment.TopCenter),
+                    enter = slideInVertically(Motion.enter()) { -it / 3 } + fadeIn(Motion.enter()), exit = slideOutVertically(Motion.exit()) { -it / 3 } + fadeOut(Motion.exit()),
+                ) {
+                    VodTopBar(
+                        ui,
+                        leading = if (l.isTouch) listOf(
+                            PlayerAction("Retour", Icons.AutoMirrored.Filled.ArrowBack) { nav.popBackStack() },
+                            PlayerAction("Image dans l'image", Icons.Default.PictureInPicture) { (context as? MainActivity)?.enterPipIfPossible() },
+                        ) else emptyList(),
+                    )
+                }
+            }
+            AnimatedVisibility(
+                controlsShown, Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(Motion.enter()) { it / 4 } + fadeIn(Motion.enter()), exit = slideOutVertically(Motion.exit()) { it / 4 } + fadeOut(Motion.exit()),
+            ) {
                 if (ui.isLive) LiveInfoBar(ui) else VodControls(
-                    ui, position, duration, seekPreview,
+                    position, duration, seekPreview,
                     buffering = streamState is StreamState.Buffering,
-                    scrubberFocus = scrubberFocus, firstButtonFocus = firstButtonFocus,
-                    actions = vodActions(
-                        ui, isPlaying, l.isTouch, hasEpisodes = episodes.size > 1,
-                        onPlayPause = ::playPause,
-                        onRestart = { vm.restartFromBeginning() },
-                        onBack10 = { exo?.let { p -> p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0)) }; showInfo() },
-                        onFwd30 = { exo?.let { p -> p.seekTo(p.currentPosition + 30_000) }; showInfo() },
-                        onNext = { vm.playNextEpisode() },
-                        onEpisodes = { episodesVisible = true },
-                        onMenu = { m -> menu = m },
-                        resizeLabel = resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second,
-                    ),
-                    onSeekStep = ::seekBy,
-                    onSeekTo = { exo?.seekTo(it); showInfo() },
+                    playing = isPlaying,
+                    scrubberFocus = scrubberFocus, playFocus = playFocus,
+                    onBack10 = { seekBy(-10_000L) },
                     onPlayPause = ::playPause,
+                    onFwd30 = { seekBy(30_000L) },
+                    pills = vodPills(
+                        ui, hasEpisodes = episodes.size > 1,
+                        onEpisodes = { episodesVisible = true },
+                        onNext = { vm.playNextEpisode() },
+                        onTracks = { tracksVisible = true },
+                        onMore = { menu = Menu.MAIN },
+                    ),
+                    onSeekStep = { seekBy(it) },
+                    onSeekTo = { exo?.seekTo(it); showInfo() },
                     onInteract = { infoTick++ },
                 )
             }
-            if (l.isTouch) {
+            if (l.isTouch && ui.isLive) {
                 AnimatedVisibility(infoVisible && !listVisible && !episodesVisible, Modifier.align(Alignment.TopStart), enter = fadeIn(), exit = fadeOut()) {
                     TopBarActions(
                         buildList {
@@ -434,7 +492,18 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 ChannelListOverlay(zapList, listIndex, ui.channel?.id) { i -> zapList.getOrNull(i)?.let { vm.playChannel(it) }; listVisible = false }
             }
             AnimatedVisibility(episodesVisible, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
-                EpisodesPanel(episodes, ui.currentSe, ui.image, Modifier) { e -> episodesVisible = false; vm.playEpisodeNow(e) }
+                EpisodesPanel(episodes, ui.currentSe, ui.seriesBackdrop ?: ui.image, Modifier) { e -> episodesVisible = false; vm.playEpisodeNow(e) }
+            }
+            AnimatedVisibility(
+                tracksVisible, Modifier.align(Alignment.CenterEnd),
+                enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit()),
+            ) {
+                val audioOpts = remember(tracks) { vm.audioOptions() }
+                val textOpts = remember(tracks) { vm.textOptions() }
+                TracksPanel(audioOpts, textOpts) { type, o -> vm.selectTrack(type, o) }
+            }
+            AnimatedVisibility(pauseScreen, enter = fadeIn(tween(Motion.SLOW)), exit = fadeOut(Motion.exit())) {
+                PauseScreen(ui, position, duration)
             }
             if (numberBuffer.isNotEmpty()) {
                 Text(
@@ -442,18 +511,28 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Color.White,
                 )
             }
+            // carte « Épisode suivant » : glisse depuis la droite ; le dernier épisode connu reste affiché pendant la sortie
             val next = ui.nextEpisode
-            if (showNextCard && next != null && !episodesVisible) {
-                NextUpCard(
-                    next, seconds = if (vm.autoplayNext && !ui.endedWithNext) nextCountdown else null, fallbackImage = ui.image, playFocus = nextFocus,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(if (l.isCompact) 12.dp else 40.dp),
-                    onPlay = { vm.playNextEpisode() },
-                    onCancel = {
-                        nextDismissedFor = next.id
-                        vm.cancelAutoplay(next.id)
-                        if (ui.endedWithNext) { vm.dismissEndCard(); nav.popBackStack() }
-                    },
-                )
+            var lastNext by remember { mutableStateOf(next) }
+            if (next != null) lastNext = next
+            AnimatedVisibility(
+                showNextCard && next != null && !episodesVisible && !tracksVisible, Modifier.align(Alignment.BottomEnd),
+                enter = slideInHorizontally(Motion.enter()) { it / 2 } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it / 2 } + fadeOut(Motion.exit()),
+            ) {
+                lastNext?.let { n ->
+                    NextUpCard(
+                        n, seconds = if (vm.autoplayNext && !ui.endedWithNext) nextCountdown else null,
+                        // l'image de l'épisode suivant d'abord (dans la carte), sinon le fond de la série — jamais l'épisode en cours
+                        fallbackImage = ui.seriesBackdrop, playFocus = nextFocus,
+                        modifier = Modifier.padding(if (l.isCompact) 12.dp else 40.dp),
+                        onPlay = { vm.playNextEpisode() },
+                        onCancel = {
+                            nextDismissedFor = n.id
+                            vm.cancelAutoplay(n.id)
+                            if (ui.endedWithNext) { vm.dismissEndCard(); nav.popBackStack() }
+                        },
+                    )
+                }
             }
         }
     }
@@ -463,9 +542,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         Menu.MAIN -> OptionsDialog(
             ui.title,
             buildList {
+                if (!ui.isLive) add(MenuOption("Depuis le début", Icons.Default.Replay) { vm.restartFromBeginning() })
                 if (ui.versionLabel != null) add(MenuOption("Version : ${ui.versionLabel}", Icons.Default.Layers) { scope.launch { delay(50); menu = Menu.VERSION } })
-                add(MenuOption("Audio", Icons.Default.Audiotrack) { scope.launch { delay(50); menu = Menu.AUDIO } })
-                add(MenuOption("Sous-titres", Icons.Default.ClosedCaption) { scope.launch { delay(50); menu = Menu.SUBS } })
+                if (ui.isLive) add(MenuOption("Audio et sous-titres", Icons.Default.ClosedCaption) { tracksVisible = true })
                 add(MenuOption("Format d'image : ${resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
                 if (ui.isLive) {
                     add(MenuOption(if (ui.isFavorite) "Retirer des favoris" else "Ajouter aux favoris", if (ui.isFavorite) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite() })
@@ -474,29 +553,11 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     add(MenuOption("Chaîne précédente", Icons.Default.SwapVert) { vm.previous() })
                     add(MenuOption("Ajouter au multi-écran", Icons.Default.GridView) { vm.addToMultiview()?.let { toast(context, it) }; nav.navigate(MultiviewRoute) })
                 } else {
-                    add(MenuOption("Depuis le début", Icons.Default.Replay) { vm.restartFromBeginning() })
-                    if (ui.nextEpisode != null) add(MenuOption("Épisode suivant", Icons.Default.SkipNext) { vm.playNextEpisode() })
-                    if (episodes.size > 1) add(MenuOption("Tous les épisodes", Icons.Default.VideoLibrary) { episodesVisible = true })
                     if (ui.channel != null) add(MenuOption("Retour au direct", Icons.Default.LiveTv) { vm.backToLive() })
                 }
                 add(MenuOption("Infos du flux", Icons.Default.Info) { scope.launch { delay(50); menu = Menu.INFO } })
             },
             onDismiss = { if (menu == Menu.MAIN) menu = null },
-        )
-        Menu.AUDIO -> {
-            val opts = vm.audioOptions()
-            OptionsDialog(
-                "Piste audio",
-                opts.ifEmpty { listOf(TrackOption("Aucune piste alternative", null, -1, true)) }.map { o ->
-                    MenuOption(o.label, Icons.Default.Audiotrack, o.selected) { if (o.group != null) vm.selectTrack(C.TRACK_TYPE_AUDIO, o) }
-                },
-                onDismiss = { menu = null },
-            )
-        }
-        Menu.SUBS -> OptionsDialog(
-            "Sous-titres",
-            vm.textOptions().map { o -> MenuOption(o.label, Icons.Default.ClosedCaption, o.selected) { vm.selectTrack(C.TRACK_TYPE_TEXT, o) } },
-            onDismiss = { menu = null },
         )
         Menu.ASPECT -> OptionsDialog(
             "Format d'image",
@@ -536,25 +597,18 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     }
 }
 
-/** Boutons du lecteur à la demande, dans l'ordre d'usage. */
-private fun vodActions(
-    ui: PlayerUi, playing: Boolean, touch: Boolean, hasEpisodes: Boolean,
-    onPlayPause: () -> Unit, onRestart: () -> Unit, onBack10: () -> Unit, onFwd30: () -> Unit,
-    onNext: () -> Unit, onEpisodes: () -> Unit, onMenu: (Menu) -> Unit, resizeLabel: String,
+/**
+ * Pastilles du lecteur à la demande, toujours dans le même ordre (seules celles qui n'ont pas de sens
+ * pour le titre sont absentes) : Épisodes, Suivant, Audio et sous-titres, Plus.
+ */
+internal fun vodPills(
+    ui: PlayerUi, hasEpisodes: Boolean,
+    onEpisodes: () -> Unit, onNext: () -> Unit, onTracks: () -> Unit, onMore: () -> Unit,
 ): List<PlayerAction> = buildList {
-    add(PlayerAction(if (playing) "Pause" else "Lecture", if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, primary = true, onClick = onPlayPause))
-    if (touch) {
-        add(PlayerAction("Reculer de 10 s", Icons.Default.Replay10, onClick = onBack10))
-        add(PlayerAction("Avancer de 30 s", Icons.Default.Forward30, onClick = onFwd30))
-    }
-    if (ui.resumedFromMs > 0) add(PlayerAction("Depuis le début", Icons.Default.Replay, onClick = onRestart))
-    if (ui.nextEpisode != null) add(PlayerAction("Épisode suivant", Icons.Default.SkipNext, onClick = onNext))
     if (hasEpisodes) add(PlayerAction("Épisodes", Icons.Default.VideoLibrary, onClick = onEpisodes))
-    add(PlayerAction("Audio", Icons.Default.Audiotrack) { onMenu(Menu.AUDIO) })
-    add(PlayerAction("Sous-titres", Icons.Default.ClosedCaption) { onMenu(Menu.SUBS) })
-    if (ui.versionLabel != null) add(PlayerAction("Version", Icons.Default.Layers) { onMenu(Menu.VERSION) })
-    add(PlayerAction("Image : $resizeLabel", Icons.Default.AspectRatio) { onMenu(Menu.ASPECT) })
-    add(PlayerAction("Infos", Icons.Default.Info) { onMenu(Menu.INFO) })
+    if (ui.nextEpisode != null) add(PlayerAction("Suivant", Icons.Default.SkipNext, onClick = onNext))
+    add(PlayerAction("Audio et sous-titres", Icons.Default.ClosedCaption, onClick = onTracks))
+    add(PlayerAction("Plus", Icons.Default.MoreHoriz, onClick = onMore))
 }
 
 /** Touches du direct : zapping, liste des chaînes. */
@@ -591,23 +645,6 @@ private fun liveKey(
 
 private fun toast(context: android.content.Context, msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
 
-@Composable
-private fun ResumeHint(fromMs: Long, modifier: Modifier) {
-    AnimatedVisibility(true, modifier, enter = fadeIn(), exit = fadeOut()) {
-        Column(Modifier.padding(24.dp).background(Color(0xCC000000), RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Text("Reprise à ${formatDuration(fromMs)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Text("« Depuis le début » dans les commandes", color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
-        }
-    }
-}
-
-@Composable
-private fun SeekFlash(text: String, modifier: Modifier) {
-    Text(
-        text, modifier.background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 22.dp, vertical = 10.dp),
-        style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White,
-    )
-}
 
 @Composable
 private fun LiveInfoBar(ui: PlayerUi) {
