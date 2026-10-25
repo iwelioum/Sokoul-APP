@@ -85,7 +85,7 @@ class CatalogIndexer @Inject constructor(
 ) {
     // réglables par les tests
     internal var now: () -> Long = System::currentTimeMillis
-    internal var awaitIdle: suspend () -> Unit = { PlaybackActivity.awaitIdle() }
+    internal var awaitIdle: suspend () -> Unit = { PlaybackActivity.awaitIdle(); com.sokoul.iptv.player.ScreenLoading.awaitIdle() }
 
     // nombre d'œuvres : regroupement de tout le catalogue, recompté au plus toutes les 10 min
     private val totals = HashMap<Long, Pair<Long, Int>>()
@@ -114,6 +114,8 @@ class CatalogIndexer @Inject constructor(
         while (now() - start < budgetMs) {
             for (type in TYPES) {
                 if (type in done) continue
+                // ni requête ni écriture pendant la lecture ou le chargement d'un écran (la base reste à l'écran)
+                awaitIdle()
                 // une ligne par version : marge pour les œuvres à plusieurs versions et les échecs passagers
                 val limit = (BATCH + skipped.size) * 4
                 val rows = db.browse().indexCandidates(IndexQuery.pending(pid, type, limit))
@@ -140,6 +142,7 @@ class CatalogIndexer @Inject constructor(
         var titles = 0
         suspend fun flush() {
             if (matches.isEmpty() && metas.isEmpty()) return
+            awaitIdle()
             val m = matches.toList(); val t = metas.toList()
             matches.clear(); metas.clear(); titles = 0
             db.withTransaction {

@@ -22,3 +22,18 @@ object PlaybackActivity {
     /** Attend qu'aucun lecteur ne tourne. */
     suspend fun awaitIdle() { players.map { it == 0 }.first { it } }
 }
+
+/**
+ * Écran en cours de chargement (page d'accueil, saga…) : l'indexation du catalogue attend la fin du chargement
+ * avant de lancer de nouvelles requêtes, pour laisser la base et le processeur à ce que l'utilisateur regarde.
+ */
+object ScreenLoading {
+    private val loads = MutableStateFlow(0)
+
+    suspend fun <T> track(block: suspend () -> T): T {
+        loads.update { it + 1 }
+        try { return block() } finally { loads.update { (it - 1).coerceAtLeast(0) } }
+    }
+
+    suspend fun awaitIdle() { loads.map { it == 0 }.first { it } }
+}

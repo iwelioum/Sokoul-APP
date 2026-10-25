@@ -469,14 +469,7 @@ private fun FactsLine(hero: DetailHeroData, modifier: Modifier) {
 private fun Dot() = Text("·", style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextMuted)
 
 @Composable
-private fun Badge(text: String, filled: Boolean) {
-    Text(
-        text,
-        Modifier.then(if (filled) Modifier.background(SokoulColors.GlassLight, Radius.Tiny) else Modifier.border(1.dp, SokoulColors.TextSecondary, Radius.Tiny))
-            .padding(horizontal = 6.dp, vertical = 1.dp),
-        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = SokoulColors.TextPrimary,
-    )
-}
+private fun Badge(text: String, filled: Boolean) = com.sokoul.iptv.ui.components.SourceBadge(text, filled)
 
 // =====================================================================================================
 // Boutons

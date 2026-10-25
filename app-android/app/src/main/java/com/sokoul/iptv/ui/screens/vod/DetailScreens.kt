@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.vod
 
+import com.sokoul.iptv.ui.components.SourceLabels
 import com.sokoul.iptv.ui.components.onChip
 import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.Radius
@@ -313,7 +314,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         title = title, logo = tm?.logo ?: extras.art?.logo, backdrop = tm?.backdrop ?: xt?.backdrop ?: extras.art?.background, poster = tm?.poster ?: xt?.poster ?: m.poster,
         rating = tm?.rating ?: xt?.rating ?: m.rating,
         facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), best.language, if (multi) "${versions.size} versions" else null),
-        certification = tm?.certification, quality = best.quality,
+        certification = tm?.certification, quality = versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
         genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
         tagline = tm?.tagline, synopsis = synopsis,
         credit = director?.let { "Réalisation : $it" } ?: xt?.cast?.takeIf { tm?.cast.isNullOrEmpty() && it.isNotBlank() }?.let { "Avec : $it" },
@@ -344,7 +345,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
                 LazyRow(contentPadding = PaddingValues(horizontal = l.margin, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(versions, key = { it.id }) { v ->
                         VersionChip(
-                            label = versionLabel(v), detail = vm.categoryNames[v.categoryId],
+                            source = versionSource(v), detail = vm.categoryNames[v.categoryId],
                             preferred = v.id == preferredId, first = v.id == best.id,
                             modifier = Modifier.focusMemory(memory, "ver:${v.id}").focusProperties { if (belowVersions != null) down = belowVersions },
                             onClick = { play(v, false) }, onLongClick = { versionMenu = v },
@@ -821,7 +822,7 @@ fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onLongC
 }
 
 @Composable
-private fun VersionChip(label: String, detail: String?, preferred: Boolean, first: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun VersionChip(source: com.sokoul.iptv.domain.PlaybackSource, detail: String?, preferred: Boolean, first: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
     FocusSurface(style = FocusStyle.Chip,
         onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Card,
         color = if (first) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh,
@@ -829,8 +830,9 @@ private fun VersionChip(label: String, detail: String?, preferred: Boolean, firs
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (preferred) Icons.Default.Star else Icons.Default.PlayArrow, null, Modifier.size(18.dp), tint = if (preferred) SokoulColors.Gold else if (focused) SokoulColors.OnLight else SokoulColors.TextSecondary)
             Column(Modifier.padding(start = 8.dp).widthIn(max = 220.dp)) {
-                Text(label + if (first) " · lancée par Lecture" else "", style = MaterialTheme.typography.titleSmall, color = onChip(focused), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (!detail.isNullOrBlank()) Text(detail, style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                com.sokoul.iptv.ui.components.SourceBadges(source, onLight = focused)
+                val sub = listOfNotNull(if (first) "Lancée par Lecture" else null, detail?.takeIf { it.isNotBlank() }).joinToString(" · ")
+                if (sub.isNotEmpty()) Text(sub, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = if (focused) SokoulColors.OnLight.copy(alpha = 0.7f) else SokoulColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -906,8 +908,9 @@ private fun DetailError(message: String, onRetry: () -> Unit, onBack: () -> Unit
     LaunchedEffect(Unit) { delay(80); runCatching { back.requestFocus() } }
 }
 
-fun versionLabel(m: MovieEntity): String = VersionPicker.label(m.toVersion())
-fun seriesVersionLabel(s: SeriesEntity): String = VersionPicker.label(s.toVersion()).takeIf { it != "Version" } ?: s.name.take(28)
+fun versionSource(m: MovieEntity) = com.sokoul.iptv.domain.PlaybackSources.fromIptv(m.toVersion())
+fun versionLabel(m: MovieEntity): String = com.sokoul.iptv.ui.components.SourceLabels.text(versionSource(m))
+fun seriesVersionLabel(s: SeriesEntity): String = com.sokoul.iptv.ui.components.SourceLabels.text(com.sokoul.iptv.domain.PlaybackSources.fromIptv(s.toVersion())).takeIf { it != "Version" } ?: s.name.take(28)
 
 /** Identifiant YouTube depuis une clé TMDB, une URL watch?v=…, youtu.be/… ou /embed/…. */
 fun youtubeId(key: String): String? {

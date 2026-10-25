@@ -60,12 +60,9 @@ object VersionPicker {
         ).map { it.value }
     }
 
-    /** Étiquette courte d'une version : « VF · FHD », ou le pays du fournisseur (« AR », « EN ») si la langue est inconnue. */
-    fun label(v: VodVersion): String =
-        listOfNotNull(v.language ?: region(v.name), v.quality).joinToString(" · ").ifEmpty { "Version" }
-
     private val NOT_REGION = setOf("VOD", "4K", "UHD", "FHD", "HD", "SD")
 
-    private fun region(name: String): String? =
+    /** Pays affiché par le fournisseur dans le nom (« AR », « EN »), quand la langue est inconnue. */
+    fun region(name: String): String? =
         com.sokoul.iptv.parser.TitleTagger.parse(name).prefix?.uppercase()?.takeIf { it.length in 2..4 && it.all(Char::isLetter) && it !in NOT_REGION }
 }

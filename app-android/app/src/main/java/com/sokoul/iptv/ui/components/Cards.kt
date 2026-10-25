@@ -207,7 +207,9 @@ fun WorkCard(
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val corner = if (!work.available) "HORS CATALOGUE" else work.quality?.takeIf { it.contains("4K", true) || it.contains("UHD", true) }?.let { "4K" }
+    // coin de l'affiche : état (hors catalogue), sinon 4K, sinon le nombre de versions
+    val src = com.sokoul.iptv.domain.PlaybackSources.summary(work)
+    val corner = SourceLabels.state(src.state) ?: src.quality?.takeIf { it == com.sokoul.iptv.domain.VideoQuality.UHD_4K }?.let(SourceLabels::quality)
         ?: if (work.versions > 1) "${work.versions} VERSIONS" else null
     PosterTile(
         title = work.title, image = tmdbSized(work.poster, "w342"), onClick = onClick, modifier = modifier, width = width,

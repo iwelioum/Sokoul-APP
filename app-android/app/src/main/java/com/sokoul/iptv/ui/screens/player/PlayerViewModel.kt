@@ -312,7 +312,7 @@ class PlayerViewModel @Inject constructor(
     private var fallbackJob: Job? = null
 
     private fun versionLabel(m: com.sokoul.iptv.data.db.MovieEntity) =
-        com.sokoul.iptv.data.repo.VersionPicker.label(com.sokoul.iptv.data.repo.VodVersion(m.id, m.name, m.language, m.quality, m.categoryId))
+        com.sokoul.iptv.ui.components.SourceLabels.text(com.sokoul.iptv.domain.PlaybackSources.fromIptv(com.sokoul.iptv.data.repo.VodVersion(m.id, m.name, m.language, m.quality, m.categoryId)))
 
     private suspend fun playMovie(p: PlaylistEntity, m: com.sokoul.iptv.data.db.MovieEntity, startMs: Long) {
         _ui.update {

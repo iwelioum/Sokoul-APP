@@ -21,6 +21,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import com.sokoul.iptv.player.ScreenLoading
 import timber.log.Timber
 import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
@@ -100,7 +101,7 @@ class BrowseRepository @Inject constructor(
         val key = CacheKey(p.id, kind, p.lastSync, parental.canAccessLocked(), settings.current().groupDuplicates)
         val now = System.currentTimeMillis()
         if (!force) cache[key]?.let { (t, page) -> if (now - t < CACHE_MS) return page }
-        val page = build(p.id, kind, onPartial)
+        val page = ScreenLoading.track { build(p.id, kind, onPartial) }
         // page dégradée (TMDB en panne) : pas de cache, la prochaine visite retentera
         if (page.partial) return page
         cache.keys.removeAll { it.pid == p.id && it.kind == kind }
@@ -255,7 +256,9 @@ class BrowseRepository @Inject constructor(
             out += item to w.copy(tmdbId = w.tmdbId ?: item.id)
             if (out.size >= limit) break
         }
-        runCatching { enrich.remember(pid, type, out.map { (item, w) -> item to w.key }) }.onFailure { Timber.w(it, "Correspondances TMDB") }
+        // seules les correspondances nouvelles sont écrites (chaque écriture inutile ralentit la base)
+        val fresh = out.filter { (item, w) -> w.key !in linked[item.id].orEmpty() }
+        runCatching { enrich.remember(pid, type, fresh.map { (item, w) -> item to w.key }) }.onFailure { Timber.w(it, "Correspondances TMDB") }
         return out
     }
 
@@ -544,7 +547,7 @@ class BrowseRepository @Inject constructor(
      * Toutes les sagas du catalogue : les grandes franchises éditorialisées d'abord (vérifiées sur TMDB, dès un film
      * au catalogue), puis les collections TMDB repérées par l'analyse du catalogue (au moins 2 films).
      */
-    suspend fun sagaHub(pid: Long, limit: Int = 60): List<SagaCard> = withContext(Dispatchers.Default) {
+    suspend fun sagaHub(pid: Long, limit: Int = 60): List<SagaCard> = ScreenLoading.track { withContext(Dispatchers.Default) {
         val api = enrich.apiKey()
         if (api.isBlank()) return@withContext emptyList()
         val key = pid to parental.canAccessLocked()
@@ -579,12 +582,12 @@ class BrowseRepository @Inject constructor(
         }.take(limit)
         hubCache[key] = System.currentTimeMillis() to result
         result
-    }
+    } }
 
     private val hubCache = ConcurrentHashMap<Pair<Long, Boolean>, Pair<Long, List<SagaCard>>>()
 
     /** Page « musée » : tous les films de la saga (présents ou non), visages récurrents, coulisses, séries liées. */
-    suspend fun sagaPage(pid: Long, collectionId: Int, onPartial: (suspend (SagaPage) -> Unit)? = null): SagaPage? = withContext(Dispatchers.Default) {
+    suspend fun sagaPage(pid: Long, collectionId: Int, onPartial: (suspend (SagaPage) -> Unit)? = null): SagaPage? = ScreenLoading.track { withContext(Dispatchers.Default) {
         val api = enrich.apiKey()
         if (api.isBlank()) return@withContext null
         val cs = curated.forCollection(collectionId)
@@ -628,7 +631,7 @@ class BrowseRepository @Inject constructor(
             val credits = creditsD.awaitAll().filterNotNull()
             base.copy(series = seriesD.await(), faces = SagaLogic.faces(credits), crew = SagaLogic.crew(credits))
         }
-    }
+    } }
 
     /** « Ma liste » pour une œuvre hors catalogue : retenue par son identifiant TMDB (« tmdb:N »). */
     suspend fun toggleOffCatalog(pid: Long, w: Work): Boolean {

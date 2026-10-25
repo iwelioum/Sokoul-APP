@@ -75,7 +75,11 @@ class EnrichmentRepository @Inject constructor(
             todo.forEach { w ->
                 launch {
                     try {
-                        gate.withPermit { if (enrichOne(api, pid, w)) _updates.value = _updates.value + 1 }
+                        gate.withPermit {
+                            // l'écran qui se charge passe avant les cartes à compléter
+                            com.sokoul.iptv.player.ScreenLoading.awaitIdle()
+                            if (enrichOne(api, pid, w)) _updates.value = _updates.value + 1
+                        }
                     } catch (e: Exception) {
                         Timber.w(e, "Enrichissement TMDB")
                     } finally {
@@ -103,6 +107,7 @@ class EnrichmentRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val kind = if (w.type == ContentType.MOVIE) "movie" else "tv"
         var id = tmdbIdOfKey(w.key)
+        var linked = false
         if (id == null) {
             val m = dao.matches(pid, w.type, listOf(w.key)).firstOrNull()
             if (m != null) {
@@ -112,6 +117,7 @@ class EnrichmentRepository @Inject constructor(
             if (id == null) {
                 id = tmdb.match(api, kind, w.providerTitle, w.year)
                 dao.putMatch(TmdbMatchEntity(pid, w.type, w.key, id, now))
+                linked = id != null
                 if (id == null) return false
             }
         }
@@ -123,11 +129,13 @@ class EnrichmentRepository @Inject constructor(
             dao.putMeta(info.toMeta(w.type, now))
             wrote = true
         }
-        // les autres versions publiées sous le même identifiant TMDB rejoignent l'œuvre
-        if (!w.key.startsWith("tmdb:") && !w.key.startsWith("id:")) {
+        // les autres versions publiées sous le même identifiant TMDB rejoignent l'œuvre (une fois, à la découverte :
+        // réécrire le lien à chaque affichage occupait la base pour rien)
+        if ((linked || wrote) && !w.key.startsWith("tmdb:") && !w.key.startsWith("id:")) {
             runCatching { vod.linkTmdb(pid, w.type, w.id, null, w.key, id) }
         }
-        return wrote || existing != null
+        // rien de nouveau : pas de redécoration des écrans
+        return wrote || linked
     }
 
     /**
