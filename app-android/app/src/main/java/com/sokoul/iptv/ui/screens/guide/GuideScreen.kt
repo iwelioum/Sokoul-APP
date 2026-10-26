@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -338,6 +339,8 @@ fun GuideScreen(nav: NavHostController) {
                     }
                 }
 
+                val pickRef = rememberUpdatedState { i: Int, c: ChannelEntity, p: ProgramEntity? -> row = i; focusTime = p?.start ?: focusTime; act(c, p) }
+                val openRef = rememberUpdatedState { c: ChannelEntity -> nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected)) }
                 Column(
                     Modifier.fillMaxSize().padding(start = gridStart)
                         .focusRequester(gridFocus)
@@ -420,11 +423,9 @@ fun GuideScreen(nav: NavHostController) {
                                 focusedTime = if (i == row && gridFocused) focusTime else null,
                                 catchup = vm.supportsCatchup(c),
                                 reminders = reminders,
-                                onProgramClick = { p ->
-                                    row = i; focusTime = p?.start ?: focusTime
-                                    act(c, p)
-                                },
-                                onChannelClick = { nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected)) },
+                                // rappels stables : une touche ne recompose que la ligne focalisée et l'aperçu
+                                onProgramClick = remember(i, c.id) { { p: ProgramEntity? -> pickRef.value(i, c, p) } },
+                                onChannelClick = remember(c.id) { { openRef.value(c) } },
                             )
                         }
                     }

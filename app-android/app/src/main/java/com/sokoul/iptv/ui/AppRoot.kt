@@ -141,14 +141,14 @@ private fun AppNavHost(nav: NavHostController, start: Any) {
         }
         composable<com.sokoul.iptv.ui.nav.SagasRoute> { Shell(nav, Dest.SAGAS, edgeToEdge = true) { com.sokoul.iptv.ui.screens.saga.SagasHubScreen(nav) } }
         composable<com.sokoul.iptv.ui.nav.SagaRoute> { com.sokoul.iptv.ui.screens.saga.SagaScreen(nav, it.toRoute<com.sokoul.iptv.ui.nav.SagaRoute>().id) }
-        composable<com.sokoul.iptv.ui.nav.PersonRoute> { val r = it.toRoute<com.sokoul.iptv.ui.nav.PersonRoute>(); com.sokoul.iptv.ui.screens.person.PersonScreen(nav, r.id, r.name) }
+        composable<com.sokoul.iptv.ui.nav.PersonRoute>(enterTransition = { detailEnter() }) { val r = it.toRoute<com.sokoul.iptv.ui.nav.PersonRoute>(); com.sokoul.iptv.ui.screens.person.PersonScreen(nav, r.id, r.name) }
         composable<BrowseGridRoute> { val r = it.toRoute<BrowseGridRoute>(); BrowseGridScreen(nav, r.title, r.spec) }
         composable<com.sokoul.iptv.ui.nav.ExploreRoute> { com.sokoul.iptv.ui.screens.browse.ExploreScreen(nav, it.toRoute<com.sokoul.iptv.ui.nav.ExploreRoute>().type) }
         composable<SearchRoute> { Shell(nav, Dest.SEARCH) { SearchScreen(nav, it.toRoute<SearchRoute>().origin) } }
         composable<RecordingsRoute> { Shell(nav, Dest.RECORDINGS) { RecordingsScreen(nav) } }
         composable<SettingsRoute> { Shell(nav, Dest.SETTINGS) { SettingsScreen(nav) } }
-        composable<MovieDetailRoute> { MovieDetailScreen(nav, it.toRoute<MovieDetailRoute>().id) }
-        composable<SeriesDetailRoute> { SeriesDetailScreen(nav, it.toRoute<SeriesDetailRoute>().id) }
+        composable<MovieDetailRoute>(enterTransition = { detailEnter() }) { MovieDetailScreen(nav, it.toRoute<MovieDetailRoute>().id) }
+        composable<SeriesDetailRoute>(enterTransition = { detailEnter() }) { SeriesDetailScreen(nav, it.toRoute<SeriesDetailRoute>().id) }
         composable<PlayerRoute> { PlayerScreen(nav, it.toRoute()) }
         composable<MultiviewRoute> { MultiviewScreen(nav) }
         composable<PlaylistEditRoute> { val r = it.toRoute<PlaylistEditRoute>(); PlaylistEditScreen(nav, r.id, r.firstRun) }
@@ -158,3 +158,8 @@ private fun AppNavHost(nav: NavHostController, start: Any) {
 
 /** Durée du fondu entre deux pages. */
 private const val PAGE_FADE_MS = 220
+
+/** Fiche ou page acteur : elle « sort » de la carte choisie (fondu + léger agrandissement, 260 ms). */
+private fun detailEnter() =
+    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(PAGE_FADE_MS)) +
+        androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing), initialScale = 0.96f)

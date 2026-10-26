@@ -261,6 +261,9 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     // ▼ depuis les onglets : « Lecture » du héros (s'il est affiché)
     bar?.down = { if (hero.isNotEmpty() && listState.firstVisibleItemIndex == 0) playFocus else null }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // dès l'arrivée des rangées : images des trois premières (et des lots suivants, quand ils arrivent)
+    LaunchedEffect(rows.size) { if (rows.isNotEmpty()) com.sokoul.iptv.ui.components.ImagePrefetch.ahead(context, rows, 0, 3) }
     val play: (Work) -> Unit = { w -> scope.launch { nav.navigateOnce(vm.playRoute(w)) } }
     val open: (Work) -> Unit = { w -> nav.openWork(w) }
     val seeAll: (BrowseRow) -> Unit = { r -> r.seeAll?.let { nav.navigateOnce(BrowseGridRoute(r.title, it)) } }
@@ -330,6 +333,8 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                                 Modifier.onFocusChanged {
                                     if (it.hasFocus && l.isTv) {
                                         inRows = true
+                                        // les deux rangées suivantes : images téléchargées avant d'y arriver
+                                        com.sokoul.iptv.ui.components.ImagePrefetch.ahead(context, rows, index + 1)
                                         // +1 : le héros, +1 éventuel : bandeau d'abonnement
                                         val i = listState.layoutInfo.visibleItemsInfo.firstOrNull { v -> v.key == row.id }?.index
                                             ?: (index + 1 + if (p?.expiresAt != null) 1 else 0)
