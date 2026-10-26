@@ -482,3 +482,77 @@ L'objectif « sous 5 % » est atteint sur Films. Accueil, Sagas et Explorer en r
   - `DataTest` (recherche contextuelle, suggestions par préfixe) ;
   - `ParcoursDataTest` et `ParcoursUiTest`.
 - Suite complète : **195 tests app verts**, 1 ignoré (`ApiLiveCheck`, la vérification réelle, ignorée sans clés). Tests du parser verts. `lintRelease` : **0 erreur**, 18 avertissements.
+
+## 12. Phase 10 — Finitions premium (26/10/2026)
+
+Branche `phase10-finitions` (créée depuis `phase9-design`). Six commits locaux, de `a7b88c9` à `4ab618e` ; les étapes 1 et 2 partagent le même commit. Rien n'est poussé sur GitHub.
+
+### Retours de l'utilisateur et réponses
+| Retour | Réponse |
+|---|---|
+| Titre, année et genre sous les affiches : inutiles | Plus aucune légende. Au focus, les infos montent **dans** l'affiche : logo ou titre, puis « ★ 7,8 · 2021 · 2 h 10 ». Sur téléphone, le titre seul reste sous l'affiche, faute de focus. |
+| Il ne se passe rien au focus d'une carte | Agrandissement ×1,12 et léger soulèvement. Ombre, halo violet, contour blanc net, liseré d'accent sous la carte. Après 350 ms, l'image zoome lentement : la carte « respire ». |
+| Police et centrage de la barre d'onglets | Police **Manrope**, embarquée sous licence OFL. Trois zones : logo à gauche, rubriques centrées dans l'espace libre, recherche, TV, réglages et heure à droite. L'onglet actif est souligné d'un trait rectangulaire. |
+| Préférence pour les formes rectangulaires, avec plus de détail dans les contours | Coins de 4 dp (cartes) et de 6 dp (panneaux). Pastilles et boutons rectangulaires. Le rond est réservé aux visages et au bouton de lecture. Filet clair de 1 dp autour des cartes au repos. Un test refuse `CircleShape` et les polices écrites en dur. |
+| Trop peu de catégories à l'accueil, des titres répétitifs, un accueil qui ne s'adapte pas | Voir « Accueil personnalisé » ci-dessous. |
+| Sagas : page et sélection décevantes, sans effet | Voir « Sagas » ci-dessous. |
+| Recherche collée à gauche | Plein écran **centré** : grand champ avec curseur, suggestions et périmètre en pastilles, clavier **AZERTY** compact avec touche « 123 ». ▼ replie le clavier et les résultats prennent l'écran ; ▲ jusqu'au champ le rouvre. Recherches récentes (8) quand le champ est vide. |
+| On se perd dans la page Réglages | **Deux volets** : 8 rubriques à gauche, le contenu à droite avec un titre et une phrase d'explication. Réglages techniques regroupés sous « Avancé », replié par défaut. Une rubrique par fichier (`settings/sections/`). |
+
+### Accueil personnalisé
+- **Profil de goûts** (`Taste.kt`), calculé à partir de l'historique de lecture et de Ma liste, sans migration de la base.
+  - Chaque œuvre compte selon la part regardée, avec une demi-vie d'un mois. Un abandon avant 15 % compte peu ; Ma liste ajoute 0,6.
+  - On en tire des poids par genre (films et séries séparés), par décennie, par langue et par mot-clé, ainsi que les 3 œuvres de départ les plus marquantes.
+- **Catalogue d'environ 80 rangées** (`RowCatalog.kt`) :
+  - tous les genres ;
+  - les époques (années 80, 90, 2000, 2010, classiques) ;
+  - les cinémas étrangers (français, coréen, japonais, espagnol, indien) ;
+  - une vingtaine de thèmes par mots-clés (casses, espace, survie, histoires vraies, zombies, espionnage…) ;
+  - les ambiances et micro-genres, les mini-séries, les films courts, les « acclamés ».
+- **Titres variés** : 3 à 5 tournures en français par rangée, choisies selon le jour. Le titre est stable dans la journée et change d'un jour à l'autre. Les rangées les plus proches des goûts reçoivent un titre personnel (« Vous avez un faible pour les thrillers »).
+- **Rangées personnelles** :
+  - « Parce que vous avez regardé… » ×3, avec trois formulations ;
+  - « Finissez la saga X ».
+- **Classement** : affinité avec le profil, plus une petite part d'aléa du jour. Deux rangées voisines n'ont jamais le même genre principal, et une œuvre apparaît au plus deux fois.
+- **Chargement progressif** : les 8 premières rangées, puis des lots de 6 quand le focus approche de la fin de la page. Vérifié sur la box : de nouvelles rangées arrivent encore après plus de 50 rangées descendues.
+- **Correctif** : la rangée séries « À voir en famille » acceptait des animés pour adultes (Chainsaw Man, Hazbin Hotel), parce que le genre « Animation » suffisait. Elle exige maintenant les genres Familial ou Enfants, et exclut Action & Aventure.
+
+### Sagas
+- **Hub** :
+  - une bannière sur la saga focalisée : fond, logo ou nom, faits (« 26 films · 1962 → 2021 · ★ 6,6 de moyenne »), part déjà vue, résumé ;
+  - des tuiles avec logo, « SAGA · 11 FILMS », un fond qui zoome au focus et 3 mini-affiches qui s'ouvrent en éventail ;
+  - une barre sous la tuile qui montre la part de la saga déjà vue.
+- **Page « musée »** :
+  - entrée animée une seule fois : le fond apparaît en dézoomant, puis le logo, les faits et les chapitres arrivent l'un après l'autre ;
+  - le fond suit le film focalisé ;
+  - un panneau au-dessus de la frise décrit le film focalisé ;
+  - une vraie frise : chapitres datés (« 04 1999 ») reliés par une ligne, point plein pour un film vu, anneau pour un film à voir, gris pour un film hors catalogue ;
+  - le bouton **« Commencer la saga »** ou **« Continuer la saga »** ouvre le prochain film non vu, dans l'ordre choisi ;
+  - les visages zooment au focus.
+- **Logo de la saga** : celui du film qui porte exactement son nom (« Alien », « Matrix », « X-Men »). Sinon, le nom en toutes lettres : le logo d'un épisode tromperait sur le nom de la saga.
+- **26 sagas éditorialisées**, au lieu de 8 : Univers Marvel (9 collections), X-Men, Mission : Impossible, James Bond 007, Pirates des Caraïbes, Matrix, Indiana Jones, Retour vers le futur, Terminator, Rocky & Creed, John Wick, Toy Story, Shrek, Avatar, La Planète des singes (2 collections), Mad Max, Die Hard et Jason Bourne. Les 28 identifiants de collection ont été vérifiés sur le site themoviedb.org (nom de la collection et liste des films), sans clé d'API.
+
+### Tests
+- **Unitaires : 215**, tous verts (1 ignoré, comme avant). Nouveaux tests :
+  - `TasteTest` (9) : poids, décroissance, abandon, démarrage à froid, catalogue, titres du jour, classement, diversité ;
+  - `SagaLogicTest` (4) : logo, faits, prochain film, nombre de sagas ;
+  - `SearchKeyboardTest` (+3) : AZERTY, « 123 », recherches récentes ;
+  - `SettingsUiTest` (4, Robolectric) : rubrique qui suit le focus, ▶ et OK entrent dans le volet, ◀ et Retour reviennent sur la rubrique.
+- **Tests mis à jour** : `ShellUiTest` (ordre de la barre), `DesignTokensTest` (coins, polices) et `SagaTest` (de 20 à 40 sagas).
+- **`lintRelease` : 0 erreur** (18 avertissements).
+
+### Fluidité mesurée sur la box (`dumpsys gfxinfo`, part d'images saccadées)
+| Écran | Mesure | Commentaire |
+|---|---|---|
+| Accueil, déplacements latéraux | **2,3 %** | — |
+| Accueil, descente une fois les rangées chargées | **4,8 % / 5,0 %** (médiane 31 ms) | Les rangées s'affichent avec leurs nouveaux effets de focus |
+| Accueil, première descente | 8,5 % / 9,2 % | Les rangées et leurs images arrivent pendant le défilement |
+| Hub des Sagas | **2,8 %** | Contre 6,1 % en phase 9 |
+| Page saga, frise | 7,7 % → **5,7 %** | Le fond qui suit le film passe en 780 px de large |
+| Recherche (saisie, résultats, repli du clavier) | **1,0 %** (médiane 10 ms) | — |
+| Réglages | **4,75 %** (médiane 8 ms) | — |
+
+### Limites connues
+- La première descente sur l'accueil dépasse encore 5 %, le temps que les rangées arrivent.
+- Le logo d'une saga éditorialisée dont aucun film ne porte le nom (« Le monde des sorciers ») reste en texte.
+- Le nombre de films d'une saga compte ceux sortis jusqu'à l'année en cours, y compris ceux annoncés pour la fin de l'année.
