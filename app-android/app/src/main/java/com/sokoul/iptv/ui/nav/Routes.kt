@@ -70,4 +70,6 @@ object PlayKind {
     const val EPISODE = "episode"
     const val RECORDING = "recording"
     const val DEBRID = "debrid"
+    /** Fichier du compte Real-Debrid (« Mes fichiers ») : id = « t:ID » ou « d:ID », title. */
+    const val CLOUD = "cloud"
 }

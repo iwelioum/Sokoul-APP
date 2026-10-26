@@ -140,6 +140,11 @@ import kotlinx.coroutines.launch
 
 /** Ouvre la fiche d'une œuvre. */
 fun NavHostController.openWork(w: Work) {
+    // fichier du compte Real-Debrid : lu directement (pas de fiche)
+    if (w.key.startsWith(com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX)) {
+        navigateOnce(com.sokoul.iptv.ui.nav.PlayerRoute(com.sokoul.iptv.ui.nav.PlayKind.CLOUD, 0, w.key.removePrefix(com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX), title = w.title))
+        return
+    }
     navigateOnce(if (w.type == ContentType.MOVIE) MovieDetailRoute(w.id) else SeriesDetailRoute(w.id))
 }
 

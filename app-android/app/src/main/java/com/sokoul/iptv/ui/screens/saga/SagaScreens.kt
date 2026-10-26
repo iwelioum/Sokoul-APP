@@ -387,6 +387,7 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
     val memory = rememberFocusMemory()
     val list = rememberLazyListState()
     var offFor by remember { mutableStateOf<Work?>(null) }
+    val rdPlay = com.sokoul.iptv.ui.components.rememberDebridPlay(nav)
     val page = ui.page
     // film focalisé : lu seulement par le fond et le panneau d'infos
     val focusedFilm = remember { mutableStateOf<Work?>(null) }
@@ -471,11 +472,12 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
         val there = "${w.type.name}|tmdb:${w.tmdbId}" in inList
         OptionsDialog(
             w.title,
-            listOf(
+            listOfNotNull(
+                rdPlay?.let { p -> MenuOption("Lire via Real-Debrid", Icons.Default.PlayArrow) { offFor = null; p(w) } },
                 if (there) MenuOption("Retirer de Ma liste", Icons.Default.Remove) { vm.toggleList(w); offFor = null }
                 else MenuOption("Ajouter à Ma liste", Icons.Default.Add) { vm.toggleList(w); offFor = null },
             ),
-            subtitle = "Hors catalogue : ce titre deviendra lisible dès qu'une source le proposera.",
+            subtitle = if (rdPlay != null) "Hors abonnement : lisible via Real-Debrid si une version existe." else "Hors catalogue : ce titre deviendra lisible dès qu'une source le proposera.",
             onDismiss = { offFor = null },
         )
     }

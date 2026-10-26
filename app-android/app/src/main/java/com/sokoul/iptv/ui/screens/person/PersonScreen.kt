@@ -117,6 +117,7 @@ fun PersonScreen(nav: NavHostController, personId: Int, name: String) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val l = LocalLayout.current
     val memory = rememberFocusMemory()
+    val rdPlay = com.sokoul.iptv.ui.components.rememberDebridPlay(nav)
     val page = ui.page
     Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
         page?.backdrop?.let { Backdrop(it) }
@@ -127,7 +128,7 @@ fun PersonScreen(nav: NavHostController, personId: Int, name: String) {
                 AppButton("Réessayer", vm::retry, primary = true, icon = Icons.Default.Refresh, modifier = Modifier.focusMemory(memory, "retry"))
             }
             else -> {
-                val open: (Work) -> Unit = { w -> if (w.available) nav.openWork(w) }
+                val open: (Work) -> Unit = { w -> if (w.available) nav.openWork(w) else rdPlay?.invoke(w) }
                 LazyColumn(Modifier.fillMaxSize(), rememberLazyListState(), contentPadding = PaddingValues(bottom = 56.dp)) {
                     item("head") { PersonHeader(page, memory) }
                     if (page.movies.isEmpty() && page.series.isEmpty()) item("none") {

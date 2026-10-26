@@ -126,6 +126,7 @@ class PlayerViewModel @Inject constructor(
     private val recorder: com.sokoul.iptv.recording.RecordingScheduler,
     private val debrid: com.sokoul.iptv.data.debrid.DebridSources,
     private val rdResolver: com.sokoul.iptv.data.debrid.DebridResolver,
+    private val cloud: com.sokoul.iptv.data.debrid.DebridCloud,
 ) : ViewModel() {
 
     val route: PlayerRoute = savedState.toRoute()
@@ -185,7 +186,7 @@ class PlayerViewModel @Inject constructor(
             sp.player.addListener(listener)
             _player.value = sp
             watchEnd(sp)
-            playlist = playlists.get(route.playlistId)
+            playlist = playlists.get(route.playlistId) ?: if (route.kind == PlayKind.CLOUD) playlists.activeNow() else null
             startSafely()
         }
     }
@@ -312,6 +313,15 @@ class PlayerViewModel @Inject constructor(
                 val e = episodes.firstOrNull { it.id == route.id } ?: catalog.episode(p.id, sid, route.id) ?: throw IllegalStateException("Épisode introuvable")
                 if (!allowed(ContentType.SERIES, series?.categoryId) { playEpisode(e, fromStart = route.fromStart) }) return
                 playEpisode(e, fromStart = route.fromStart)
+            }
+            PlayKind.CLOUD -> {
+                val title = route.title ?: "Real-Debrid"
+                val itemId = com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX + route.id
+                val resume = if (route.fromStart) 0 else LibraryRepository.resumeFrom(library.progress(p.id, ContentType.MOVIE, itemId))
+                _ui.update { it.copy(title = title, subtitle = "Mes fichiers Real-Debrid", isLive = false, resumedFromMs = resume, seriesBackdrop = null, overview = null) }
+                val url = cloud.playable(route.id)
+                play(ResolvedStream(listOf(url), settingsStore.current().userAgent, null, isLive = false, provider = false), title, resume)
+                trackProgress { pos, dur -> library.saveProgress(p.id, ContentType.MOVIE, itemId, null, title, "Real-Debrid", null, pos, dur) }
             }
             PlayKind.DEBRID -> {
                 // titre absent de l'abonnement : uniquement Real-Debrid

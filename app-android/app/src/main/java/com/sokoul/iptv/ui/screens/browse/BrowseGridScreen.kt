@@ -186,6 +186,7 @@ fun BrowseGridScreen(
     // ouverte depuis un onglet : le focus reste sur les onglets
     var initialFocusDone by rememberSaveable { mutableStateOf(bar?.arrivedByTab == true) }
     var menuFor by remember { mutableStateOf<Work?>(null) }
+    val rdPlay = com.sokoul.iptv.ui.components.rememberDebridPlay(nav)
     // Ma liste change ailleurs (fiches) : rechargée à chaque retour sur la page
     LaunchedEffect(spec) { vm.load(spec, force = spec.startsWith("fav")) }
     val header = ui.header
@@ -248,13 +249,16 @@ fun BrowseGridScreen(
     menuFor?.let { w ->
         OptionsDialog(
             w.title,
-            if (!w.available) listOf(MenuOption("Retirer de Ma liste", Icons.Default.Remove) { vm.toggleList(w) })
+            if (!w.available) listOfNotNull(
+                rdPlay?.let { p -> MenuOption("Lire via Real-Debrid", Icons.Default.PlayArrow) { p(w) } },
+                MenuOption("Retirer de Ma liste", Icons.Default.Remove) { vm.toggleList(w) },
+            )
             else listOf(
                 MenuOption(if (w.resume != null) "Reprendre" else "Lecture", Icons.Default.PlayArrow) { play(w) },
                 MenuOption("Plus d'infos", Icons.Default.Info) { open(w) },
                 MenuOption("Ajouter à / retirer de ma liste", Icons.Default.Add) { vm.toggleList(w) },
             ),
-            subtitle = if (!w.available) "Hors catalogue : ce titre deviendra lisible dès qu'une source le proposera." else w.metaLine().ifEmpty { null },
+            subtitle = if (!w.available && rdPlay != null) "Hors abonnement : lisible via Real-Debrid si une version existe." else if (!w.available) "Hors catalogue : ce titre deviendra lisible dès qu'une source le proposera." else w.metaLine().ifEmpty { null },
             onDismiss = { menuFor = null },
         )
     }

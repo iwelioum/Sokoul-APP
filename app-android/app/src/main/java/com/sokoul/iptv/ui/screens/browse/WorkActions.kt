@@ -20,6 +20,8 @@ class WorkActions @Inject constructor(
 ) {
     /** « Lecture » : meilleure version d'un film, ou reprise de la série (sinon sa fiche). */
     suspend fun playRoute(pid: Long?, w: Work): Any {
+        if (w.key.startsWith(com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX))
+            return PlayerRoute(PlayKind.CLOUD, pid ?: 0, w.key.removePrefix(com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX), title = w.title)
         if (pid == null) return detailRoute(w)
         w.resume?.let { return resumeRoute(pid, it) }
         return when (w.type) {

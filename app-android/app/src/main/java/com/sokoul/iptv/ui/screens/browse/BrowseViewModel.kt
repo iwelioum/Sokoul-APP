@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -72,6 +73,7 @@ abstract class BrowseViewModel(
     private val catalog: CatalogRepository,
     private val epg: EpgRepository,
     private val parental: ParentalGate,
+    private val cloud: com.sokoul.iptv.data.debrid.DebridCloud,
 ) : ViewModel() {
     private val types: Set<ContentType> = when (kind) {
         BrowseKind.HOME -> setOf(ContentType.MOVIE, ContentType.SERIES)
@@ -264,7 +266,17 @@ abstract class BrowseViewModel(
                     channels = list.take(30).map { ChannelTile(it, now[it.id]) })
             }.onStart { emit(null) }
 
-        return combine(cw, channels, myList) { a, b, c -> listOfNotNull(a, b, c) }
+        // Accueil : fichiers ajoutés au compte Real-Debrid (téléphone, ordinateur), lisibles tout de suite
+        val rdCloud: Flow<BrowseRow?> = if (kind != BrowseKind.HOME) flowOf(null) else flow {
+            emit(null)
+            val items = runCatching { cloud.items() }.getOrDefault(emptyList())
+            if (items.isEmpty()) return@flow
+            val days = runCatching { cloud.daysLeft() }.getOrNull()
+            val tagline = if (days != null && days <= 7) "Abonnement Real-Debrid : plus que $days jour${if (days > 1) "s" else ""}" else "Ajoutés depuis votre téléphone ou votre ordinateur, prêts à lire."
+            emit(BrowseRow("rdcloud", "Mes fichiers Real-Debrid", tagline, RowStyle.LANDSCAPE, items.take(30).map(com.sokoul.iptv.data.debrid.DebridCloud::toWork)))
+        }
+
+        return combine(cw, channels, myList, rdCloud) { a, b, c, d -> listOfNotNull(a, b, d, c) }
     }
 
     // --- actions ---------------------------------------------------------------------------------
@@ -284,16 +296,19 @@ abstract class BrowseViewModel(
 class HomeBrowseViewModel @Inject constructor(
     playlists: PlaylistRepository, repo: BrowseRepository, enrich: EnrichmentRepository, vod: VodRepository,
     library: LibraryRepository, catalog: CatalogRepository, epg: EpgRepository, parental: ParentalGate,
-) : BrowseViewModel(BrowseKind.HOME, playlists, repo, enrich, vod, library, catalog, epg, parental)
+    cloud: com.sokoul.iptv.data.debrid.DebridCloud,
+) : BrowseViewModel(BrowseKind.HOME, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud)
 
 @HiltViewModel
 class MoviesBrowseViewModel @Inject constructor(
     playlists: PlaylistRepository, repo: BrowseRepository, enrich: EnrichmentRepository, vod: VodRepository,
     library: LibraryRepository, catalog: CatalogRepository, epg: EpgRepository, parental: ParentalGate,
-) : BrowseViewModel(BrowseKind.MOVIES, playlists, repo, enrich, vod, library, catalog, epg, parental)
+    cloud: com.sokoul.iptv.data.debrid.DebridCloud,
+) : BrowseViewModel(BrowseKind.MOVIES, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud)
 
 @HiltViewModel
 class SeriesBrowseViewModel @Inject constructor(
     playlists: PlaylistRepository, repo: BrowseRepository, enrich: EnrichmentRepository, vod: VodRepository,
     library: LibraryRepository, catalog: CatalogRepository, epg: EpgRepository, parental: ParentalGate,
-) : BrowseViewModel(BrowseKind.SERIES, playlists, repo, enrich, vod, library, catalog, epg, parental)
+    cloud: com.sokoul.iptv.data.debrid.DebridCloud,
+) : BrowseViewModel(BrowseKind.SERIES, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud)
