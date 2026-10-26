@@ -791,6 +791,40 @@ class BrowseRepository @Inject constructor(
 
     private val hubCache = ConcurrentHashMap<Pair<Long, Boolean>, Pair<Long, List<SagaCard>>>()
 
+    /**
+     * Page d'une personne : sa filmographie TMDB (rôles et réalisations, les plus connus d'abord) retrouvée dans
+     * l'abonnement, films et séries à part ; les rôles marquants hors catalogue sont rendus à part (au plus 20).
+     */
+    suspend fun personPage(pid: Long, personId: Int): PersonPage? = ScreenLoading.track { withContext(Dispatchers.Default) {
+        val api = enrich.apiKey()
+        if (api.isBlank()) return@withContext null
+        val info = net.withPermit { tmdb.person(api, personId) } ?: return@withContext null
+        // réalisations d'abord (un réalisateur est cherché pour ses films), puis les rôles ; 120 titres au plus
+        val all = (info.directed + info.credits).distinctBy { "${it.mediaType}:${it.id}" }.take(120)
+        val movieItems = all.filter { it.mediaType != "tv" }.sortedByDescending { it.voteCount ?: 0 }
+        val tvItems = all.filter { it.mediaType == "tv" }.sortedByDescending { it.voteCount ?: 0 }
+        coroutineScope {
+            val m = async { ctx(pid, ContentType.MOVIE).matchPairs(movieItems, movieItems.size, byName = true) }
+            val s = async { ctx(pid, ContentType.SERIES).matchPairs(tvItems, tvItems.size, byName = true) }
+            val moviePairs = m.await()
+            val seriesPairs = s.await()
+            val movies = enrich.decorate(pid, moviePairs.map { it.second })
+            val series = enrich.decorate(pid, seriesPairs.map { it.second })
+            val found = (moviePairs.map { "movie:${it.first.id}" } + seriesPairs.map { "tv:${it.first.id}" }).toSet()
+            val elsewhere = all.filter { "${it.mediaType ?: "movie"}:${it.id}" !in found && it.poster != null }
+                .sortedByDescending { it.voteCount ?: 0 }.take(20)
+                .map { it.offCatalog(if (it.mediaType == "tv") ContentType.SERIES else ContentType.MOVIE) }
+            PersonPage(
+                id = info.id, name = info.name, photo = info.photo,
+                role = People.role(info.department, info.gender),
+                facts = People.facts(info.birthday, info.deathday, info.placeOfBirth, info.gender),
+                biography = info.biography,
+                backdrop = (movies + series).firstNotNullOfOrNull { it.backdrop } ?: all.firstNotNullOfOrNull { it.backdrop },
+                movies = movies, series = series, elsewhere = elsewhere,
+            )
+        }
+    } }
+
     /** Page « musée » : tous les films de la saga (présents ou non), visages récurrents, coulisses, séries liées. */
     suspend fun sagaPage(pid: Long, collectionId: Int, onPartial: (suspend (SagaPage) -> Unit)? = null): SagaPage? = ScreenLoading.track { withContext(Dispatchers.Default) {
         val api = enrich.apiKey()

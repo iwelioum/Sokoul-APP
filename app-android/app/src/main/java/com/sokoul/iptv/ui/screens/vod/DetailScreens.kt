@@ -358,7 +358,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
                 )
             }
         }
-        castSection(tm?.cast.orEmpty())
+        castSection(tm?.cast.orEmpty(), memory) { p -> nav.navigateOnce(com.sokoul.iptv.ui.nav.PersonRoute(p.id ?: return@castSection, p.name)) }
         saga?.let { (name, works) ->
             detailSection("saga", "Saga : ${name.replace(" - Saga", "").replace(" (Collection)", "")}", "Toute l'histoire, dans l'ordre de sortie.") {
                 CardRow(works, { it.uid }) { _, w ->
@@ -724,7 +724,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
                 }
             }
         }
-        castSection(tmdb?.cast.orEmpty())
+        castSection(tmdb?.cast.orEmpty(), memory) { p -> nav.navigateOnce(com.sokoul.iptv.ui.nav.PersonRoute(p.id ?: return@castSection, p.name)) }
         if (similar.isNotEmpty()) {
             detailSection("similar", "Vous aimerez aussi", "Des séries dans la même veine, disponibles dans votre abonnement.") {
                 CardRow(similar, { it.uid }) { _, w -> WorkCard(w, { nav.openWork(w) }, Modifier.focusMemory(memory, "sim:${w.uid}")) }
@@ -807,17 +807,28 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
 
 // --- composants propres aux fiches (le reste est dans DetailKit.kt) -----------------------------------
 
-private fun LazyListScope.castSection(cast: List<TmdbPerson>) {
+/** Distribution : visages focalisables ; OK ouvre la page de la personne (sa filmographie dans l'abonnement). */
+private fun LazyListScope.castSection(cast: List<TmdbPerson>, memory: com.sokoul.iptv.ui.components.FocusMemory, onPerson: (TmdbPerson) -> Unit) {
     if (cast.isEmpty()) return
-    detailSection("cast", "Distribution") {
+    detailSection("cast", "Distribution", "Choisissez un visage pour voir sa filmographie") {
         val l = LocalLayout.current
-        LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            items(cast) { person ->
-                Column(Modifier.width(92.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    NetImage(person.photo, person.name, Modifier.size(78.dp).clip(Radius.Round).background(SokoulColors.SurfaceHigher)) {
-                        Text(com.sokoul.iptv.ui.components.initials(person.name), color = SokoulColors.TextSecondary, fontWeight = FontWeight.Bold)
+        LazyRow(
+            contentPadding = PaddingValues(start = l.margin, end = l.margin, top = 10.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            items(cast, key = { it.id ?: it.name.hashCode() }) { person ->
+                Column(Modifier.width(104.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    FocusSurface(
+                        onClick = { onPerson(person) }, shape = Radius.Round, style = FocusStyle.Card,
+                        modifier = Modifier.focusMemory(memory, "cast:${person.id ?: person.name}"),
+                    ) { _ ->
+                        NetImage(person.photo, person.name, Modifier.size(84.dp).background(SokoulColors.SurfaceHigher)) {
+                            Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
+                                Text(com.sokoul.iptv.ui.components.initials(person.name), color = SokoulColors.TextSecondary, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
-                    Text(person.name, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(person.name, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     person.role?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
             }

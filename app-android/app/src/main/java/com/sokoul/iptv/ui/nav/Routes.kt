@@ -12,6 +12,8 @@ import kotlinx.serialization.Serializable
 @Serializable object SagasRoute
 /** Page « musée » d'une saga (identifiant de collection TMDB). */
 @Serializable data class SagaRoute(val id: Int)
+/** Page d'un acteur ou d'un réalisateur (identifiant TMDB) ; [name] s'affiche pendant le chargement. */
+@Serializable data class PersonRoute(val id: Int, val name: String = "")
 /** Univers TV : ouvre la dernière chaîne en plein écran (écran de passage, hors historique). */
 @Serializable object TvRoute
 /** Recherche ; [origin] (SearchOrigin) fixe le périmètre proposé au départ. */

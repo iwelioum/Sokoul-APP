@@ -141,6 +141,7 @@ private fun AppNavHost(nav: NavHostController, start: Any) {
         }
         composable<com.sokoul.iptv.ui.nav.SagasRoute> { Shell(nav, Dest.SAGAS, edgeToEdge = true) { com.sokoul.iptv.ui.screens.saga.SagasHubScreen(nav) } }
         composable<com.sokoul.iptv.ui.nav.SagaRoute> { com.sokoul.iptv.ui.screens.saga.SagaScreen(nav, it.toRoute<com.sokoul.iptv.ui.nav.SagaRoute>().id) }
+        composable<com.sokoul.iptv.ui.nav.PersonRoute> { val r = it.toRoute<com.sokoul.iptv.ui.nav.PersonRoute>(); com.sokoul.iptv.ui.screens.person.PersonScreen(nav, r.id, r.name) }
         composable<BrowseGridRoute> { val r = it.toRoute<BrowseGridRoute>(); BrowseGridScreen(nav, r.title, r.spec) }
         composable<com.sokoul.iptv.ui.nav.ExploreRoute> { com.sokoul.iptv.ui.screens.browse.ExploreScreen(nav, it.toRoute<com.sokoul.iptv.ui.nav.ExploreRoute>().type) }
         composable<SearchRoute> { Shell(nav, Dest.SEARCH) { SearchScreen(nav, it.toRoute<SearchRoute>().origin) } }

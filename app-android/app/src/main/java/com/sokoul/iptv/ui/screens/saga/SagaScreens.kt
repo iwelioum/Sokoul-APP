@@ -446,7 +446,7 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
                     if (page.faces.isNotEmpty()) item("faces") {
                         Section("Visages de la saga", "Les acteurs qui reviennent d'un film à l'autre")
                         LazyRow(contentPadding = PaddingValues(start = l.margin, end = l.margin, top = 10.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(l.gutter)) {
-                            items(page.faces, key = { it.id }) { f -> FaceCard(f, Modifier.focusMemory(memory, "p:${f.id}")) }
+                            items(page.faces, key = { it.id }) { f -> FaceCard(f, Modifier.focusMemory(memory, "p:${f.id}")) { nav.navigateOnce(com.sokoul.iptv.ui.nav.PersonRoute(f.id, f.name)) } }
                         }
                     }
                     if (page.crew.isNotEmpty()) item("crew") {
@@ -659,11 +659,11 @@ private fun Section(title: String, subtitle: String?) {
 }
 
 @Composable
-private fun FaceCard(f: SagaFace, modifier: Modifier = Modifier) {
+private fun FaceCard(f: SagaFace, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val size = 112.dp
     Column(modifier.width(size + 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        // focalisable pour faire défiler la rangée à la télécommande ; pas d'action. Visage : seule forme ronde.
-        FocusSurface(onClick = {}, shape = Radius.Round) { focused ->
+        // OK : page de la personne (filmographie). Visage : seule forme ronde.
+        FocusSurface(onClick = onClick, shape = Radius.Round) { focused ->
             val zoom = rememberBreathing(focused, to = 1.08f)
             NetImage(tmdbSized(f.photo, "w185"), f.name, Modifier.size(size).graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }) {
                 Box(Modifier.size(size).background(SokoulColors.SurfaceHigh), contentAlignment = Alignment.Center) {
@@ -672,7 +672,7 @@ private fun FaceCard(f: SagaFace, modifier: Modifier = Modifier) {
             }
         }
         Text(f.name, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.titleSmall, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
-        Text("Apparaît dans ${f.films} films", color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+        Text("${f.films} films de la saga", color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
     }
 }
 

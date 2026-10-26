@@ -18,7 +18,26 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class TmdbPerson(val name: String, val role: String?, val photo: String?)
+/** Personne de la distribution d'une fiche ; [id] mène à sa page (filmographie). */
+data class TmdbPerson(val name: String, val role: String?, val photo: String?, val id: Int? = null)
+
+/**
+ * Page d'une personne : identité et filmographie ([credits] = rôles, [directed] = réalisation/création),
+ * les plus connus d'abord. [gender] : 1 femme, 2 homme, 0 inconnu (TMDB).
+ */
+data class TmdbPersonInfo(
+    val id: Int,
+    val name: String,
+    val biography: String?,
+    val birthday: String?,
+    val deathday: String?,
+    val placeOfBirth: String?,
+    val department: String?,
+    val gender: Int,
+    val photo: String?,
+    val credits: List<TmdbItem>,
+    val directed: List<TmdbItem>,
+)
 
 /** Personne d'un générique : [role] = personnage (distribution) ou poste (« Director »…), [order] = rang au générique. */
 data class TmdbCredit(val id: Int, val name: String, val role: String?, val photo: String?, val order: Int)
@@ -75,6 +94,8 @@ data class TmdbItem(
     val genreIds: List<Int> = emptyList(),
     val originalLanguage: String? = null,
     val voteCount: Int? = null,
+    /** « movie » ou « tv » quand la liste mélange les deux (filmographie). */
+    val mediaType: String? = null,
 )
 
 data class TmdbEpisode(val season: Int, val episode: Int, val name: String?, val overview: String?, val still: String?, val runtimeMin: Int?)
@@ -269,14 +290,47 @@ class TmdbClient @Inject constructor(
         return json.parseToJsonElement(text) as? JsonObject
     }
 
+    /**
+     * Page d'une personne, avec sa filmographie (`combined_credits`), en français ; biographie anglaise à défaut.
+     * Émissions de plateau, d'actualité et de téléréalité écartées (apparitions « dans son propre rôle »). Cache 7 jours.
+     */
+    suspend fun person(apiKey: String, id: Int): TmdbPersonInfo? {
+        if (apiKey.isBlank()) return null
+        return safe {
+            val o = get(apiKey, "/3/person/$id", mapOf("append_to_response" to "combined_credits")) ?: return@safe null
+            val bioFr = o.str("biography")?.takeIf { it.isNotBlank() }
+            val bio = bioFr ?: get(apiKey, "/3/person/$id", emptyMap(), language = "en-US")?.str("biography")?.takeIf { it.isNotBlank() }
+            val cc = o["combined_credits"] as? JsonObject
+            fun keep(item: TmdbItem) = item.mediaType != "tv" || item.genreIds.none { it in NOT_FICTION_TV }
+            val cast = (cc?.get("cast") as? JsonArray).orEmpty().mapNotNull { e ->
+                val x = e as? JsonObject ?: return@mapNotNull null
+                itemOf(x, "movie")?.takeIf { keep(it) }
+            }
+            val directed = (cc?.get("crew") as? JsonArray).orEmpty().mapNotNull { e ->
+                val x = e as? JsonObject ?: return@mapNotNull null
+                if (x.str("job") !in DIRECTING_JOBS) return@mapNotNull null
+                itemOf(x, "movie")?.takeIf { keep(it) }
+            }
+            fun List<TmdbItem>.ranked() = distinctBy { "${it.mediaType}:${it.id}" }.sortedByDescending { it.voteCount ?: 0 }
+            TmdbPersonInfo(
+                id = id, name = o.str("name") ?: return@safe null, biography = bio,
+                birthday = o.str("birthday"), deathday = o.str("deathday"), placeOfBirth = o.str("place_of_birth"),
+                department = o.str("known_for_department"), gender = o.int("gender") ?: 0,
+                photo = o.str("profile_path")?.let { "$IMG/w342$it" },
+                credits = cast.ranked(), directed = directed.ranked(),
+            )
+        }
+    }
+
     private fun items(o: JsonObject?, kind: String, field: String = "results"): List<TmdbItem> =
-        (o?.get(field) as? JsonArray).orEmpty().mapNotNull { e ->
-            val x = e as? JsonObject ?: return@mapNotNull null
+        (o?.get(field) as? JsonArray).orEmpty().mapNotNull { e -> (e as? JsonObject)?.let { itemOf(it, kind) } }
+
+    private fun itemOf(x: JsonObject, kind: String): TmdbItem? {
             val k = x.str("media_type") ?: kind
-            if (k != "movie" && k != "tv") return@mapNotNull null
-            TmdbItem(
-                id = x.int("id") ?: return@mapNotNull null,
-                title = x.str("title") ?: x.str("name") ?: return@mapNotNull null,
+            if (k != "movie" && k != "tv") return null
+            return TmdbItem(
+                id = x.int("id") ?: return null,
+                title = x.str("title") ?: x.str("name") ?: return null,
                 originalTitle = x.str("original_title") ?: x.str("original_name"),
                 year = (x.str("release_date") ?: x.str("first_air_date"))?.take(4)?.toIntOrNull(),
                 poster = x.str("poster_path")?.let { "$IMG/w342$it" },
@@ -286,14 +340,15 @@ class TmdbClient @Inject constructor(
                 genreIds = (x["genre_ids"] as? JsonArray).orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() },
                 originalLanguage = x.str("original_language"),
                 voteCount = x.int("vote_count"),
+                mediaType = k,
             )
-        }
+    }
 
     private fun parse(kind: String, o: JsonObject): TmdbInfo {
         val credits = o["credits"] as? JsonObject
         val cast = (credits?.get("cast") as? JsonArray).orEmpty().take(15).mapNotNull {
             val c = it as? JsonObject ?: return@mapNotNull null
-            TmdbPerson(c.str("name") ?: return@mapNotNull null, c.str("character"), c.str("profile_path")?.let { p -> "$IMG/w185$p" })
+            TmdbPerson(c.str("name") ?: return@mapNotNull null, c.str("character"), c.str("profile_path")?.let { p -> "$IMG/w185$p" }, c.int("id"))
         }
         val director = (credits?.get("crew") as? JsonArray).orEmpty()
             .mapNotNull { it as? JsonObject }.firstOrNull { it.str("job") == "Director" }?.str("name")
@@ -360,6 +415,9 @@ class TmdbClient @Inject constructor(
 
     companion object {
         const val IMG = "https://image.tmdb.org/t/p"
+        /** Genres TV écartés des filmographies : actualité, téléréalité, talk-show. */
+        private val NOT_FICTION_TV = setOf(10763, 10764, 10767)
+        private val DIRECTING_JOBS = setOf("Director", "Creator")
         private const val HOUR = 3600_000L
     }
 }
