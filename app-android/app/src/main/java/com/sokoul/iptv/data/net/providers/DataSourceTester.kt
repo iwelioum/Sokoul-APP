@@ -31,10 +31,12 @@ class DataSourceTester @Inject constructor(
     private val subtitles: SubtitlesClient,
     private val channels: ChannelDbClient,
     private val http: OkHttpClient,
+    private val rd: com.sokoul.iptv.data.debrid.RealDebridClient,
 ) {
     suspend fun test(s: ApiService): TestResult {
         if (s == ApiService.WATCHMODE) return TestResult(false, "Non utilisé : l'offre gratuite n'inclut pas la France")
-        if (s.needsKey && keys.key(s).isEmpty()) return TestResult(false, "Aucune clé : inscription gratuite sur ${s.signupUrl?.removePrefix("https://")?.substringBefore('/')}")
+        if (s == ApiService.REALDEBRID && !rd.configured()) return TestResult(false, "Aucune clé : associez la box par code, ou clé sur real-debrid.com/apitoken")
+        if (s.needsKey && s != ApiService.REALDEBRID && keys.key(s).isEmpty()) return TestResult(false, "Aucune clé : inscription gratuite sur ${s.signupUrl?.removePrefix("https://")?.substringBefore('/')}")
         api.health.reset(s)
         val detail = try {
             withTimeoutOrNull(TIMEOUT_MS) { freshCall { probe(s) } }
@@ -67,6 +69,14 @@ class DataSourceTester @Inject constructor(
         ApiService.XMLTVFR -> http.newCall(Request.Builder().url(SyncEngine.XMLTVFR_URL).head().build()).await().use { r ->
             if (r.isSuccessful) { api.health.ok(s); r.header("Content-Length")?.toLongOrNull()?.let { "guide disponible (${it / 1_000_000} Mo)" } ?: "guide disponible" }
             else { api.health.failed(s, r.code, "Erreur ${r.code}"); null }
+        }
+        ApiService.REALDEBRID -> try {
+            rd.user().let { u ->
+                if (!u.premium) "compte ${u.username} sans premium : lecture impossible"
+            else "compte ${u.username} · premium, ${u.daysLeft(System.currentTimeMillis())} jours restants"
+            }
+        } catch (e: com.sokoul.iptv.data.debrid.RdException) {
+            api.health.failed(s, e.code.takeIf { it in 400..499 }, e.message ?: "Erreur Real-Debrid"); null
         }
         ApiService.WATCHMODE -> null
     }

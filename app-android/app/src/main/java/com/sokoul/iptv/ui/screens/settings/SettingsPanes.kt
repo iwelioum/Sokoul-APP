@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LiveTv
@@ -65,6 +66,7 @@ enum class SettingsCategory(val label: String, val icon: ImageVector, val blurb:
     PLAYBACK("Lecture", Icons.Default.PlayCircle, "Langues, sous-titres et enchaînement des épisodes. Les réglages techniques sont sous « Avancé »."),
     TV("Télévision et guide", Icons.Default.LiveTv, "Démarrage, sens du zapping et guide des programmes."),
     LIBRARY("Films et séries", Icons.Default.Movie, "Fiches TMDB, regroupement des doublons et version lancée en premier."),
+    DEBRID("Real-Debrid", Icons.Default.Bolt, "Films et séries en 4K depuis votre compte Real-Debrid, sans utiliser la connexion IPTV."),
     PARENTAL("Contrôle parental", Icons.Default.Lock, "Code parental, groupes masqués et verrouillés."),
     SOURCES("Sources de données", Icons.Default.Cloud, "Services facultatifs en complément de TMDB : notes, « Aussi sur », sous-titres, logos."),
     BACKUP("Sauvegarde", Icons.Default.Backup, "Exporter ou restaurer toute la configuration."),

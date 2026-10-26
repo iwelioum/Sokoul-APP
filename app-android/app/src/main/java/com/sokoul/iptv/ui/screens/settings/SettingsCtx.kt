@@ -38,4 +38,7 @@ internal class SettingsCtx(
     val exportMenu: () -> Unit,
     val restore: () -> Unit,
     val toast: (String) -> Unit,
+    /** Real-Debrid associé par code appareil (jeton renouvelé seul). */
+    val debridLinked: Boolean = false,
+    val pairDebrid: () -> Unit = {},
 )

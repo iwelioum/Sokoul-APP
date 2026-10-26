@@ -27,6 +27,8 @@ sealed interface StreamState {
     /** @param refused refus du fournisseur : « Réessayer » reste bloqué jusqu'à [retryAtMs]. */
     data class Failed(val message: String, val refused: Boolean = false, val retryAtMs: Long = 0) : StreamState
     data object Ended : StreamState
+    /** La connexion IPTV est prise par l'enregistrement de [channel] : reprise automatique quand il se termine. */
+    data class Busy(val channel: String) : StreamState
 }
 
 /**
@@ -114,6 +116,14 @@ class StreamPlayer(
     init {
         player.addListener(listener)
         PlaybackActivity.started()
+        scope.launch {
+            gate.recording.collect { channel ->
+                val s = stream ?: return@collect
+                if (!s.provider || local) return@collect
+                if (channel != null) busy(channel)
+                else if (_state.value is StreamState.Busy) loadWhenAllowed(keepPosition = true)
+            }
+        }
     }
 
     fun play(stream: ResolvedStream, title: String, startPositionMs: Long = 0) {
@@ -161,6 +171,8 @@ class StreamPlayer(
 
     private fun loadWhenAllowed(keepPosition: Boolean) {
         retryJob?.cancel()
+        val s = stream
+        gate.recording.value?.let { if (s?.provider == true) { busy(it); return } }
         val wait = gate.remainingMs()
         if (wait <= 0) { load(keepPosition); return }
         player.stop()
@@ -183,6 +195,13 @@ class StreamPlayer(
         player.setMediaSource(source, if (s.isLive) 0 else position)
         player.prepare()
         player.playWhenReady = true
+    }
+
+    private fun busy(channel: String) {
+        retryJob?.cancel(); watchdog?.cancel(); videoGuard?.cancel()
+        if (stream?.isLive != true && player.currentPosition > 0) startPositionMs = player.currentPosition
+        player.stop()
+        _state.value = StreamState.Busy(channel)
     }
 
     /** Refus du fournisseur : pause imposée, puis un seul nouvel essai automatique. */

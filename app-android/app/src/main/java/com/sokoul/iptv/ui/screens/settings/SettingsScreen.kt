@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import com.sokoul.iptv.ui.screens.settings.sections.aboutSection
 import com.sokoul.iptv.ui.screens.settings.sections.accountSection
 import com.sokoul.iptv.ui.screens.settings.sections.backupSection
+import com.sokoul.iptv.ui.screens.settings.sections.debridSection
 import com.sokoul.iptv.ui.screens.settings.sections.librarySection
 import com.sokoul.iptv.ui.screens.settings.sections.parentalSection
 import com.sokoul.iptv.ui.screens.settings.sections.playbackSection
@@ -128,7 +129,50 @@ class SettingsViewModel @Inject constructor(
     private val health: com.sokoul.iptv.data.net.providers.ProviderHealth,
     private val tester: com.sokoul.iptv.data.net.providers.DataSourceTester,
     private val indexer: com.sokoul.iptv.data.repo.CatalogIndexer,
+    private val rd: com.sokoul.iptv.data.debrid.RealDebridClient,
 ) : ViewModel() {
+    // --- Real-Debrid : association par code ------------------------------------------------
+    data class Pairing(val code: String?, val message: String)
+    val pairing = MutableStateFlow<Pairing?>(null)
+    val debridLinked = MutableStateFlow(false)
+    private var pairJob: kotlinx.coroutines.Job? = null
+
+    init { viewModelScope.launch { debridLinked.value = rd.linkedByCode() } }
+
+    /** Affiche un code à saisir sur real-debrid.com/device puis attend la validation (10 min au plus). */
+    fun startPairing() {
+        pairJob?.cancel()
+        pairing.value = Pairing(null, "Demande d'un code…")
+        pairJob = viewModelScope.launch {
+            try {
+                val code = rd.deviceCode()
+                pairing.value = Pairing(code.userCode, "Sur votre téléphone, ouvrez ${code.verificationUrl.removePrefix("https://")} et saisissez ce code. Cette fenêtre se fermera seule.")
+                while (System.currentTimeMillis() < code.expiresAtMs) {
+                    kotlinx.coroutines.delay(code.intervalS.coerceAtLeast(5) * 1000L)
+                    if (rd.pollDevice(code)) {
+                        pairing.value = null
+                        debridLinked.value = true
+                        testResults.value = testResults.value - ApiService.REALDEBRID
+                        test(ApiService.REALDEBRID)
+                        return@launch
+                    }
+                }
+                pairing.value = Pairing(null, "Code expiré : recommencez.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                pairing.value = Pairing(null, e.message ?: "Association impossible")
+            }
+        }
+    }
+
+    fun cancelPairing() { pairJob?.cancel(); pairing.value = null }
+
+    fun unlinkDebrid() = viewModelScope.launch {
+        rd.unlink(); debridLinked.value = false
+        testResults.value = testResults.value - ApiService.REALDEBRID
+    }
+
     /** Part du catalogue dont la fiche est complète (Explorer, ambiances). */
     val coverage = kotlinx.coroutines.flow.MutableStateFlow<com.sokoul.iptv.data.repo.IndexCoverage?>(null)
 
@@ -252,6 +296,8 @@ fun SettingsScreen(nav: NavHostController) {
     val testResults by vm.testResults.collectAsStateWithLifecycle()
     val testing by vm.testing.collectAsStateWithLifecycle()
     var sourceMenu by remember { mutableStateOf<ApiService?>(null) }
+    val debridLinked by vm.debridLinked.collectAsStateWithLifecycle()
+    val pairing by vm.pairing.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var choice by remember { mutableStateOf<Pair<String, List<MenuOption>>?>(null) }
@@ -301,6 +347,8 @@ fun SettingsScreen(nav: NavHostController) {
         exportMenu = { exportMenu = true },
         restore = { if (hasPicker) importLauncher.launch(arrayOf("application/json", "*/*")) else restoreMenu = true },
         toast = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
+        debridLinked = debridLinked,
+        pairDebrid = { vm.startPairing() },
     )
 
     SettingsPanes { cat, modifier ->
@@ -316,6 +364,7 @@ fun SettingsScreen(nav: NavHostController) {
                     SettingsCategory.PLAYBACK -> playbackSection(ctx)
                     SettingsCategory.TV -> televisionSection(ctx)
                     SettingsCategory.LIBRARY -> librarySection(ctx)
+                    SettingsCategory.DEBRID -> debridSection(ctx)
                     SettingsCategory.PARENTAL -> parentalSection(ctx)
                     SettingsCategory.SOURCES -> sourcesSection(ctx)
                     SettingsCategory.BACKUP -> backupSection(ctx)
@@ -326,6 +375,14 @@ fun SettingsScreen(nav: NavHostController) {
     }
 
     choice?.let { (title, options) -> OptionsDialog(title, options, onDismiss = { choice = null }) }
+    pairing?.let { p ->
+        OptionsDialog(
+            p.code?.let { "Code : $it" } ?: "Association Real-Debrid",
+            listOf(MenuOption("Annuler", Icons.Default.Delete) { vm.cancelPairing() }),
+            subtitle = p.message,
+            onDismiss = { vm.cancelPairing() },
+        )
+    }
     sourceMenu?.let { svc ->
         val saved = !s.apiKeys[svc.id].isNullOrBlank()
         OptionsDialog(

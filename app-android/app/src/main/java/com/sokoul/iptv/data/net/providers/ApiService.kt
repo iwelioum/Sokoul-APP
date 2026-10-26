@@ -29,6 +29,7 @@ enum class ApiService(
     WATCHMODE("watchmode", "Watchmode", "Non utilisé : l'offre gratuite n'inclut pas la France", true, "https://api.watchmode.com/requestApiKey/"),
     IPTVORG("iptvorg", "iptv-org", "Logos et catégories de chaînes manquants", false),
     XMLTVFR("xmltvfr", "xmltv.fr", "Guide TV France, Belgique, Suisse (à activer)", false),
+    REALDEBRID("realdebrid", "Real-Debrid", "Films et séries en 4K, sans utiliser la connexion IPTV", true, "https://real-debrid.com/apitoken"),
     ;
 
     /** Clé fournie au build (local.properties), vide si absente. */
@@ -42,6 +43,7 @@ enum class ApiService(
             OPENSUBTITLES -> BuildConfig.KEY_OPENSUBTITLES
             SUBDL -> BuildConfig.KEY_SUBDL
             WATCHMODE -> BuildConfig.KEY_WATCHMODE
+            REALDEBRID -> BuildConfig.KEY_REALDEBRID
             TVMAZE, IPTVORG, XMLTVFR -> ""
         }
 }

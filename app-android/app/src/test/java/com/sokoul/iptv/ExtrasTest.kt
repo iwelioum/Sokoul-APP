@@ -190,6 +190,7 @@ class ExtrasTest {
         val tester = DataSourceTester(
             api, keys, FanartClient(api, keys), TvdbClient(api, keys), StreamingClient(api, keys), TasteDiveClient(api, keys),
             OmdbClient(api, keys), SubtitlesClient(api, keys), ChannelDbClient(context, client, json, db, api.health), client,
+            com.sokoul.iptv.data.debrid.RealDebridClient(client, keys, settings, api.health),
         )
         val ok = tester.test(ApiService.FANART)
         assertTrue(ok.message, ok.ok)
@@ -211,6 +212,7 @@ class ExtrasTest {
         val tester = DataSourceTester(
             api, keys, FanartClient(api, keys), TvdbClient(api, keys), StreamingClient(api, keys), TasteDiveClient(api, keys),
             OmdbClient(api, keys), SubtitlesClient(api, keys), ChannelDbClient(context, client, json, db, api.health), client,
+            com.sokoul.iptv.data.debrid.RealDebridClient(client, keys, settings, api.health),
         )
         if (ApiService.OMDB.buildKey.isEmpty()) {
             val r = tester.test(ApiService.OMDB)

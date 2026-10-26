@@ -58,6 +58,7 @@ class RecordingService : Service() {
     @Inject lateinit var playlists: PlaylistRepository
     @Inject lateinit var resolver: StreamResolver
     @Inject lateinit var http: OkHttpClient
+    @Inject lateinit var gate: com.sokoul.iptv.player.ProviderGate
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<Long, Job>()
@@ -90,6 +91,8 @@ class RecordingService : Service() {
                 val channel = db.channels().get(rec.playlistId, rec.channelId) ?: throw IOException("Chaîne introuvable")
                 val stream = resolver.recordingUrl(p, channel)
                 val url = stream.urls.firstOrNull() ?: throw IOException("URL de flux manquante")
+                // L'enregistrement prend la connexion unique : le lecteur IPTV s'arrête d'abord (une seule connexion à la fois).
+                if (stream.provider) { gate.holdForRecording(id, rec.channelName); delay(1_500) }
                 checkSpace(file)
                 FileOutputStream(file, true).use { out ->
                     var failures = 0
@@ -138,6 +141,7 @@ class RecordingService : Service() {
         jobs[id] = job
         job.invokeOnCompletion {
             jobs.remove(id)
+            gate.releaseRecording(id)
             scope.launch { updateNotification(); if (jobs.isEmpty()) stopSelfSafely() }
         }
     }

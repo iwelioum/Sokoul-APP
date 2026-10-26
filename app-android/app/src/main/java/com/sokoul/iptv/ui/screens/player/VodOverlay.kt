@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -445,7 +446,7 @@ fun PauseScreen(ui: PlayerUi, position: Long, duration: Long) {
 // --- États : chargement, mise en mémoire tampon, refus du fournisseur, erreur --------------------------
 
 @Composable
-fun StatusOverlay(state: StreamState, error: String?, retryFocus: FocusRequester, onRetry: () -> Unit, onBack: () -> Unit) {
+fun StatusOverlay(state: StreamState, error: String?, retryFocus: FocusRequester, onRetry: () -> Unit, onBack: () -> Unit, onStopRecording: () -> Unit = {}) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when {
             error != null || state is StreamState.Failed -> {
@@ -457,6 +458,17 @@ fun StatusOverlay(state: StreamState, error: String?, retryFocus: FocusRequester
                     hint = if (failed?.refused == true) "Fermez la lecture sur vos autres appareils. Pour protéger votre abonnement, l'app attend avant de réessayer." else null,
                 ) {
                     AppButton(if (wait > 0) "Réessayer dans $wait s" else "Réessayer", { if (wait <= 0) onRetry() }, icon = Icons.Default.Replay, primary = wait <= 0, enabled = wait <= 0, focusRequester = retryFocus)
+                    AppButton("Retour", onBack, icon = Icons.AutoMirrored.Filled.ArrowBack)
+                }
+                LaunchedEffect(Unit) { delay(80); runCatching { retryFocus.requestFocus() } }
+            }
+            state is StreamState.Busy -> {
+                ErrorCard(
+                    title = "${state.channel} est en cours d'enregistrement",
+                    message = "Votre abonnement n'autorise qu'une connexion, et l'enregistrement l'utilise.",
+                    hint = "La lecture reprendra toute seule à la fin de l'enregistrement.",
+                ) {
+                    AppButton("Arrêter l'enregistrement et regarder", onStopRecording, icon = Icons.Default.Stop, primary = true, focusRequester = retryFocus)
                     AppButton("Retour", onBack, icon = Icons.AutoMirrored.Filled.ArrowBack)
                 }
                 LaunchedEffect(Unit) { delay(80); runCatching { retryFocus.requestFocus() } }

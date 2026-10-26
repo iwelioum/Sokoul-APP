@@ -92,7 +92,7 @@ class SettingsUiTest {
 
     @Test fun `OK sur une rubrique entre dans son volet, Retour revient sur la rubrique`() {
         setUp()
-        repeat(4) { key(Key.DirectionDown, wait = 40) } // Contrôle parental, sans attendre
+        repeat(5) { key(Key.DirectionDown, wait = 40) } // Contrôle parental (après Real-Debrid), sans attendre
         key(Key.DirectionCenter, wait = 200)
         rule.onNodeWithText("Ligne 1 PARENTAL").assertIsFocused()
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }

@@ -279,6 +279,7 @@ private fun SlotView(slot: SlotState, hasAudio: Boolean) {
         when (val s = state) {
             is StreamState.Loading, is StreamState.Buffering, is StreamState.Reconnecting, is StreamState.Waiting -> CircularProgressIndicator(Modifier.size(32.dp), color = SokoulColors.Accent)
             is StreamState.Failed -> Text(s.message, Modifier.padding(16.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
+            is StreamState.Busy -> Text("Connexion utilisée par l'enregistrement de ${s.channel}", Modifier.padding(16.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
             else -> Unit
         }
         Row(

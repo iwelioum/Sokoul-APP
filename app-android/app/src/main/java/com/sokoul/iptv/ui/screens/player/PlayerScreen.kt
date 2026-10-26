@@ -214,7 +214,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     LaunchedEffect(ui.resumedFromMs) { if (ui.resumedFromMs > 0) { delay(5_000); resumeHintDone = true } }
     val exo = sp?.player
 
-    val errorShown = ui.error != null || streamState is StreamState.Failed || streamState is StreamState.Waiting
+    val errorShown = ui.error != null || streamState is StreamState.Failed || streamState is StreamState.Waiting || streamState is StreamState.Busy
     val showNextCard = !ui.isLive && ui.nextEpisode != null && ui.nextEpisode?.id != nextDismissedFor &&
         (ui.endedWithNext || nextCountdown != null)
     // un panneau ou une carte a le focus : les flèches servent à s'y déplacer
@@ -508,7 +508,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         OnlineCues(vm, exo, Modifier.align(Alignment.BottomCenter).padding(bottom = if (infoVisible && !inPip) 190.dp else if (inPip) 8.dp else 56.dp))
 
         if (!inPip) {
-            if (!ui.needsPin) StatusOverlay(streamState, ui.error, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() })
+            if (!ui.needsPin) StatusOverlay(streamState, ui.error, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() }, onStopRecording = vm::stopRecordings)
             if (ui.needsPin) {
                 com.sokoul.iptv.ui.components.PinDialog(
                     "Contenu verrouillé — code parental",
@@ -856,7 +856,7 @@ internal enum class StreamHealth(val label: String) { GOOD("Flux stable"), WEAK(
 
 internal fun healthOf(s: StreamState): StreamHealth = when (s) {
     is StreamState.Playing -> StreamHealth.GOOD
-    is StreamState.Failed, is StreamState.Waiting -> StreamHealth.BAD
+    is StreamState.Failed, is StreamState.Waiting, is StreamState.Busy -> StreamHealth.BAD
     else -> StreamHealth.WEAK
 }
 

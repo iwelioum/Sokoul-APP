@@ -121,6 +121,7 @@ class PlayerViewModel @Inject constructor(
     private val vod: VodRepository,
     private val gate: ProviderGate,
     private val subtitles: SubtitlesClient,
+    private val recorder: com.sokoul.iptv.recording.RecordingScheduler,
 ) : ViewModel() {
 
     val route: PlayerRoute = savedState.toRoute()
@@ -323,6 +324,13 @@ class PlayerViewModel @Inject constructor(
     val timeshiftState get() = timeshift.state
     private var tickJob: Job? = null
 
+    init {
+        // Un enregistrement démarre : la pause du direct (qui tient la connexion) s'arrête, le lecteur attend.
+        viewModelScope.launch {
+            gate.recording.collect { if (it != null && timeshift.active) stopTimeshift(backToNetwork = true) }
+        }
+    }
+
     private fun freeBytes(dir: File): Long = dir.apply { mkdirs() }.usableSpace
 
     /**
@@ -336,6 +344,7 @@ class PlayerViewModel @Inject constructor(
             val stream = lastPlay?.first
             val url = stream?.urls?.firstOrNull()
             if (!timeshiftAllowed || stream == null || url == null) { sp.player.playWhenReady = !sp.player.playWhenReady; return }
+            if (gate.recording.value != null) { sp.player.playWhenReady = !sp.player.playWhenReady; return }
             if (!TimeshiftPolicy.canStart(freeBytes(factory.timeshiftDir()))) {
                 _ui.update { it.copy(notice = "Pause du direct indisponible : moins de 3 Go libres sur la box") }
                 sp.player.playWhenReady = !sp.player.playWhenReady
@@ -987,6 +996,11 @@ class PlayerViewModel @Inject constructor(
 
     /** Pause imposée par le fournisseur restante (ms), pour le compte à rebours de « Réessayer ». */
     fun providerWaitMs(): Long = gate.remainingMs()
+
+    /** « Arrêter l'enregistrement » depuis l'écran « connexion occupée » : la lecture reprend seule ensuite. */
+    fun stopRecordings() {
+        viewModelScope.launch { db.recordings().active().forEach { recorder.cancel(it.id) } }
+    }
 
     companion object {
         const val FALLBACK_PAUSE_MS = 4_000L

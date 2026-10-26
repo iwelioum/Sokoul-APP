@@ -42,6 +42,24 @@ class ProviderGate @Inject constructor() {
     @Synchronized
     fun isActive(player: StreamPlayer) = active?.get() === player
 
+    // --- Enregistrements : ils tiennent la connexion unique tant qu'ils tournent ----------------
+
+    private val holds = java.util.concurrent.ConcurrentHashMap<Long, String>()
+    private val _recording = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    /** Chaîne en cours d'enregistrement (null = connexion libre). Les lecteurs IPTV s'effacent devant elle. */
+    val recording: kotlinx.coroutines.flow.StateFlow<String?> = _recording
+
+    fun holdForRecording(id: Long, channel: String) {
+        holds[id] = channel
+        _recording.value = channel
+    }
+
+    fun releaseRecording(id: Long) {
+        holds.remove(id)
+        _recording.value = holds.values.firstOrNull()
+    }
+
     companion object {
         const val COOLDOWN_MS = 30_000L
     }

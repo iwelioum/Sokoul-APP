@@ -62,6 +62,14 @@ data class AppSettings(
     val apiKeys: Map<String, String> = emptyMap(),
     /** Guide TV complémentaire xmltv.fr (France, Belgique, Suisse) : gros fichier, désactivé par défaut. */
     val epgXmltvFr: Boolean = false,
+    /** Adresse de l'extension de recherche de sources (protocole Stremio), utilisée avec Real-Debrid. */
+    val debridAddon: String = "",
+    /** Taille maximale d'un fichier Real-Debrid en Go (0 = automatique : 25 Go en Wi-Fi, sans limite en câble). */
+    val debridMaxGb: Int = 0,
+    /** Adapter la fréquence de l'écran à celle du film (24, 25, 50 Hz) : plus de saccades sur les travellings. */
+    val frameRateMatch: Boolean = true,
+    /** Son Dolby / DTS envoyé tel quel à l'ampli ou la barre de son (sinon décodé par la box). */
+    val audioPassthrough: Boolean = true,
 ) {
     /** Bornes appliquées à chaque écriture : une valeur aberrante (import, bug d'UI) ne doit pas casser l'app. */
     fun sanitized(): AppSettings = copy(
@@ -77,6 +85,8 @@ data class AppSettings(
         lastChannelId = lastChannelId.take(64),
         vodLanguages = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(vodLanguages).joinToString(","),
         resizeMode = resizeMode.coerceIn(0, 2),
+        debridAddon = cleanAddon(debridAddon),
+        debridMaxGb = debridMaxGb.coerceIn(0, 200),
     )
 
     companion object {
@@ -86,6 +96,12 @@ data class AppSettings(
 
         /** Une clé d'API ne contient que lettres, chiffres, « . _ - » (pas d'espace, pas de saut de ligne collé). */
         fun cleanKey(k: String): String = k.trim().take(256).filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
+
+        /** « https://…/manifest.json » ou « stremio://… » collé tel quel → base https sans « /manifest.json ». */
+        fun cleanAddon(u: String): String {
+            val t = u.trim().replace("stremio://", "https://").removeSuffix("/").removeSuffix("/manifest.json").removeSuffix("/").take(512)
+            return if (t.startsWith("https://") && t.none { it.isWhitespace() }) t else ""
+        }
     }
 }
 
@@ -118,6 +134,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val group = booleanPreferencesKey("group_duplicates")
         val vodLangs = stringPreferencesKey("vod_languages")
         val xmltvFr = booleanPreferencesKey("epg_xmltv_fr")
+        val debridAddon = stringPreferencesKey("debrid_addon")
+        val debridMaxGb = intPreferencesKey("debrid_max_gb")
+        val frameRate = booleanPreferencesKey("frame_rate_match")
+        val passthrough = booleanPreferencesKey("audio_passthrough")
     }
 
     private val API_KEY_PREFIX = "api_key_"
@@ -153,6 +173,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             if (k.name.startsWith(API_KEY_PREFIX) && v is String) k.name.removePrefix(API_KEY_PREFIX) to v else null
         }.toMap(),
         epgXmltvFr = this[K.xmltvFr] ?: false,
+        debridAddon = this[K.debridAddon] ?: "",
+        debridMaxGb = this[K.debridMaxGb] ?: 0,
+        frameRateMatch = this[K.frameRate] ?: true,
+        audioPassthrough = this[K.passthrough] ?: true,
     )
 
     private inline fun <reified T : Enum<T>> enumOr(v: String?, default: T): T =
@@ -238,6 +262,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.group] = s.groupDuplicates
             prefs[K.vodLangs] = s.vodLanguages
             prefs[K.xmltvFr] = s.epgXmltvFr
+            prefs[K.debridAddon] = s.debridAddon
+            prefs[K.debridMaxGb] = s.debridMaxGb
+            prefs[K.frameRate] = s.frameRateMatch
+            prefs[K.passthrough] = s.audioPassthrough
             // clés des services : une préférence par service ; clé effacée → préférence retirée
             prefs.asMap().keys.filter { it.name.startsWith(API_KEY_PREFIX) }.forEach { prefs.remove(it) }
             s.apiKeys.forEach { (id, key) -> prefs[stringPreferencesKey(API_KEY_PREFIX + id)] = key }

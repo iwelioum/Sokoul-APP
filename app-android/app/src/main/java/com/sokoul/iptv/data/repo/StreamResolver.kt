@@ -23,6 +23,8 @@ data class ResolvedStream(
     val userAgent: String,
     val referrer: String?,
     val isLive: Boolean,
+    /** Le flux passe par l'abonnement IPTV (sa connexion unique). Faux pour un fichier local ou Real-Debrid. */
+    val provider: Boolean = true,
 )
 
 @Singleton

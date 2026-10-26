@@ -131,6 +131,41 @@ class StreamPlayerTest {
         assertTrue(second.state.value is StreamState.Loading)
     }
 
+    @Test fun `enregistrement en cours le lecteur IPTV s'efface puis reprend seul, Real-Debrid continue`() {
+        val paths = java.util.Collections.synchronizedList(mutableListOf<String>())
+        serve { MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE) }
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                paths += request.path.orEmpty()
+                return MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE)
+            }
+        }
+        val iptv = player()
+        iptv.play(movie(), "Film")
+        assertTrue(iptv.state.value is StreamState.Loading)
+        gate.holdForRecording(7, "TF1")
+        advance(10)
+        assertEquals(StreamState.Busy("TF1"), iptv.state.value)
+        gate.releaseRecording(7)
+        advance(10)
+        assertTrue("reprise automatique : ${iptv.state.value}", iptv.state.value is StreamState.Loading)
+        gate.holdForRecording(8, "TF1")
+        advance(10)
+        // un nouveau flux IPTV pendant l'enregistrement : aucune requête au fournisseur
+        val other = player()
+        other.play(movie("/movie/u/p/2.mkv"), "Autre")
+        assertEquals(StreamState.Busy("TF1"), other.state.value)
+        other.release(); players.remove(other)
+        // un flux Real-Debrid n'utilise pas la connexion IPTV : il démarre
+        val debrid = player()
+        debrid.play(movie("/d/film.mkv").copy(provider = false), "Film RD")
+        assertTrue(debrid.state.value is StreamState.Loading)
+        debrid.release(); players.remove(debrid)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue("aucune connexion IPTV pendant l'enregistrement : $paths", paths.none { it.endsWith("/2.mkv") })
+        gate.releaseRecording(8)
+    }
+
     @Test fun `URL sans extension HLS force en repli sans requete en rafale`() {
         serve { MockResponse().setResponseCode(200).setBody("pas une vidéo") }
         val p = player()
