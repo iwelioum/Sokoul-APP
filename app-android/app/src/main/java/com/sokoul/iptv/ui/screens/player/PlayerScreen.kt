@@ -641,8 +641,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 EpisodesPanel(episodes, ui.currentSe, ui.seriesBackdrop ?: ui.image, Modifier, tmdb = tmdbEpisodes, onSeason = vm::loadTmdbSeason) { e -> episodesVisible = false; vm.playEpisodeNow(e) }
             }
             AnimatedVisibility(
-                tracksVisible, Modifier.align(Alignment.CenterEnd),
-                enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit()),
+                tracksVisible, Modifier.align(Alignment.BottomEnd).padding(end = side, bottom = if (l.isCompact) 16.dp else 120.dp),
+                enter = fadeIn(tween(180)) + slideInVertically(tween(180, easing = Motion.Decelerate)) { it / 10 },
+                exit = fadeOut(Motion.exit()) + slideOutVertically(Motion.exit()) { it / 10 },
             ) {
                 val audioOpts = remember(tracks) { vm.audioOptions() }
                 val online by vm.onlineSubs.collectAsStateWithLifecycle()
