@@ -27,6 +27,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject lateinit var parentalGate: com.sokoul.iptv.ui.ParentalGate
     @Inject lateinit var vod: com.sokoul.iptv.data.repo.VodRepository
     @Inject lateinit var profiles: com.sokoul.iptv.data.repo.ProfileRepository
+    @Inject lateinit var watchNext: com.sokoul.iptv.tv.WatchNextPublisher
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -36,6 +37,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
         createChannels()
         profiles.start()
+        watchNext.start()
         SyncWorker.schedulePeriodic(this)
         com.sokoul.iptv.work.TraktWorker.schedule(this)
         com.sokoul.iptv.work.CatalogIndexWorker.start(this)

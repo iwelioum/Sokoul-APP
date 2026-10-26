@@ -67,6 +67,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        // rangée « À suivre » de Google TV : sokoul://resume/…
+        if (intent?.action == Intent.ACTION_VIEW) com.sokoul.iptv.tv.DeepLinks.parse(intent.dataString)?.let { com.sokoul.iptv.tv.DeepLinks.pending.value = it }
         val pid = intent?.getLongExtra(EXTRA_PLAY_PLAYLIST, 0) ?: 0
         val cid = intent?.getStringExtra(EXTRA_PLAY_CHANNEL)
         // L'activité est exportée (lanceur) : n'importe quelle app peut envoyer ces extras.

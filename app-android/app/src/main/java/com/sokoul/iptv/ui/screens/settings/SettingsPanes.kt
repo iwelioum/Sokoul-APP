@@ -129,6 +129,8 @@ fun SettingsPanes(
     Row(Modifier.fillMaxSize().padding(top = l.safeTop)) {
         Column(
             Modifier.width(300.dp).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.55f))
+                // 11 rubriques : plus hautes que l'écran à 1080p, le volet suit le focus
+                .verticalScroll(rememberScrollState())
                 .padding(start = l.margin - 16.dp, end = 12.dp)
                 // ◀ depuis le volet : retour sur la rubrique choisie, pas sur la plus proche
                 .focusProperties { enter = { requesters.getValue(selected) } }

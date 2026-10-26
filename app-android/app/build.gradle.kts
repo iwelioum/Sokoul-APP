@@ -127,6 +127,7 @@ dependencies {
     implementation(libs.hilt.work)
     ksp(libs.hilt.androidx.compiler)
     implementation(libs.work.runtime)
+    implementation(libs.tvprovider)
     implementation(libs.datastore.preferences)
 
     implementation(libs.okhttp)

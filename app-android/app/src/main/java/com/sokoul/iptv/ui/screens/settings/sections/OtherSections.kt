@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.settings.sections
 
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -36,5 +38,9 @@ internal fun LazyListScope.backupSection(c: SettingsCtx) {
 /** À propos. */
 internal fun LazyListScope.aboutSection(@Suppress("UNUSED_PARAMETER") c: SettingsCtx) {
     item("ab-version") { SettingRow("Sokoul TV ${BuildConfig.VERSION_NAME}", null, "Lecteur IPTV pour Android TV, Fire TV et mobiles", icon = Icons.Default.CheckCircle) {} }
+    item("ab-watchnext") {
+        val st by com.sokoul.iptv.tv.WatchNextStatus.text.collectAsStateWithLifecycle()
+        SettingRow("Rangée « À suivre » de l'accueil TV", st ?: "En attente", "Google TV ne l'affiche que pour certaines applis ; Android TV l'affiche toujours", icon = Icons.Default.CheckCircle) {}
+    }
     note("fonts", "Police Manrope (licence SIL Open Font). Données de films et séries : TMDB.")
 }

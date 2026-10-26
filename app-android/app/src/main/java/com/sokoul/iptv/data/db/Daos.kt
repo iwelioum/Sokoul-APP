@@ -431,6 +431,20 @@ interface LibraryDao {
     )
     fun observeContinueWatching(pid: Long, limit: Int = 20): Flow<List<ProgressEntity>>
 
+    /** Reprises du profil Principal, toutes playlists (rangée « À suivre » de Google TV) : titres commencés, non terminés. */
+    @Query(
+        """
+        SELECT * FROM progress p WHERE p.profileId = 0 AND p.manual = 0 AND p.finished = 0 AND p.positionMs > 30000 AND (
+            p.type = 'MOVIE' OR (p.type = 'SERIES' AND p.updatedAt = (
+              SELECT MAX(q.updatedAt) FROM progress q WHERE q.profileId = 0 AND q.playlistId = p.playlistId AND q.type = 'SERIES' AND q.parentId = p.parentId AND q.manual = 0)))
+        ORDER BY p.updatedAt DESC LIMIT 10
+        """
+    )
+    fun observeMainResume(): Flow<List<ProgressEntity>>
+
+    @Query("SELECT * FROM progress WHERE profileId = 0 AND playlistId = :pid AND type = :type AND itemId = :id")
+    suspend fun mainProgress(pid: Long, type: ContentType, id: String): ProgressEntity?
+
     @Query("DELETE FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type AND itemId = :id")
     suspend fun deleteProgress(pid: Long, type: ContentType, id: String)
 

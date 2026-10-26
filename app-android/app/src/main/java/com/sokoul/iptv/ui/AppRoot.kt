@@ -73,6 +73,8 @@ class RootViewModel @Inject constructor(
     playlists: PlaylistRepository,
     private val settings: com.sokoul.iptv.data.SettingsStore,
     private val catalog: com.sokoul.iptv.data.repo.CatalogRepository,
+    private val db: com.sokoul.iptv.data.db.AppDatabase,
+    private val profileRepo: com.sokoul.iptv.data.repo.ProfileRepository,
 ) : ViewModel() {
     /** null = chargement ; false = aucune playlist (premier lancement). */
     val hasPlaylist: StateFlow<Boolean?> = playlists.playlists.map { it.isNotEmpty() }
@@ -83,6 +85,17 @@ class RootViewModel @Inject constructor(
 
     /** Demande externe : ignorée si la chaîne n'existe pas (le lecteur applique ensuite le contrôle parental). */
     suspend fun isPlayable(p: PlayIntent): Boolean = catalog.channel(p.playlistId, p.channelId) != null
+
+    /**
+     * Reprise « À suivre » (Google TV) : ce sont celles du profil Principal, qui devient le profil en cours.
+     * Ignorée depuis un profil Enfant (le code parental protège la sortie) ou si la reprise n'existe plus.
+     */
+    suspend fun resumeTarget(l: com.sokoul.iptv.tv.ResumeLink): Any? {
+        if (profileRepo.isKids()) return null
+        val p = db.library().mainProgress(l.playlistId, l.type, l.itemId) ?: return null
+        profileRepo.switchTo(com.sokoul.iptv.data.db.ProfileEntity.MAIN)
+        return com.sokoul.iptv.ui.screens.home.resumeRoute(l.playlistId, p)
+    }
 }
 
 @Composable
@@ -107,7 +120,7 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                 val profiles by profilesVm.profiles.collectAsStateWithLifecycle()
                 val currentProfile by profilesVm.current.collectAsStateWithLifecycle()
                 LaunchedEffect(profiles.size) {
-                    if (profiles.size > 1 && hasPlaylist == true && !com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.askedThisLaunch) {
+                    if (profiles.size > 1 && hasPlaylist == true && !com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.askedThisLaunch && com.sokoul.iptv.tv.DeepLinks.pending.value == null) {
                         com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.askedThisLaunch = true
                         com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.open.value = true
                     }
@@ -121,6 +134,15 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                 // TV : « Au démarrage : dernière chaîne » → la télé s'allume sur la chaîne (Retour = Accueil)
                 val isTv = com.sokoul.iptv.ui.theme.LocalLayout.current.isTv
                 LaunchedEffect(Unit) { if (isTv && start == HomeRoute && vm.startOnTv()) nav.navigateOnce(TvRoute) }
+                val resume by com.sokoul.iptv.tv.DeepLinks.pending.collectAsStateWithLifecycle()
+                LaunchedEffect(resume) {
+                    resume?.let { l ->
+                        // reprise demandée : pas de « Qui regarde ? » par-dessus
+                        com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.askedThisLaunch = true
+                        com.sokoul.iptv.tv.DeepLinks.pending.value = null
+                        if (hasPlaylist == true) vm.resumeTarget(l)?.let { r -> nav.navigateOnce(r) }
+                    }
+                }
                 val play by pendingPlay.collectAsStateWithLifecycle()
                 LaunchedEffect(play) {
                     play?.let {
