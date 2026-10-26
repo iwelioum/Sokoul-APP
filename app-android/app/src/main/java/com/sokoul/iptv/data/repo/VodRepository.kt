@@ -153,12 +153,18 @@ class VodRepository @Inject constructor(
 
     suspend fun languageOrder(): List<String> = VersionPicker.parseOrder(settings.current().vodLanguages)
 
-    /** Versions d'un film dans l'ordre de lancement. */
+
+    /** Qualité réelle mesurée des versions (absentes : pas encore mesurées). */
+    suspend fun qualities(pid: Long, type: ContentType, ids: List<String>): Map<String, VodQuality> =
+        if (ids.isEmpty()) emptyMap()
+        else ids.chunked(500).flatMap { db.vod().probes(pid, type, it) }.mapNotNull { p -> p.toQuality()?.let { p.itemId to it } }.toMap()
+
     suspend fun orderedMovies(pid: Long, versions: List<MovieEntity>, failed: Set<String> = emptySet()): List<MovieEntity> {
         if (versions.size <= 1) return versions
         val byId = versions.associateBy { it.id }
         val preferred = choice(pid, ContentType.MOVIE, versions.first().groupKey)
-        return VersionPicker.order(versions.map { it.toVersion() }, languageOrder(), preferred, failed, DeviceCaps.supports4k)
+        val q = qualities(pid, ContentType.MOVIE, versions.map { it.id })
+        return VersionPicker.order(versions.map { it.toVersion().copy(measured = q[it.id]) }, languageOrder(), preferred, failed, DeviceCaps.supports4k)
             .mapNotNull { byId[it.id] }
     }
 
@@ -166,7 +172,8 @@ class VodRepository @Inject constructor(
         if (versions.size <= 1) return versions
         val byId = versions.associateBy { it.id }
         val preferred = choice(pid, ContentType.SERIES, versions.first().groupKey)
-        return VersionPicker.order(versions.map { it.toVersion() }, languageOrder(), preferred, emptySet(), DeviceCaps.supports4k)
+        val q = qualities(pid, ContentType.SERIES, versions.map { it.id })
+        return VersionPicker.order(versions.map { it.toVersion().copy(measured = q[it.id]) }, languageOrder(), preferred, emptySet(), DeviceCaps.supports4k)
             .mapNotNull { byId[it.id] }
     }
 

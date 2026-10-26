@@ -265,7 +265,6 @@ private fun heroMeta(w: Work, compact: Boolean): List<String> =
         w.year?.toString(),
         w.genres.take(2).joinToString(", ").ifEmpty { null },
         if (w.type == ContentType.SERIES) w.seasons?.let { if (it > 1) "$it saisons" else "1 saison" } else formatRuntime(w.runtimeMin),
-        if (w.versions > 1) "${w.versions} versions" else null,
     )
 
 /** Classification française : « 12 » → « -12 », « TP » → « Tous publics ». */

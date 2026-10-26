@@ -798,6 +798,44 @@ class PlayerViewModel @Inject constructor(
     private fun describe(f: Format, type: Int): String =
         trackLabel(f.language, f.label, if (type == C.TRACK_TYPE_AUDIO) f.channelCount else 0, if (type == C.TRACK_TYPE_AUDIO) f.sampleMimeType else null, type == C.TRACK_TYPE_AUDIO)
 
+    private val measuredItems = HashSet<String>()
+
+    /** Qualité constatée en lecture (plus sûre que celle du panel) : retenue pour la fiche et le choix des versions. */
+    private fun saveMeasuredQuality(v: Format?, a: Format?) {
+        val p = playlist ?: return
+        if (v == null || v.width <= 0) return
+        val (type, id) = when (route.kind) {
+            PlayKind.MOVIE -> ContentType.MOVIE to (movieVersions.getOrNull(movieIndex)?.id ?: return)
+            PlayKind.EPISODE -> ContentType.SERIES to (currentEpisode?.seriesId ?: return)
+            else -> return
+        }
+        if (!measuredItems.add("$type:$id:${v.width}x${v.height}")) return
+        val hdr = when (v.colorInfo?.colorTransfer) {
+            C.COLOR_TRANSFER_ST2084 -> if (v.sampleMimeType == androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION) "Dolby Vision" else "HDR10"
+            C.COLOR_TRANSFER_HLG -> "HLG"
+            else -> null
+        }
+        fun codec(m: String?) = when (m) {
+            androidx.media3.common.MimeTypes.VIDEO_H265, androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION -> "hevc"
+            androidx.media3.common.MimeTypes.VIDEO_H264 -> "h264"
+            androidx.media3.common.MimeTypes.VIDEO_AV1 -> "av1"
+            androidx.media3.common.MimeTypes.AUDIO_E_AC3, androidx.media3.common.MimeTypes.AUDIO_E_AC3_JOC -> "eac3"
+            androidx.media3.common.MimeTypes.AUDIO_AC3 -> "ac3"
+            androidx.media3.common.MimeTypes.AUDIO_TRUEHD -> "truehd"
+            androidx.media3.common.MimeTypes.AUDIO_DTS, androidx.media3.common.MimeTypes.AUDIO_DTS_HD -> "dts"
+            androidx.media3.common.MimeTypes.AUDIO_AAC -> "aac"
+            else -> m?.substringAfter('/')
+        }
+        val probe = com.sokoul.iptv.data.db.VodProbeEntity(
+            p.id, type, id, v.width, v.height, codec(v.sampleMimeType), hdr, v.frameRate.takeIf { it > 0 }?.toDouble(),
+            codec(a?.sampleMimeType), a?.channelCount?.takeIf { it > 0 }, a?.language,
+            (v.bitrate.takeIf { it > 0 } ?: v.averageBitrate.takeIf { it > 0 })?.div(1000),
+            (_player.value?.player?.duration?.takeIf { it > 0 } ?: 0L).div(1000).toInt().takeIf { it > 0 },
+            true, System.currentTimeMillis(),
+        )
+        viewModelScope.launch { runCatching { db.vod().saveProbe(probe) } }
+    }
+
     private fun updateVideoInfo() {
         val exo = _player.value?.player ?: return
         val v = exo.videoFormat
@@ -809,6 +847,7 @@ class PlayerViewModel @Inject constructor(
             if (v != null && v.bitrate > 0) add("${v.bitrate / 1000} kb/s")
         }.joinToString(" · ")
         _ui.update { it.copy(videoInfo = info) }
+        saveMeasuredQuality(v, a)
     }
 
     /** « Réessayer » : relance tout le démarrage si rien n'a pu être chargé, sinon le flux (pause fournisseur respectée). */

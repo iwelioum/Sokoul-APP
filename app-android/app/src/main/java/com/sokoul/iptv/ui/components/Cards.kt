@@ -176,12 +176,12 @@ private fun CornerBadge(text: String, modifier: Modifier = Modifier, color: Colo
     )
 }
 
-/** Libellé court d'une œuvre : « 2024 · Action · 3 versions ». */
+/** Libellé court d'une œuvre : « 2024 · Action · 2 saisons » (plus de nombre de versions : souvent trompeur, la fiche détaille les versions). */
+@Suppress("UNUSED_PARAMETER")
 fun Work.metaLine(withVersions: Boolean = true): String = listOfNotNull(
     year?.toString(),
     genres.firstOrNull(),
     if (type == ContentType.SERIES) seasons?.let { if (it > 1) "$it saisons" else "1 saison" } else null,
-    if (withVersions && versions > 1) "$versions versions" else null,
 ).joinToString(" · ")
 
 /** Repli d'une affiche absente : dégradé + titre. */
@@ -215,10 +215,9 @@ fun WorkCard(
     onLongClick: (() -> Unit)? = null,
     reveal: Boolean = true,
 ) {
-    // coin de l'affiche : état (hors catalogue), sinon 4K, sinon le nombre de versions
+    // coin de l'affiche : état (hors catalogue), sinon 4K
     val src = com.sokoul.iptv.domain.PlaybackSources.summary(work)
     val corner = SourceLabels.state(src.state) ?: src.quality?.takeIf { it == com.sokoul.iptv.domain.VideoQuality.UHD_4K }?.let(SourceLabels::quality)
-        ?: if (work.versions > 1) "${work.versions} VERSIONS" else null
     PosterTile(
         title = work.title, image = tmdbSized(work.poster, "w342"), onClick = onClick, modifier = modifier, width = width,
         corner = corner, progress = work.progress,

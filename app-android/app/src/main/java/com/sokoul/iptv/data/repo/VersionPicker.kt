@@ -8,6 +8,8 @@ data class VodVersion(
     val quality: String?,
     val categoryId: String,
     val categoryName: String? = null,
+    /** Qualité réelle, quand elle a été mesurée : prime sur l'étiquette du nom. */
+    val measured: VodQuality? = null,
 )
 
 /**
@@ -41,7 +43,7 @@ object VersionPicker {
         supports4k: Boolean = true,
     ): List<VodVersion> {
         fun langRank(v: VodVersion) = languages.indexOf(v.language).let { if (it < 0) languages.size else it }
-        fun qualityRank(v: VodVersion) = when (v.quality) {
+        fun qualityRank(v: VodVersion) = when (v.measured?.resolution?.let { r -> mapOf("4K" to "4K", "1080p" to "FHD", "720p" to "HD", "SD" to "SD")[r] } ?: v.quality) {
             "4K" -> if (supports4k) 0 else 4
             "FHD" -> 1
             "HD", "HDR", "HEVC" -> 2
@@ -55,6 +57,7 @@ object VersionPicker {
                 { if (it.value.id == preferredId) 0 else 1 },
                 { langRank(it.value) },
                 { qualityRank(it.value) },
+                { -(it.value.measured?.imageScore ?: 0) },
                 { it.index },
             )
         ).map { it.value }

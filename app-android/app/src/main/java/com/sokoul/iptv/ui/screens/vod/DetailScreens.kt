@@ -186,6 +186,8 @@ class MovieDetailViewModel @Inject constructor(
     val error = MutableStateFlow<String?>(null)
     /** Versions de l'œuvre dans l'ordre de lancement (la première est lancée par « Lecture »). */
     val versions = MutableStateFlow<List<MovieEntity>>(emptyList())
+    /** Qualité réelle des versions (mesurée par le panel ou le lecteur). */
+    val qualities = MutableStateFlow<Map<String, com.sokoul.iptv.data.repo.VodQuality>>(emptyMap())
     val preferredId = MutableStateFlow<String?>(null)
     val similar = MutableStateFlow<List<Work>>(emptyList())
     val saga = MutableStateFlow<Pair<String, List<Work>>?>(null)
@@ -233,11 +235,17 @@ class MovieDetailViewModel @Inject constructor(
             // TMDB ou fiche du fournisseur indisponible : la fiche reste utilisable avec les données du catalogue
             timber.log.Timber.w(e, "Fiche film")
         }
+        // qualité réelle des autres versions : mesurée chez le fournisseur, une à la fois, puis la fiche se met à jour
+        if (versions.value.size > 1) {
+            runCatching { catalog.probeMovies(p, versions.value) }
+            details.value?.movie?.let { loadVersions(p, it) }
+        }
     }
 
     private suspend fun loadVersions(p: PlaylistEntity, m: MovieEntity) {
         val all = vod.movieVersions(p.id, m)
         versions.value = vod.orderedMovies(p.id, all)
+        qualities.value = vod.qualities(p.id, ContentType.MOVIE, all.map { it.id })
         preferredId.value = vod.choice(p.id, ContentType.MOVIE, m.groupKey)
     }
 
@@ -274,6 +282,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val favorite by vm.favorite.collectAsStateWithLifecycle()
     val versions by vm.versions.collectAsStateWithLifecycle()
     val preferredId by vm.preferredId.collectAsStateWithLifecycle()
+    val qualities by vm.qualities.collectAsStateWithLifecycle()
     val similar by vm.similar.collectAsStateWithLifecycle()
     val saga by vm.saga.collectAsStateWithLifecycle()
     val extras by vm.extras.collectAsStateWithLifecycle()
@@ -312,8 +321,8 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val hero = DetailHeroData(
         title = title, logo = tm?.logo ?: extras.art?.logo, backdrop = tm?.backdrop ?: xt?.backdrop ?: extras.art?.background, poster = tm?.poster ?: xt?.poster ?: m.poster,
         rating = tm?.rating ?: xt?.rating ?: m.rating,
-        facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), best.language, if (multi) "${versions.size} versions" else null),
-        certification = tm?.certification, quality = versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
+        facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), best.language),
+        certification = tm?.certification, quality = qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
         genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
         tagline = tm?.tagline, synopsis = synopsis,
         credit = director?.let { "Réalisation : $it" } ?: xt?.cast?.takeIf { tm?.cast.isNullOrEmpty() && it.isNotBlank() }?.let { "Avec : $it" },
@@ -341,16 +350,12 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         val belowVersions = (saga?.second?.firstOrNull()?.let { "saga:${it.uid}" } ?: similar.firstOrNull()?.let { "sim:${it.uid}" })?.let { memory.requester(it) }
         if (multi) {
             detailSection("versions", "Versions disponibles", if (l.isTouch) "Touchez pour lire · appui long pour la lancer toujours en premier" else "OK pour lire · appui long pour la lancer toujours en premier") {
-                LazyRow(contentPadding = PaddingValues(horizontal = l.margin, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(versions, key = { it.id }) { v ->
-                        VersionChip(
-                            source = versionSource(v), detail = vm.categoryNames[v.categoryId],
-                            preferred = v.id == preferredId, first = v.id == best.id,
-                            modifier = Modifier.focusMemory(memory, "ver:${v.id}").focusProperties { if (belowVersions != null) down = belowVersions },
-                            onClick = { play(v, false) }, onLongClick = { versionMenu = v },
-                        )
-                    }
-                }
+                VersionsShelf(
+                    versions.map { v -> VersionItem(v.id, versionSource(v), qualities[v.id], first = v.id == best.id, preferred = v.id == preferredId) },
+                    memory, belowVersions,
+                    onPlay = { id -> versions.firstOrNull { it.id == id }?.let { play(it, false) } },
+                    onMenu = { id -> versionMenu = versions.firstOrNull { it.id == id } },
+                )
             }
         }
         castSection(tm?.cast.orEmpty())
@@ -375,6 +380,16 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
                 if (synopsis != null) add(MenuOption("Lire le résumé complet", Icons.Default.Info) { showSynopsis = true })
                 if (multi) add(MenuOption("Choisir la version à lire…", Icons.Default.PlayArrow) { versionPicker = 1 })
                 if (multi) add(MenuOption("Version lancée en premier…", Icons.Default.Star) { versionPicker = 2 })
+                if (multi) {
+                    // image d'une version + son d'une autre : deux flux à la fois, impossible avec une seule connexion
+                    val conns = vm.playlist?.maxConnections
+                    add(
+                        MenuOption(
+                            "Image d'une version, son d'une autre", Icons.Default.Info, enabled = false,
+                            hint = "Demande 2 connexions simultanées" + (conns?.let { " (votre abonnement : $it)" } ?: "") + ". Arrivera avec Real-Debrid.",
+                        ) {},
+                    )
+                }
                 add(
                     if (watched) MenuOption("Marquer comme non vu", Icons.Default.Replay) { vm.setWatched(false) }
                     else MenuOption("Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(true) }
@@ -389,7 +404,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         OptionsDialog(
             if (prefer) "Version lancée en premier" else "Choisir la version",
             versions.map { v ->
-                MenuOption(versionLabel(v) + (vm.categoryNames[v.categoryId]?.let { " · $it" } ?: ""), if (v.id == preferredId) Icons.Default.Star else Icons.Default.PlayArrow, selected = if (prefer) v.id == preferredId else v.id == best.id) {
+                MenuOption(versionLabel(v) + (qualities[v.id]?.line()?.ifEmpty { null }?.let { " — $it" } ?: vm.categoryNames[v.categoryId]?.let { " · $it" } ?: ""), if (v.id == preferredId) Icons.Default.Star else Icons.Default.PlayArrow, selected = if (prefer) v.id == preferredId else v.id == best.id) {
                     if (prefer) vm.prefer(v) else play(v, false)
                 }
             },
@@ -443,6 +458,7 @@ class SeriesDetailViewModel @Inject constructor(
     val similar = MutableStateFlow<List<Work>>(emptyList())
     /** Versions de la série (VF, VOSTFR…), dans l'ordre de préférence. */
     val versions = MutableStateFlow<List<SeriesEntity>>(emptyList())
+    val qualities = MutableStateFlow<Map<String, com.sokoul.iptv.data.repo.VodQuality>>(emptyMap())
     /** Version principale : ses épisodes sont affichés, complétés par ceux des autres versions. */
     val primaryId = MutableStateFlow<String?>(null)
     val preferredId = MutableStateFlow<String?>(null)
@@ -482,6 +498,7 @@ class SeriesDetailViewModel @Inject constructor(
         val s = catalog.seriesItem(p.id, id) ?: run { missing.value = "Cette série n'est plus proposée par votre fournisseur (catalogue mis à jour)."; loading.value = false; return@launch }
         val ordered = vod.orderedSeries(p.id, vod.seriesVersions(p.id, s))
         versions.value = ordered
+        qualities.value = vod.qualities(p.id, ContentType.SERIES, ordered.map { it.id })
         preferredId.value = vod.choice(p.id, ContentType.SERIES, s.groupKey)
         val primary = ordered.firstOrNull()?.id ?: id
         primaryId.value = primary
@@ -633,7 +650,6 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
             (series.year ?: tmdb?.year)?.toString(),
             // TMDB connaît souvent plus de saisons que le fournisseur n'en propose : on affiche celles disponibles
             seasons.size.takeIf { it > 0 }?.let { if (it > 1) "$it saisons" else "1 saison" } ?: tmdb?.seasons?.let { if (it > 1) "$it saisons" else "1 saison" },
-            if (versions.size > 1) "${versions.size} versions" else null,
         ),
         certification = tmdb?.certification, quality = null,
         genres = tmdb?.genres?.joinToString(", ")?.ifEmpty { null } ?: details?.genre ?: series.genre,
@@ -741,7 +757,10 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
         OptionsDialog(
             "Version",
             versions.map { v ->
-                MenuOption(seriesVersionLabel(v) + if (v.id == preferredId) " ★" else "", Icons.Default.Translate, selected = v.id == primaryId) { vm.selectVersion(v) }
+                MenuOption(
+                    seriesVersionLabel(v) + (if (v.id == preferredId) " ★" else ""), Icons.Default.Translate, selected = v.id == primaryId,
+                    hint = vm.qualities.value[v.id]?.line()?.ifEmpty { null },
+                ) { vm.selectVersion(v) }
             } + listOfNotNull(
                 shownVersion?.takeIf { it.id != preferredId }?.let { v ->
                     MenuOption("Toujours utiliser « ${seriesVersionLabel(v)} »", Icons.Default.Star) { vm.preferVersion(v) }

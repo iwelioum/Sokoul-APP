@@ -34,8 +34,9 @@ import javax.inject.Singleton
         VodChoiceEntity::class,
         TmdbMetaEntity::class,
         TmdbMatchEntity::class,
+        VodProbeEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -162,5 +163,19 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+    /**
+     * v7 : qualité réelle des versions (résolution, HDR, codecs, son), mesurée par le panel ou le lecteur.
+     */
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `vod_probe` (`playlistId` INTEGER NOT NULL, `type` TEXT NOT NULL, `itemId` TEXT NOT NULL, " +
+                    "`width` INTEGER, `height` INTEGER, `videoCodec` TEXT, `hdr` TEXT, `fps` REAL, `audioCodec` TEXT, `audioChannels` INTEGER, " +
+                    "`audioLanguage` TEXT, `bitrateKbps` INTEGER, `durationSecs` INTEGER, `fromPlayer` INTEGER NOT NULL, `fetchedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`playlistId`, `type`, `itemId`))"
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 }

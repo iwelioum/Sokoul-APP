@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Mises à jour de la base installée (v1 → v5) : aucune donnée perdue. */
+/** Mises à jour de la base installée (v1 → v7) : aucune donnée perdue. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class MigrationTest {
@@ -108,6 +108,16 @@ class MigrationTest {
             buildString { while (c.moveToNext()) append(c.getString(c.columnCount - 1)) }
         }
         assertTrue(plan, plan.contains("index_movies_playlistId_searchName"))
+        db.close()
+    }
+
+    @Test fun `migration 6 vers 7 ajoute la qualite reelle des versions`() {
+        val name = dbName + "7"
+        helper.createDatabase(name, 6).close()
+        val db = helper.runMigrationsAndValidate(name, 7, true, *Migrations.ALL)
+        db.execSQL("INSERT INTO vod_probe (playlistId, type, itemId, width, height, hdr, fromPlayer, fetchedAt) VALUES (1, 'MOVIE', '42', 3840, 2160, 'HDR10', 0, 1)")
+        val hdr = db.query("SELECT hdr FROM vod_probe WHERE itemId = '42'").use { it.moveToFirst(); it.getString(0) }
+        assertEquals("HDR10", hdr)
         db.close()
     }
 }

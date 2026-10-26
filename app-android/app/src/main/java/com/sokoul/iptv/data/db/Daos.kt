@@ -502,6 +502,13 @@ data class GroupSummary(val k: String, val c: Int, val title: String)
  */
 @Dao
 interface VodDao {
+    // --- qualité réelle des versions ---
+    @Query("SELECT * FROM vod_probe WHERE playlistId = :pid AND type = :type AND itemId IN (:ids)")
+    suspend fun probes(pid: Long, type: ContentType, ids: List<String>): List<VodProbeEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveProbe(p: VodProbeEntity)
+
     @Query("SELECT id, title, year, tmdbId, groupKey FROM movies WHERE playlistId = :pid")
     suspend fun movieRows(pid: Long): List<GroupRow>
 

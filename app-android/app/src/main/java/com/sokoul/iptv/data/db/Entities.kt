@@ -342,3 +342,26 @@ data class VodChoiceEntity(
     val groupKey: String,
     val itemId: String,
 )
+
+/**
+ * Qualité réelle d'une version (film ou série) : mesurée par le panel (get_vod_info) ou par le lecteur
+ * pendant la lecture ([fromPlayer], plus fiable). Sert à afficher « 4K · HDR10 · 5.1 » et à classer les versions.
+ */
+@Entity(tableName = "vod_probe", primaryKeys = ["playlistId", "type", "itemId"])
+data class VodProbeEntity(
+    val playlistId: Long,
+    val type: ContentType,
+    val itemId: String,
+    val width: Int? = null,
+    val height: Int? = null,
+    val videoCodec: String? = null,
+    val hdr: String? = null,
+    val fps: Double? = null,
+    val audioCodec: String? = null,
+    val audioChannels: Int? = null,
+    val audioLanguage: String? = null,
+    val bitrateKbps: Int? = null,
+    val durationSecs: Int? = null,
+    val fromPlayer: Boolean = false,
+    val fetchedAt: Long = 0,
+)

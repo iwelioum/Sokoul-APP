@@ -244,7 +244,11 @@ fun FormField(
     )
 }
 
-data class MenuOption(val label: String, val icon: ImageVector? = null, val selected: Boolean = false, val onClick: () -> Unit)
+/** @param enabled faux : ligne grisée (on peut la lire, pas la choisir) ; [hint] explique pourquoi. */
+data class MenuOption(
+    val label: String, val icon: ImageVector? = null, val selected: Boolean = false,
+    val enabled: Boolean = true, val hint: String? = null, val onClick: () -> Unit,
+)
 
 /** Menu contextuel modal, navigable à la télécommande. */
 @Composable
@@ -260,7 +264,7 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
             LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 itemsIndexed(options) { i, o ->
                     FocusSurface(style = FocusStyle.Row,
-                        onClick = { o.onClick(); onDismiss() },
+                        onClick = { if (o.enabled) { o.onClick(); onDismiss() } },
                         modifier = Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(first) else Modifier),
                         color = if (o.selected) SokoulColors.AccentTint else Color.Transparent,
                     ) { _ ->
@@ -269,7 +273,13 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
                                 Icon(o.icon, null, Modifier.size(22.dp), tint = if (o.selected) SokoulColors.Accent else SokoulColors.TextSecondary)
                                 Spacer(Modifier.width(14.dp))
                             }
-                            Text(o.label, style = MaterialTheme.typography.bodyLarge, color = if (o.selected) SokoulColors.Accent else SokoulColors.TextPrimary)
+                            Column {
+                                Text(
+                                    o.label, style = MaterialTheme.typography.bodyLarge,
+                                    color = when { !o.enabled -> SokoulColors.TextMuted; o.selected -> SokoulColors.Accent; else -> SokoulColors.TextPrimary },
+                                )
+                                o.hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextMuted) }
+                            }
                         }
                     }
                 }

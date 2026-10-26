@@ -83,6 +83,7 @@ class CatalogRepository @Inject constructor(
     private val tmdb: TmdbClient,
     private val settings: SettingsStore,
     private val parental: com.sokoul.iptv.ui.ParentalGate,
+    private val gate: com.sokoul.iptv.player.ProviderGate,
 ) {
     private val vodInfoCache = ConcurrentHashMap<String, XtVodInfo>()
 
@@ -164,6 +165,11 @@ class CatalogRepository @Inject constructor(
                 extension = e.extension, streamUrl = null, rating = e.rating,
             )
         }
+        // qualité de cette version de la série : celle du premier épisode mesuré par le panel
+        info.episodes.firstNotNullOfOrNull { it.media }?.let { media ->
+            val old = db.vod().probes(p.id, ContentType.SERIES, listOf(seriesId)).firstOrNull()
+            if (old?.fromPlayer != true) db.vod().saveProbe(media.toProbe(p.id, ContentType.SERIES, seriesId, System.currentTimeMillis()))
+        }
         val s = info.series
         replaceEpisodes(
             db,
@@ -182,9 +188,46 @@ class CatalogRepository @Inject constructor(
                 playlists.auth(p)?.let { xtream.vodInfo(it, movie.id.toLong()) }
             }.getOrNull()?.also { vodInfoCache[key] = it }
         } else null
+        xt?.media?.let { media ->
+            runCatching {
+                val old = db.vod().probes(p.id, ContentType.MOVIE, listOf(movie.id)).firstOrNull()
+                if (old?.fromPlayer != true) db.vod().saveProbe(media.toProbe(p.id, ContentType.MOVIE, movie.id, System.currentTimeMillis()))
+            }
+        }
         // identifiant TMDB : fournisseur, sinon correspondance déjà établie par l'app (rangées, regroupement)
         val tm = tmdb.movie(settings.current().tmdbApiKey, movie.title, movie.year, xt?.tmdbId?.takeIf { it.isNotBlank() } ?: movie.tmdbId?.takeIf { it.isNotBlank() } ?: tmdbHint?.toString())
         return MovieDetails(movie, xt, tm)
+    }
+
+    /**
+     * Qualité réelle des versions d'un film, mesurée par le panel (get_vod_info, des appels d'API, pas des flux) :
+     * une version à la fois, une fois par mois, arrêt au premier échec ou si le fournisseur vient de refuser une connexion.
+     * @return nombre de versions nouvellement mesurées
+     */
+    suspend fun probeMovies(p: PlaylistEntity, movies: List<MovieEntity>): Int {
+        if (p.type != PlaylistType.XTREAM || movies.isEmpty()) return 0
+        val auth = playlists.auth(p) ?: return 0
+        val known = db.vod().probes(p.id, ContentType.MOVIE, movies.map { it.id }).associateBy { it.itemId }
+        val now = System.currentTimeMillis()
+        var measured = 0
+        for (m in movies) {
+            val k = known[m.id]
+            if (k != null && (k.fromPlayer || now - k.fetchedAt < PROBE_TTL_MS)) continue
+            if (gate.remainingMs() > 0) break
+            val key = "${p.id}:${m.id}"
+            val info = vodInfoCache[key] ?: try {
+                xtream.vodInfo(auth, m.id.toLong()) ?: com.sokoul.iptv.parser.XtVodInfo(null, null, null, null, null, null, null, null, null, null, null, null)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                timber.log.Timber.i("Mesure des versions interrompue : ${e.javaClass.simpleName}")
+                break
+            }
+            vodInfoCache[key] = info
+            // panel muet : on note quand même la tentative pour ne pas redemander avant un mois
+            db.vod().saveProbe(info.media?.toProbe(p.id, ContentType.MOVIE, m.id, now) ?: com.sokoul.iptv.data.db.VodProbeEntity(p.id, ContentType.MOVIE, m.id, fetchedAt = now))
+            if (info.media != null) measured++
+            kotlinx.coroutines.delay(PROBE_PAUSE_MS)
+        }
+        return measured
     }
 
     /** Fiche TMDB d'un film sans appel au fournisseur (cache 7 jours) : sert au lecteur (sous-titres en ligne). */
@@ -251,6 +294,8 @@ class CatalogRepository @Inject constructor(
 
     companion object {
         const val MAX_QUERY = 100
+        const val PROBE_TTL_MS = 30L * 24 * 3600_000
+        const val PROBE_PAUSE_MS = 300L
 
         /** Échappe les jokers SQL LIKE (`%`, `_`) : « 100% » ne doit pas tout renvoyer. */
         fun likeEscape(s: String): String = s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

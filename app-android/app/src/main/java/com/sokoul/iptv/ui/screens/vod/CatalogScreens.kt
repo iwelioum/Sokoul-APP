@@ -165,7 +165,7 @@ class SeriesViewModel @Inject constructor(playlists: PlaylistRepository, catalog
 }
 
 /** Plusieurs versions : on n'affiche plus la langue/qualité d'une seule d'entre elles, mais le nombre de versions. */
-fun versionsLabel(n: Int) = if (n > 1) "$n versions" else null
+@Suppress("UNUSED_PARAMETER") fun versionsLabel(n: Int): String? = null
 
 /** Œuvre en plusieurs versions : titre sans le code pays de la version mise en avant (« ALB Passenger » → « Passenger »). */
 fun workTitle(title: String, versions: Int) = if (versions > 1) com.sokoul.iptv.data.repo.VodGrouping.stripCountry(title) else title

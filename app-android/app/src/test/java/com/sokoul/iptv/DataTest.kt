@@ -117,7 +117,7 @@ class DataTest {
         db.movies().upsert(listOf(movie(pid, "10", "Le_Film"), movie(pid, "11", "LeXFilm")))
         db.categories().upsertPref(CategoryPrefEntity(pid, ContentType.LIVE, "adult", locked = true))
         gate.setPin("2580")
-        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate)
+        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate, com.sokoul.iptv.player.ProviderGate())
         val r = repo.search(pid, "100%")
         assertEquals(listOf("1"), r.channels.map { it.id }) // ni « 1000 », ni la chaîne verrouillée
         assertEquals(listOf("10"), repo.search(pid, "le_film").movies.map { it.id })
@@ -129,7 +129,7 @@ class DataTest {
         val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
         db.channels().upsert(listOf(channel(pid, "1", "a", "Matrix TV")))
         db.movies().upsert(listOf(movie(pid, "10", "Matrix")))
-        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate)
+        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate, com.sokoul.iptv.player.ProviderGate())
         val films = repo.search(pid, "matrix", SearchKind.forOrigin(SearchOrigin.MOVIES))
         assertEquals(listOf("10"), films.movies.map { it.id })
         assertTrue(films.channels.isEmpty() && films.programs.isEmpty() && films.series.isEmpty())
@@ -148,7 +148,7 @@ class DataTest {
         db.channels().upsert(listOf(channel(pid, "7", "adult", "Paradise")))
         db.categories().upsertPref(CategoryPrefEntity(pid, ContentType.LIVE, "adult", locked = true))
         gate.setPin("2580")
-        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate)
+        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate, com.sokoul.iptv.player.ProviderGate())
         val s = repo.suggest(pid, "par", SearchKind.ALL)
         // « Comparaison » : « par » au milieu d'un mot, pas proposé ; doublons regroupés ; chaîne verrouillée absente
         assertEquals(listOf("Parasite", "Paris, Texas", "Le Parrain"), s)
@@ -164,7 +164,7 @@ class DataTest {
         db.categories().upsertPref(CategoryPrefEntity(pid, ContentType.LIVE, "adult", locked = true))
         gate.setPin("2580")
         gate.lock()
-        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate)
+        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate, com.sokoul.iptv.player.ProviderGate())
         val fav = com.sokoul.iptv.data.repo.SpecialCategory.FAVORITES
         val all = com.sokoul.iptv.data.repo.SpecialCategory.ALL
         assertEquals(listOf("1"), repo.channels(pid, fav).first().map { it.id })
@@ -176,7 +176,7 @@ class DataTest {
     @Test fun `zapping favoris vide ne renvoie pas tout`() = runBlocking {
         val pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
         db.channels().upsert(listOf(channel(pid, "1", "a", "A"), channel(pid, "2", "a", "B")))
-        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate)
+        val repo = CatalogRepository(db, playlistsStub(), xtreamStub(), tmdbStub(), settings, gate, com.sokoul.iptv.player.ProviderGate())
         assertTrue(repo.channelList(pid, com.sokoul.iptv.data.repo.SpecialCategory.FAVORITES).isEmpty())
         db.library().addFavorite(FavoriteEntity(pid, ContentType.LIVE, "2"))
         assertEquals(listOf("2"), repo.channelList(pid, com.sokoul.iptv.data.repo.SpecialCategory.FAVORITES).map { it.id })

@@ -75,6 +75,7 @@ data class XtEpisode(
     val plot: String?,
     val image: String?,
     val rating: Double?,
+    val media: XtMedia? = null,
 )
 
 data class XtSeriesInfo(val series: XtSeries?, val episodes: List<XtEpisode>, val seasonCovers: Map<Int, String>)
@@ -92,6 +93,7 @@ data class XtVodInfo(
     val trailer: String?,
     val tmdbId: String?,
     val extension: String?,
+    val media: XtMedia? = null,
 )
 
 data class XtEpg(val start: Long, val stop: Long, val title: String, val description: String?)
@@ -199,6 +201,7 @@ object XtreamParse {
                 plot = einfo?.str("plot"),
                 image = episodeImage(einfo, eo),
                 rating = einfo?.double("rating")?.takeIf { it > 0 },
+                media = MediaInfo.parse(einfo),
             )
         }
         when (val eps = o["episodes"]) {
@@ -231,6 +234,7 @@ object XtreamParse {
             trailer = info?.str("youtube_trailer"),
             tmdbId = info?.str("tmdb_id"),
             extension = movie?.str("container_extension"),
+            media = MediaInfo.parse(info),
         )
     }
 
