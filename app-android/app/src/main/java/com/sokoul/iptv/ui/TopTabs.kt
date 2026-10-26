@@ -57,6 +57,9 @@ import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.LocalReducedMotion
 import com.sokoul.iptv.ui.theme.Motion
 import com.sokoul.iptv.ui.theme.Radius
+import com.sokoul.iptv.ui.util.formatClock
+import com.sokoul.iptv.ui.util.rememberNow
+import androidx.compose.ui.unit.sp
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Space
 import kotlinx.coroutines.delay
@@ -175,50 +178,57 @@ private fun TopTabs(
             // voile de lisibilité au-dessus du héros
             .background(Brush.verticalGradient(listOf(SokoulColors.bg(0.85f), SokoulColors.bg(0.45f), Color.Transparent)))
     ) {
-        Row(
+        // trois zones : marque à gauche, rubriques au centre exact de l'écran, actions et heure à droite
+        Box(
             Modifier.fillMaxWidth().padding(start = l.margin, end = l.margin, top = Space.l)
                 .onFocusChanged { onFocusChanged(it.hasFocus); if (!it.hasFocus) settling = null }
                 // onglets masqués (rangées) : ▲ ne doit pas y entrer
                 .focusProperties { enter = { if (open.value) selectedFocus else FocusRequester.Cancel } }
                 .focusGroup(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            SokoulMark(size = 30.dp)
-            Spacer(Modifier.width(Space.m))
-            IconTab(Icons.Default.Search, "Recherche", open, toContent, onFocus = { settling = null }) { onAction(Dest.SEARCH) }
-            Spacer(Modifier.width(Space.s))
-            StreamingDests.forEach { d ->
-                TextTab(
-                    d, selected = d == current, visible = open,
-                    modifier = toContent.then(if (d == current) Modifier.focusRequester(selectedFocus) else Modifier),
-                    onFocus = { settling = d },
-                    onClick = { settling = null; onTab(d) },
+            SokoulMark(Modifier.align(Alignment.CenterStart), size = 30.dp)
+            Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                StreamingDests.forEach { d ->
+                    TextTab(
+                        d, selected = d == current, visible = open,
+                        modifier = toContent.then(if (d == current) Modifier.focusRequester(selectedFocus) else Modifier),
+                        onFocus = { settling = d },
+                        onClick = { settling = null; onTab(d) },
+                    )
+                }
+            }
+            Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                IconTab(Icons.Default.Search, "Recherche", open, toContent, onFocus = { settling = null }) { onAction(Dest.SEARCH) }
+                TvSwitch(open, toContent, onFocus = { settling = null }) { onAction(Dest.LIVE) }
+                IconTab(Icons.Default.Settings, "Réglages", open, toContent, onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
+                Text(
+                    formatClock(rememberNow(15_000)), Modifier.padding(start = Space.s),
+                    style = MaterialTheme.typography.titleMedium, color = SokoulColors.TextSecondary, maxLines = 1,
                 )
             }
-            Spacer(Modifier.weight(1f))
-            TvSwitch(open, toContent, onFocus = { settling = null }) { onAction(Dest.LIVE) }
-            IconTab(Icons.Default.Settings, "Réglages", open, toContent, onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
         }
     }
 }
 
-/** Onglet de contenu : texte seul ; repère violet sous l'onglet de la page affichée. */
+/**
+ * Onglet de contenu : texte seul. L'onglet de la page affichée est souligné d'un trait d'accent rectangulaire
+ * (même signe que le liseré sous la carte focalisée) ; au focus, fond blanc et texte sombre.
+ */
 @Composable
 private fun TextTab(d: Dest, selected: Boolean, visible: State<Boolean>, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     FocusSurface(
         onClick = onClick, onFocus = onFocus, style = FocusStyle.Chip, color = Color.Transparent,
         modifier = modifier.focusProperties { canFocus = visible.value },
     ) { focused ->
-        Column(Modifier.padding(horizontal = Space.m, vertical = Space.s), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 7.dp, bottom = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                d.label, maxLines = 1, style = MaterialTheme.typography.titleMedium,
-                fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
+                d.label, maxLines = 1, style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, letterSpacing = 0.2.sp),
+                fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.SemiBold,
                 color = when { focused -> SokoulColors.OnLight; selected -> SokoulColors.TextPrimary; else -> SokoulColors.TextSecondary },
             )
             Box(
-                Modifier.padding(top = 3.dp).size(4.dp)
-                    .background(if (selected && !focused) SokoulColors.Accent else Color.Transparent, Radius.Round)
+                Modifier.padding(top = 4.dp).size(20.dp, 2.dp)
+                    .background(if (selected && !focused) SokoulColors.Accent else Color.Transparent, Radius.None)
             )
         }
     }
