@@ -556,3 +556,88 @@ Branche `phase10-finitions` (créée depuis `phase9-design`). Six commits locaux
 - La première descente sur l'accueil dépasse encore 5 %, le temps que les rangées arrivent.
 - Le logo d'une saga éditorialisée dont aucun film ne porte le nom (« Le monde des sorciers ») reste en texte.
 - Le nombre de films d'une saga compte ceux sortis jusqu'à l'année en cours, y compris ceux annoncés pour la fin de l'année.
+
+## 13. Phase 11 — Expérience : TV en direct fiable et intelligente, style cinéma (26/10/2026)
+
+Branche `phase11-experience` (créée depuis `phase10-finitions`). Onze commits locaux, de `23a5604` à `7f26180`. Rien n'est poussé sur GitHub.
+
+### Retours de l'utilisateur et réponses
+| Retour | Réponse |
+|---|---|
+| TV : l'image se fige, le son continue | Cause : l'option d'extraction `FLAG_DETECT_ACCESS_UNITS`, retirée. En plus, un **chien de garde vidéo** : si le son avance sans nouvelle image pendant 3 s, la piste vidéo est relancée sans nouvelle connexion. |
+| « 7 versions » faux, qualité inconnue | Le nombre de versions disparaît. La **qualité réelle** est mesurée (`get_vod_info`, une fiche à la fois, cache 30 jours, table Room v7 `vod_probe`) et complétée pendant la lecture. Badge 4K, HDR ou Dolby Vision seulement quand c'est vrai. Versions regroupées par langue, avec « Meilleure image » et « Meilleur son ». |
+| Polices sans caractère | **DM Serif Display** pour les titres (20 sp au moins), Manrope pour le reste. Titres de rangées avec une étiquette (« POUR VOUS », « TENDANCE »…), une partie en italique et un filet dégradé. |
+| Titres sans logo, logos de sagas | **TitleArt** : un titre stylé selon le genre, avec 9 styles (métal, or, néon, horreur, tampon, élégant, ludique, western, documentaire). La taille s'adapte, le texte n'est jamais coupé. Sagas : logo anglais propre, sinon nom en or. |
+| Barre de focus sur le texte des épisodes | Le liseré passe à l'intérieur de la carte. |
+| Acteurs non sélectionnables | **Page acteur et réalisateur** : photo, dates, biographie dépliable, sa filmographie présente dans l'abonnement (films, séries) et ses rôles marquants hors catalogue, grisés. On y accède depuis la distribution d'une fiche et depuis les visages d'une saga. |
+| Recherche : clavier, légendes, Top 10 coupé | Touches en relief, blanches au focus (×1,1). Légendes des touches fixées en bas. Clavier ouvert : un aperçu « Meilleurs résultats » taillé pour la place qui reste. Clavier replié : grandes cartes paysage avec le logo dans l'image. Top 10 en cartes paysage avec un **grand rang à empattements**. Suggestions raccourcies : les pastilles de type ne sortent plus de l'écran. ▲ en haut des résultats rouvre toujours le clavier (avant, le champ ne prenait pas le focus). |
+| L'accueil ne s'adapte pas | Voir « Accueil vivant » ci-dessous. |
+| Panneau audio et sous-titres trop grand | **Carte compacte** en bas à droite : hauteur de son contenu (60 % au plus), montée en 180 ms. Une seule piste audio : un simple rappel au lieu d'une colonne. Les noms de sous-titres en ligne tiennent sur deux lignes. |
+| TV : bulles flottantes, pas de légendes | Tiroirs pleine hauteur collés au bord. Les catégories s'ouvrent en seconde colonne. Les légendes des touches sont dessinées. |
+| TV : touches | OK : **détails de la chaîne** (programme en cours et suivant, santé du flux, actions). ◀ ouvre les chaînes, puis les catégories. ▶ ouvre les programmes. ▲▼ zappent seulement quand aucun panneau n'est ouvert. Menu ouvre les réglages du lecteur. |
+| Programmes : ▼ change de chaîne | ▼ fait défiler la journée entière. |
+| Réglages du lecteur en direct | Réglages du lecteur : audio, sous-titres, format d'image et **décodage pour la séance**. Le décodage passe en Auto, Matériel ou Logiciel tout de suite : le flux est rouvert, l'ancien lecteur étant fermé avant (une seule connexion). |
+| Lecteur de direct intelligent | **Pause du direct sur disque**, jusqu'à 30 min. Voir ci-dessous. |
+| « Commencer la saga » ignore l'ordre choisi | L'ordre est transmis et retenu pour chaque saga. Le bouton indique l'ordre suivi. |
+
+### Pause du direct (timeshift)
+- **Une seule connexion.** La lecture en direct normale ne change pas. À la pause, le lecteur réseau s'arrête et un **écrivain** prend l'unique connexion. C'est le même moteur que l'enregistrement, factorisé dans `StreamPump`.
+- **Tampon tournant** :
+  - fichiers d'une minute dans le cache, avec un index temps → octet (une marque par seconde, alignée sur les paquets TS) ;
+  - plafond de 30 min et 2,5 Go ;
+  - désactivé sous 3 Go libres ;
+  - réglage « Pause du direct » dans Télévision.
+- **Lecture locale.** Le lecteur lit le tampon et attend quand il rattrape l'écriture. Reculer ou avancer, c'est relancer la lecture à l'octet trouvé dans l'index, sans réseau.
+- **Commandes** :
+  - ⏯ ou OK : pause ou reprise ;
+  - ◀◀ / ▶▶ (ou ◀ / ▶ quand la barre est affichée) : −10 s / +30 s ;
+  - ▲ : retour au direct ;
+  - ▼ : masquer la barre.
+  - La barre montre la fenêtre enregistrée, la position et le retard (« −00:38 »). En différé, un repère discret « DIFFÉRÉ −00:25 » reste affiché.
+- **Repli.** Si l'écriture s'arrête (refus du fournisseur, coupures répétées, disque), le lecteur revient au flux en direct, sans écran noir. Un refus (4xx) ne déclenche jamais de nouvel essai.
+- **Vérifié sur la box (TF1, une seule connexion)** :
+  - pause de 40 s : −00:38 affiché ;
+  - reprise en différé : l'image avance (−00:39) ;
+  - −10 s : −00:35 ;
+  - ▲ : retour au direct, et le repère disparaît ;
+  - lecteur fermé à la fin.
+
+### Accueil vivant
+- **Recalcul au retour sur l'écran** (fiche, lecteur, application rouverte) quand la page n'est plus juste :
+  - le jour a changé ;
+  - une lecture a eu lieu ;
+  - Ma liste a changé (le profil de goûts en découle) ;
+  - la page a plus de 30 min.
+- Le calcul se fait en arrière-plan. La page reste affichée, puis elle est remplacée. Les rangées gardent leur clé, donc le focus reste en place.
+- **Nouvelles rangées** :
+  - « Nouveaux épisodes de vos séries » : séries regardées mises à jour par le fournisseur depuis le dernier visionnage ;
+  - « Ce qui buzze aujourd'hui » : tendances TMDB du jour, cache de 3 h ;
+  - « Arrivés cette semaine » : date d'ajout réelle, moins de 7 jours ; sinon « Nouveaux films ».
+- L'ancienne rangée « Nouveaux épisodes », qui montrait en réalité les séries récemment mises à jour au catalogue, devient « Séries mises à jour ».
+- **Héros** : tendances du jour, réordonnées selon les goûts. Le rang dans la tendance compte pour moitié.
+
+### Tests
+- **Unitaires : 261**, tous verts (1 ignoré, comme avant). Nouveaux tests :
+  - `TimeshiftTest` (9) : segments, plafonds, index temps → octet, lecture qui attend l'écriture, refus sans nouvel essai, reconnexion ;
+  - `LiveKeysTest` (7) ;
+  - `TypographyTest` et `TitleArtTest` (taille adaptée sans coupure, Robolectric) ;
+  - `TracksPanelTest`, `SearchStyleTest` (meilleurs résultats, pastilles) et `PeopleTest` (métier accordé, naissance, âge, décès) ;
+  - `HomeFreshnessTest` (5) : recalcul avec horloge et état simulés, ajouts de la semaine, nouveaux épisodes, héros ;
+  - `ParcoursDataTest` : page gardée en mémoire, puis recalculée après une lecture.
+  - Test de migration Room v7.
+- **`lintRelease` : 0 erreur.**
+
+### Fluidité mesurée sur la box (`dumpsys gfxinfo`, part d'images saccadées)
+| Écran | Mesure | Commentaire |
+|---|---|---|
+| Accueil, déplacements latéraux | **2,3 %** | — |
+| Accueil, descente avec les images en cache | **2,8 %** (remontée 4,8 %) | — |
+| Accueil, deux premières descentes | 6,1 % à 7,2 % | Les rangées et leurs images arrivent pendant le défilement |
+| Recherche (saisie, résultats, repli du clavier) | **1,85 %** | — |
+| Hub des Sagas | **3,4 %** | — |
+
+### Limites connues
+- **Image d'une version, son d'une autre** : impossible avec une seule connexion. La ligne est grisée dans « Plus », avec son explication. Les VF à 25 images/s (sources PAL) imposeraient aussi un vrai recalage.
+- **Pause du direct** : flux HLS chiffrés et fMP4 (`EXT-X-MAP`) refusés par l'écrivain. Dans ce cas, la pause reste une pause simple.
+- Les premières descentes sur l'accueil dépassent 5 % tant que les images ne sont pas en cache.
+- La version installée sur la box est une version de production, sans journaux. Le recalcul de l'accueil après une lecture est donc prouvé par les tests, pas par les journaux de la box.
