@@ -24,6 +24,8 @@ import com.sokoul.iptv.data.db.ChannelEntity
 import com.sokoul.iptv.data.db.ContentType
 import com.sokoul.iptv.data.db.ProgramEntity
 import com.sokoul.iptv.data.db.ProgressEntity
+import com.sokoul.iptv.data.debrid.DebridCloud
+import com.sokoul.iptv.data.debrid.DebridQuery
 import com.sokoul.iptv.ui.components.ChannelLogo
 import com.sokoul.iptv.ui.components.FocusSurface
 import com.sokoul.iptv.ui.nav.PlayKind
@@ -38,10 +40,18 @@ fun HomeScreen(nav: NavHostController) {
     BrowseScreen(nav, hiltViewModel<HomeBrowseViewModel>(), "Accueil")
 }
 
-fun resumeRoute(pid: Long, p: ProgressEntity): Any = when (p.type) {
-    ContentType.MOVIE -> PlayerRoute(PlayKind.MOVIE, pid, p.itemId)
-    ContentType.SERIES -> PlayerRoute(PlayKind.EPISODE, pid, p.itemId, parentId = p.parentId)
-    ContentType.LIVE -> PlayerRoute(PlayKind.LIVE, pid, p.itemId)
+fun resumeRoute(pid: Long, p: ProgressEntity): Any {
+    // reprises Real-Debrid : fichier du cloud (« rdc:ID ») ou titre lu via RD (« tmdb:m:603 », « tmdb:s:1399:1:2 »)
+    if (p.itemId.startsWith(DebridCloud.KEY_PREFIX))
+        return PlayerRoute(PlayKind.CLOUD, pid, p.itemId.removePrefix(DebridCloud.KEY_PREFIX), title = p.title)
+    if (p.itemId.startsWith("tmdb:")) DebridQuery.decode(p.itemId.removePrefix("tmdb:"))?.let { q ->
+        return PlayerRoute(PlayKind.DEBRID, pid, q.encode(), query = q.encode(), title = p.title)
+    }
+    return when (p.type) {
+        ContentType.MOVIE -> PlayerRoute(PlayKind.MOVIE, pid, p.itemId)
+        ContentType.SERIES -> PlayerRoute(PlayKind.EPISODE, pid, p.itemId, parentId = p.parentId)
+        ContentType.LIVE -> PlayerRoute(PlayKind.LIVE, pid, p.itemId)
+    }
 }
 
 @Composable

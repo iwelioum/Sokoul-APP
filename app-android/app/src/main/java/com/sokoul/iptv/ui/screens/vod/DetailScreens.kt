@@ -432,16 +432,6 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
                 if (synopsis != null) add(MenuOption("Lire le résumé complet", Icons.Default.Info) { showSynopsis = true })
                 if (multi) add(MenuOption("Choisir la version à lire…", Icons.Default.PlayArrow) { versionPicker = 1 })
                 if (multi) add(MenuOption("Version lancée en premier…", Icons.Default.Star) { versionPicker = 2 })
-                if (multi) {
-                    // image d'une version + son d'une autre : deux flux à la fois, impossible avec une seule connexion
-                    val conns = vm.playlist?.maxConnections
-                    add(
-                        MenuOption(
-                            "Image d'une version, son d'une autre", Icons.Default.Info, enabled = false,
-                            hint = "Demande 2 connexions simultanées" + (conns?.let { " (votre abonnement : $it)" } ?: "") + ". Arrivera avec Real-Debrid.",
-                        ) {},
-                    )
-                }
                 add(
                     if (watched) MenuOption("Marquer comme non vu", Icons.Default.Replay) { vm.setWatched(false) }
                     else MenuOption("Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(true) }

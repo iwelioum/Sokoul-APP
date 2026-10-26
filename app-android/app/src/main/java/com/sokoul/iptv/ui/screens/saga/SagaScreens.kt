@@ -84,7 +84,7 @@ import com.sokoul.iptv.data.repo.EnrichmentRepository
 import com.sokoul.iptv.data.repo.LibraryRepository
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SagaCard
-import com.sokoul.iptv.data.repo.SagaCrew
+
 import com.sokoul.iptv.data.repo.SagaFace
 import com.sokoul.iptv.data.repo.SagaLogic
 import com.sokoul.iptv.data.repo.SagaPage
@@ -453,7 +453,9 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
                     if (page.crew.isNotEmpty()) item("crew") {
                         Section("Les coulisses", null)
                         LazyRow(contentPadding = PaddingValues(start = l.margin, end = l.margin, top = 8.dp, bottom = 26.dp), horizontalArrangement = Arrangement.spacedBy(l.gutter)) {
-                            items(page.crew, key = { it.label }) { c -> CrewCard(c, Modifier.focusMemory(memory, "c:${c.label}")) }
+                            items(page.crew.flatMap { c -> c.people.map { c.label to it } }, key = { "${it.first}:${it.second.first}" }) { (label, p) ->
+                                CrewCard(label, p.second, Modifier.focusMemory(memory, "c:$label:${p.first}")) { nav.navigateOnce(com.sokoul.iptv.ui.nav.PersonRoute(p.first, p.second)) }
+                            }
                         }
                     }
                 }
@@ -679,12 +681,12 @@ private fun FaceCard(f: SagaFace, modifier: Modifier = Modifier, onClick: () -> 
 }
 
 @Composable
-private fun CrewCard(c: SagaCrew, modifier: Modifier = Modifier) {
-    FocusSurface(onClick = {}, modifier = modifier.width(260.dp), style = FocusStyle.Card) { _ ->
+private fun CrewCard(label: String, name: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusSurface(onClick = onClick, modifier = modifier.width(260.dp), style = FocusStyle.Card) { _ ->
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(c.label, style = Type.Overline, color = SokoulColors.Gold)
+            Text(label, style = Type.Overline, color = SokoulColors.Gold)
             Spacer(Modifier.height(8.dp))
-            c.names.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Text(name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

@@ -103,6 +103,9 @@ val LocalTopBar = staticCompositionLocalOf<TopBarState?> { null }
 internal object TabHandoff {
     @Volatile var pending = false
     fun consume(): Boolean = pending.also { pending = false }
+    /** Action de la barre (Guide, Recherche…) ouverte depuis une page : au retour, le focus revient sur son icône. */
+    @Volatile var action: Pair<Dest, Dest>? = null
+    fun consumeReturn(page: Dest): Dest? = action?.takeIf { it.first == page }?.second.also { action = null }
 }
 
 /**
@@ -111,8 +114,10 @@ internal object TabHandoff {
  */
 @Composable
 fun StreamingShell(nav: NavHostController, current: Dest, content: @Composable () -> Unit) {
-    val bar = remember { TopBarState(arrivedByTab = TabHandoff.consume()) }
+    val returnTo = remember { TabHandoff.consumeReturn(current) }
+    val bar = remember { TopBarState(arrivedByTab = TabHandoff.consume() || returnTo != null) }
     val tabsFocus = remember { FocusRequester() }
+    val actionFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
         androidx.compose.runtime.CompositionLocalProvider(LocalTopBar provides bar) { content() }
@@ -123,7 +128,9 @@ fun StreamingShell(nav: NavHostController, current: Dest, content: @Composable (
             onFocusChanged = { bar.tabsFocused = it },
             onTab = { d -> if (d != current) { TabHandoff.pending = true; nav.goTo(d) } },
             // 📺 TV : l'univers TV s'ouvre sur la dernière chaîne, en plein écran
+            returnTo = returnTo, actionFocus = actionFocus,
             onAction = { d ->
+                TabHandoff.action = current to d
                 when (d) {
                     Dest.LIVE -> nav.navigateOnce(com.sokoul.iptv.ui.nav.TvRoute)
                     Dest.SEARCH -> nav.openSearch(current.searchOrigin())
@@ -135,7 +142,8 @@ fun StreamingShell(nav: NavHostController, current: Dest, content: @Composable (
     }
     if (bar.arrivedByTab) LaunchedEffect(Unit) {
         // la page précédente (et ses onglets) vient d'être remplacée : le focus reste sur l'onglet
-        repeat(20) { withFrameNanos { }; if (runCatching { tabsFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect }
+        val target = if (returnTo != null) actionFocus else tabsFocus
+        repeat(20) { withFrameNanos { }; if (runCatching { target.requestFocus() }.getOrDefault(false)) return@LaunchedEffect }
     }
     BackHandler(enabled = !bar.tabsFocused || current != Dest.HOME) {
         when {
@@ -155,6 +163,8 @@ private fun TopTabs(
     onFocusChanged: (Boolean) -> Unit,
     onTab: (Dest) -> Unit,
     onAction: (Dest) -> Unit,
+    returnTo: Dest?,
+    actionFocus: FocusRequester,
     downTarget: () -> FocusRequester,
 ) {
     val l = LocalLayout.current
@@ -163,6 +173,7 @@ private fun TopTabs(
     val open = rememberUpdatedState(visible)
     // ▼ depuis n'importe quel onglet : la cible fournie par la page
     val toContent = Modifier.focusProperties { down = downTarget() }
+    fun act(d: Dest) = if (d == returnTo) toContent.focusRequester(actionFocus) else toContent
     val shown by animateFloatAsState(if (visible) 1f else 0f, if (reduced) snap() else tween(Motion.MEDIUM, easing = Motion.Emphasized), label = "tabs")
     // onglet sous le focus : la page ne s'ouvre qu'une fois le curseur posé
     var settling by remember { mutableStateOf<Dest?>(null) }
@@ -200,12 +211,12 @@ private fun TopTabs(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                IconTab(Icons.Default.Search, "Recherche", open, toContent, onFocus = { settling = null }) { onAction(Dest.SEARCH) }
+                IconTab(Icons.Default.Search, "Recherche", open, act(Dest.SEARCH), onFocus = { settling = null }) { onAction(Dest.SEARCH) }
                 // guide et enregistrements : accessibles sans ouvrir de flux (une seule connexion chez le fournisseur)
-                IconTab(Dest.GUIDE.icon, "Guide TV", open, toContent, onFocus = { settling = null }) { onAction(Dest.GUIDE) }
-                IconTab(Icons.Default.FiberSmartRecord, "Enregistrements", open, toContent, onFocus = { settling = null }) { onAction(Dest.RECORDINGS) }
-                TvSwitch(open, toContent, onFocus = { settling = null }) { onAction(Dest.LIVE) }
-                IconTab(Icons.Default.Settings, "Réglages", open, toContent, onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
+                IconTab(Dest.GUIDE.icon, "Guide TV", open, act(Dest.GUIDE), onFocus = { settling = null }) { onAction(Dest.GUIDE) }
+                IconTab(Icons.Default.FiberSmartRecord, "Enregistrements", open, act(Dest.RECORDINGS), onFocus = { settling = null }) { onAction(Dest.RECORDINGS) }
+                TvSwitch(open, act(Dest.LIVE), onFocus = { settling = null }) { onAction(Dest.LIVE) }
+                IconTab(Icons.Default.Settings, "Réglages", open, act(Dest.SETTINGS), onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
                 Text(
                     formatClock(rememberNow(15_000)), Modifier.padding(start = Space.s),
                     style = MaterialTheme.typography.titleMedium, color = SokoulColors.TextSecondary, maxLines = 1,

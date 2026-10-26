@@ -51,7 +51,9 @@ data class SagaFace(val id: Int, val name: String, val photo: String?, val films
 
 /** « Les coulisses » : un poste (RÉALISATION…) et les personnes qui l'ont tenu, les plus fidèles d'abord. */
 @Immutable
-data class SagaCrew(val label: String, val names: List<String>)
+data class SagaCrew(val label: String, val people: List<Pair<Int, String>>) {
+    val names: List<String> get() = people.map { it.second }
+}
 
 /** Page « musée » d'une saga. */
 @Immutable
@@ -103,8 +105,8 @@ object SagaLogic {
 
     /** Réalisation, musique et production : 3 noms au plus par poste, les plus présents d'abord. */
     fun crew(credits: List<TmdbCredits>, perJob: Int = 3): List<SagaCrew> = JOBS.mapNotNull { (label, jobs) ->
-        val count = LinkedHashMap<String, MutableSet<Int>>()
-        for (c in credits) for (p in c.crew) if (p.role in jobs) count.getOrPut(p.name) { HashSet() } += c.movieId
+        val count = LinkedHashMap<Pair<Int, String>, MutableSet<Int>>()
+        for (c in credits) for (p in c.crew) if (p.role in jobs) count.getOrPut(p.id to p.name) { HashSet() } += c.movieId
         val names = count.entries.sortedByDescending { it.value.size }.take(perJob).map { it.key }
         if (names.isEmpty()) null else SagaCrew(label, names)
     }
