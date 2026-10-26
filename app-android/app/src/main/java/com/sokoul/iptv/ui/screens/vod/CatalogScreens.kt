@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -131,6 +132,7 @@ abstract class CatalogViewModel(
     var listKey: Pair<String, SortMode>? = null
 
     fun hide(cat: String) = playlist.value?.let { p -> viewModelScope.launch { catalog.setCategoryPref(p.id, type, cat, hidden = true) } }
+    fun setKids(cat: String, v: Int) = playlist.value?.let { p -> viewModelScope.launch { catalog.setCategoryKids(p.id, type, cat, v) } }
     fun lock(cat: String, locked: Boolean) = playlist.value?.let { p ->
         viewModelScope.launch {
             catalog.setCategoryPref(p.id, type, cat, locked = locked)
@@ -206,7 +208,9 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
     var pinError by remember { mutableStateOf<String?>(null) }
 
     val select: (CategoryItem) -> Unit = { c -> if (c.locked && !vm.isUnlocked()) pinFor = c else vm.selected.value = c.id }
-    val longClick: (CategoryItem) -> Unit = { if (!it.id.startsWith("__")) catMenu = it }
+    val kidsProfile = com.sokoul.iptv.ui.screens.profiles.isKidsProfile()
+    var kidsMenu by remember { mutableStateOf<CategoryItem?>(null) }
+    val longClick: (CategoryItem) -> Unit = { if (!it.id.startsWith("__") && !kidsProfile) catMenu = it }
 
     val grid: @Composable (Modifier) -> Unit = { mod ->
         Column(mod) {
@@ -275,11 +279,15 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
     if (sortMenu) {
         OptionsDialog("Trier par", SortMode.entries.map { m -> MenuOption(m.label, selected = m == sort) { vm.sort.value = m } }, onDismiss = { sortMenu = false })
     }
+    kidsMenu?.let { c ->
+        OptionsDialog("« ${c.name} » pour les enfants", com.sokoul.iptv.ui.screens.profiles.kidsAccessOptions { vm.setKids(c.id, it) }, onDismiss = { kidsMenu = null })
+    }
     catMenu?.let { c ->
         OptionsDialog(
             c.name,
             listOf(
                 MenuOption("Masquer ce groupe", Icons.Default.VisibilityOff) { vm.hide(c.id) },
+                MenuOption("Profil Enfant…", Icons.Default.ChildCare) { kidsMenu = c },
                 MenuOption(if (c.locked) "Déverrouiller" else "Verrouiller (contrôle parental)", Icons.Default.Lock) {
                     scope.launch {
                         when {

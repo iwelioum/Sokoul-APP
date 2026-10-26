@@ -94,7 +94,7 @@ class BrowseRepository @Inject constructor(
     private val settings: SettingsStore,
     private val curated: CuratedSagaStore,
 ) {
-    private data class CacheKey(val pid: Long, val kind: BrowseKind, val sync: Long, val open: Boolean, val grouping: Boolean)
+    private data class CacheKey(val pid: Long, val kind: BrowseKind, val sync: Long, val access: String, val grouping: Boolean)
     private val cache = ConcurrentHashMap<CacheKey, Pair<PageStamp, BrowsePage>>()
     private val net = Semaphore(EnrichmentRepository.PARALLEL)
     // délais d'affichage progressif (réduits dans les tests)
@@ -106,7 +106,7 @@ class BrowseRepository @Inject constructor(
      * nouvelle lecture, Ma liste modifiée) ; invalidée aussi par une synchronisation ou le contrôle parental.
      */
     suspend fun page(p: PlaylistEntity, kind: BrowseKind, force: Boolean = false, onPartial: (suspend (BrowsePage) -> Unit)? = null): BrowsePage {
-        val key = CacheKey(p.id, kind, p.lastSync, parental.canAccessLocked(), settings.current().groupDuplicates)
+        val key = CacheKey(p.id, kind, p.lastSync, accessKey(), settings.current().groupDuplicates)
         val stamp = stampNow(p.id)
         if (!force) cache[key]?.let { (st, page) -> if (st.reasonAgainst(stamp) == null) return page }
         val page = ScreenLoading.track { build(p.id, kind, onPartial) }
@@ -122,7 +122,7 @@ class BrowseRepository @Inject constructor(
      * (le prochain [page] la construira de toute façon).
      */
     suspend fun staleReason(p: PlaylistEntity, kind: BrowseKind): HomeFreshness.Reason? {
-        val key = CacheKey(p.id, kind, p.lastSync, parental.canAccessLocked(), settings.current().groupDuplicates)
+        val key = CacheKey(p.id, kind, p.lastSync, accessKey(), settings.current().groupDuplicates)
         val (st, _) = cache[key] ?: return null
         return st.reasonAgainst(stampNow(p.id))
     }
@@ -801,7 +801,7 @@ class BrowseRepository @Inject constructor(
     suspend fun sagaHub(pid: Long, limit: Int = 60): List<SagaCard> = ScreenLoading.track { withContext(Dispatchers.Default) {
         val api = enrich.apiKey()
         if (api.isBlank()) return@withContext emptyList()
-        val key = pid to parental.canAccessLocked()
+        val key = pid to accessKey()
         hubCache[key]?.let { (t, list) -> if (System.currentTimeMillis() - t < CACHE_MS) return@withContext list }
         val c = ctx(pid, ContentType.MOVIE)
         val counts = db.browse().collections(pid, 200)
@@ -868,7 +868,7 @@ class BrowseRepository @Inject constructor(
         }.toMap()
         if (logos.values.all { it == null }) return@withContext cards
         val out = cards.map { s -> logos[s.id]?.let { s.copy(logo = it) } ?: s }
-        val key = pid to parental.canAccessLocked()
+        val key = pid to accessKey()
         hubCache[key]?.let { (t, _) -> hubCache[key] = t to out }
         out
     }
@@ -881,7 +881,10 @@ class BrowseRepository @Inject constructor(
         return done.map { it.itemId }.distinct().chunked(500).flatMap { db.browse().moviesByIds(pid, it) }.mapTo(HashSet()) { it.toWork().key }
     }
 
-    private val hubCache = ConcurrentHashMap<Pair<Long, Boolean>, Pair<Long, List<SagaCard>>>()
+    private val hubCache = ConcurrentHashMap<Pair<Long, String>, Pair<Long, List<SagaCard>>>()
+
+    /** Ce qui change le contenu visible : le profil (Enfant, historique) et l'accès aux groupes verrouillés. */
+    private suspend fun accessKey(): String = "${db.currentProfileId()}:${parental.canAccessLocked()}"
 
     /**
      * Page d'une personne : sa filmographie TMDB (rôles et réalisations, les plus connus d'abord) retrouvée dans
@@ -991,7 +994,7 @@ class BrowseRepository @Inject constructor(
                 )
             )
         }
-        lib.addFavorite(com.sokoul.iptv.data.db.FavoriteEntity(pid, w.type, key))
+        lib.addFavorite(com.sokoul.iptv.data.db.FavoriteEntity(pid, w.type, key, profileId = db.currentProfileId()))
         return true
     }
 

@@ -86,7 +86,7 @@ class SagaTest {
 
     private fun repo(): BrowseRepository {
         val tmdb = TmdbClient(fakeTmdb(), HttpModule.json(), db.tmdb())
-        val gate = ParentalGate(settings)
+        val gate = ParentalGate(settings, com.sokoul.iptv.data.repo.ProfileRepository(db))
         val vod = VodRepository(db, settings, gate)
         return BrowseRepository(db, vod, EnrichmentRepository(db, tmdb, settings, vod), tmdb, gate, settings, CuratedSagaStore(context))
     }

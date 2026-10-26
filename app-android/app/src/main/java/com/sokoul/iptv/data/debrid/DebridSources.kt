@@ -81,17 +81,18 @@ class DebridSources @Inject constructor(
     private val tmdb: TmdbClient,
     private val rd: RealDebridClient,
     @ApplicationContext private val context: Context,
+    private val profiles: com.sokoul.iptv.data.repo.ProfileRepository,
 ) {
     private data class Entry(val at: Long, val streams: List<DebridStream>)
     private val cache = ConcurrentHashMap<DebridQuery, Entry>()
 
     /** Real-Debrid utilisable : clé (ou association) et extension de sources renseignées. */
-    suspend fun enabled(): Boolean = settings.current().debridAddon.isNotEmpty() && rd.configured()
+    suspend fun enabled(): Boolean = settings.current().debridAddon.isNotEmpty() && rd.configured() && !profiles.isKids()
 
     suspend fun find(q: DebridQuery): List<DebridStream> {
         cache[q]?.takeIf { System.currentTimeMillis() - it.at < TTL_MS }?.let { return it.streams }
         val s = settings.current()
-        if (s.debridAddon.isEmpty() || !rd.configured()) return emptyList()
+        if (s.debridAddon.isEmpty() || !rd.configured() || profiles.isKids()) return emptyList()
         val imdb = tmdb.imdbId(s.tmdbApiKey, if (q.series) "tv" else "movie", q.tmdbId) ?: return emptyList()
         val path = if (q.series) "stream/series/$imdb:${q.season}:${q.episode}.json" else "stream/movie/$imdb.json"
         val url = "${s.debridAddon}/$path".toHttpUrlOrNull() ?: return emptyList()

@@ -52,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.components.FocusSurface
-import com.sokoul.iptv.ui.components.SokoulMark
 import com.sokoul.iptv.ui.components.onChip
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.LocalReducedMotion
@@ -211,7 +210,10 @@ private fun TopTabs(
                 .focusGroup(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SokoulMark(size = 30.dp)
+            // avatar du profil en cours (à la place du monogramme) : OK = « Qui regarde ? »
+            com.sokoul.iptv.ui.screens.profiles.ProfileSwitchButton(
+                toContent.focusProperties { canFocus = open.value }.onFocusChanged { if (it.isFocused) settling = null }, size = 30.dp,
+            )
             Row(Modifier.weight(1f).padding(horizontal = Space.m), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterHorizontally)) {
                 StreamingDests.forEach { d ->
                     TextTab(
@@ -228,7 +230,10 @@ private fun TopTabs(
                 IconTab(Dest.GUIDE.icon, "Guide TV", open, act(Dest.GUIDE), onFocus = { settling = null }) { onAction(Dest.GUIDE) }
                 IconTab(Icons.Default.FiberSmartRecord, "Enregistrements", open, act(Dest.RECORDINGS), onFocus = { settling = null }) { onAction(Dest.RECORDINGS) }
                 TvSwitch(open, act(Dest.LIVE), onFocus = { settling = null }) { onAction(Dest.LIVE) }
-                IconTab(Icons.Default.Settings, "Réglages", open, act(Dest.SETTINGS), onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
+                // profil Enfant : pas de réglages
+                if (!com.sokoul.iptv.ui.screens.profiles.isKidsProfile()) {
+                    IconTab(Icons.Default.Settings, "Réglages", open, act(Dest.SETTINGS), onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
+                }
                 Text(
                     formatClock(rememberNow(15_000)), Modifier.padding(start = Space.s),
                     style = MaterialTheme.typography.titleMedium, color = SokoulColors.TextSecondary, maxLines = 1,

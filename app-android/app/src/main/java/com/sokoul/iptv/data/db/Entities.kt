@@ -54,7 +54,11 @@ data class CategoryPrefEntity(
     val categoryId: String,
     val hidden: Boolean = false,
     val locked: Boolean = false,
+    /** Profil Enfant : 0 = selon le nom du groupe, 1 = autorisé, 2 = interdit (v8). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val kids: Int = KidsAccess.AUTO,
 )
+
+object KidsAccess { const val AUTO = 0; const val ALLOWED = 1; const val BLOCKED = 2 }
 
 @Entity(
     tableName = "channels",
@@ -205,13 +209,33 @@ data class EpgChannelEntity(
     val icon: String?,
 )
 
-@Entity(tableName = "favorites", primaryKeys = ["playlistId", "type", "itemId"])
+@Entity(tableName = "favorites", primaryKeys = ["profileId", "playlistId", "type", "itemId"])
 data class FavoriteEntity(
     val playlistId: Long,
     val type: ContentType,
     val itemId: String,
     val addedAt: Long = System.currentTimeMillis(),
+    /** Profil propriétaire (v8) ; 0 = Principal. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val profileId: Long = ProfileEntity.MAIN,
 )
+
+/** Profil de l'app (v8). Le profil 0 « Principal » existe toujours. */
+@Entity(tableName = "profiles")
+data class ProfileEntity(
+    @PrimaryKey val id: Long,
+    val name: String,
+    /** Indice dans la palette des avatars. */
+    val color: Int = 0,
+    /** Profil Enfant : seulement les groupes adaptés, pas de réglages ni de Real-Debrid. */
+    val kids: Boolean = false,
+    val position: Int = 0,
+) {
+    companion object { const val MAIN = 0L }
+}
+
+/** Profil en cours (une seule ligne, k = 0) : les requêtes des favoris et des reprises s'y rapportent (v8). */
+@Entity(tableName = "current_profile")
+data class CurrentProfileEntity(@PrimaryKey val k: Int = 0, val profileId: Long)
 
 /**
  * Reprise de lecture (films, épisodes) et historique des chaînes (LIVE).
@@ -219,8 +243,8 @@ data class FavoriteEntity(
  */
 @Entity(
     tableName = "progress",
-    primaryKeys = ["playlistId", "type", "itemId"],
-    indices = [Index("playlistId", "type", "updatedAt"), Index("playlistId", "parentId")],
+    primaryKeys = ["profileId", "playlistId", "type", "itemId"],
+    indices = [Index("profileId", "playlistId", "type", "updatedAt"), Index("profileId", "playlistId", "parentId")],
 )
 data class ProgressEntity(
     val playlistId: Long,
@@ -239,6 +263,8 @@ data class ProgressEntity(
     val episode: Int? = null,
     /** Marqué vu / non vu à la main : ne décide pas de l'épisode à reprendre (v4). */
     @androidx.room.ColumnInfo(defaultValue = "0") val manual: Boolean = false,
+    /** Profil propriétaire (v8) ; 0 = Principal. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val profileId: Long = ProfileEntity.MAIN,
 )
 
 @Entity(tableName = "recordings", indices = [Index("status"), Index("startAt")])

@@ -120,4 +120,27 @@ class MigrationTest {
         assertEquals("HDR10", hdr)
         db.close()
     }
+
+    @Test fun `migration 7 vers 8 range favoris et reprise dans le profil Principal`() {
+        val name = dbName + "8"
+        helper.createDatabase(name, 7).apply {
+            execSQL("INSERT INTO favorites (playlistId, type, itemId, addedAt) VALUES (1, 'MOVIE', '10', 5)")
+            execSQL("INSERT INTO progress (playlistId, type, itemId, parentId, title, subtitle, image, positionMs, durationMs, updatedAt, finished, season, episode, manual) VALUES (1, 'SERIES', 'e1', 's', 'Serie', NULL, NULL, 600000, 2400000, 9, 0, 2, 5, 0)")
+            execSQL("INSERT INTO category_prefs (playlistId, type, categoryId, hidden, locked) VALUES (1, 'LIVE', 'c', 1, 0)")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(name, 8, true, *Migrations.ALL)
+        fun long(sql: String) = db.query(sql).use { it.moveToFirst(); it.getLong(0) }
+        assertEquals(0L, long("SELECT profileId FROM favorites WHERE itemId = '10'"))
+        assertEquals(600000L, long("SELECT positionMs FROM progress WHERE itemId = 'e1' AND profileId = 0"))
+        assertEquals(5L, long("SELECT episode FROM progress WHERE itemId = 'e1'"))
+        assertEquals(1L, long("SELECT hidden FROM category_prefs WHERE categoryId = 'c'"))
+        assertEquals(0L, long("SELECT kids FROM category_prefs WHERE categoryId = 'c'"))
+        assertEquals(1L, long("SELECT COUNT(*) FROM profiles WHERE id = 0 AND kids = 0"))
+        assertEquals(0L, long("SELECT profileId FROM current_profile WHERE k = 0"))
+        // même élément pour un autre profil : la clé élargie l'accepte
+        db.execSQL("INSERT INTO favorites (playlistId, type, itemId, addedAt, profileId) VALUES (1, 'MOVIE', '10', 6, 1)")
+        assertEquals(2L, long("SELECT COUNT(*) FROM favorites"))
+        db.close()
+    }
 }

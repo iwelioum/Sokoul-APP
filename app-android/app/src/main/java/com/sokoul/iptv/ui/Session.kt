@@ -32,7 +32,10 @@ data class PinCheck(val ok: Boolean, val message: String? = null) {
  * - Déverrouillage valable [UNLOCK_TTL_MS] après le dernier accès, et annulé dès que l'app passe en arrière-plan.
  */
 @Singleton
-class ParentalGate @Inject constructor(private val settings: SettingsStore) {
+class ParentalGate @Inject constructor(
+    private val settings: SettingsStore,
+    private val profiles: com.sokoul.iptv.data.repo.ProfileRepository,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutex = Mutex()
     private val _unlocked = MutableStateFlow(false)
@@ -59,6 +62,8 @@ class ParentalGate @Inject constructor(private val settings: SettingsStore) {
      * Chaque accès réussi prolonge le déverrouillage.
      */
     fun isOpen(now: Long = System.currentTimeMillis()): Boolean {
+        // profil Enfant : les groupes verrouillés restent fermés, code ou pas
+        if (profiles.kids.value) return false
         if (!pinSet.value) return true
         if (!_unlocked.value) return false
         if (now - lastAccess > UNLOCK_TTL_MS) { lock(); return false }
@@ -67,7 +72,7 @@ class ParentalGate @Inject constructor(private val settings: SettingsStore) {
     }
 
     /** Version sûre au démarrage (lit le réglage au lieu du cache). */
-    suspend fun canAccessLocked(now: Long = System.currentTimeMillis()): Boolean = !hasPin() || isOpen(now)
+    suspend fun canAccessLocked(now: Long = System.currentTimeMillis()): Boolean = !profiles.isKids() && (!hasPin() || isOpen(now))
 
     suspend fun tryUnlock(pin: String, now: Long = System.currentTimeMillis()): PinCheck = mutex.withLock {
         val (failures, lockedUntil) = settings.pinAttempts()

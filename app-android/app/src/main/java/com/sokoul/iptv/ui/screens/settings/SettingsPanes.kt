@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +61,7 @@ import com.sokoul.iptv.ui.theme.Type
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 
-/** Les 8 rubriques des réglages, dans l'ordre d'affichage. */
+/** Les 10 rubriques des réglages, dans l'ordre d'affichage. */
 enum class SettingsCategory(val label: String, val icon: ImageVector, val blurb: String) {
     ACCOUNT("Compte et playlists", Icons.Default.AccountCircle, "Vos abonnements, leur synchronisation et leur mise à jour."),
     PLAYBACK("Lecture", Icons.Default.PlayCircle, "Langues, sous-titres et enchaînement des épisodes. Les réglages techniques sont sous « Avancé »."),
@@ -68,6 +69,7 @@ enum class SettingsCategory(val label: String, val icon: ImageVector, val blurb:
     LIBRARY("Films et séries", Icons.Default.Movie, "Fiches TMDB, regroupement des doublons et version lancée en premier."),
     DEBRID("Real-Debrid", Icons.Default.Bolt, "Films et séries en 4K depuis votre compte Real-Debrid, sans utiliser la connexion IPTV."),
     PARENTAL("Contrôle parental", Icons.Default.Lock, "Code parental, groupes masqués et verrouillés."),
+    PROFILES("Profils", Icons.Default.People, "Un profil par personne : sa liste, sa reprise et ses recommandations. Le profil Enfant ne voit que les groupes adaptés."),
     SOURCES("Sources de données", Icons.Default.Cloud, "Services facultatifs en complément de TMDB : notes, « Aussi sur », sous-titres, logos."),
     BACKUP("Sauvegarde", Icons.Default.Backup, "Exporter ou restaurer toute la configuration."),
     ABOUT("À propos", Icons.Default.Info, "Version de l'application."),

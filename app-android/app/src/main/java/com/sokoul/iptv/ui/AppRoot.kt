@@ -102,10 +102,22 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
         when (hasPlaylist) {
             null -> com.sokoul.iptv.ui.components.BrandSplash()
             else -> {
+                // plusieurs profils : « Qui regarde ? » une fois par lancement (pas au tout premier, sans playlist)
+                val profilesVm = hiltViewModel<com.sokoul.iptv.ui.screens.profiles.ProfilesViewModel>()
+                val profiles by profilesVm.profiles.collectAsStateWithLifecycle()
+                val currentProfile by profilesVm.current.collectAsStateWithLifecycle()
+                LaunchedEffect(profiles.size) {
+                    if (profiles.size > 1 && hasPlaylist == true && !com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.askedThisLaunch) {
+                        com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.askedThisLaunch = true
+                        com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.open.value = true
+                    }
+                }
                 val nav = rememberNavController()
                 // destination de départ figée : l'ajout de la 1re playlist ne doit pas réinitialiser la navigation
                 val start = remember { if (hasPlaylist == true) HomeRoute else PlaylistEditRoute(firstRun = true) }
-                AppNavHost(nav, start = start)
+                androidx.compose.runtime.CompositionLocalProvider(com.sokoul.iptv.ui.screens.profiles.LocalProfile provides currentProfile) {
+                    AppNavHost(nav, start = start)
+                }
                 // TV : « Au démarrage : dernière chaîne » → la télé s'allume sur la chaîne (Retour = Accueil)
                 val isTv = com.sokoul.iptv.ui.theme.LocalLayout.current.isTv
                 LaunchedEffect(Unit) { if (isTv && start == HomeRoute && vm.startOnTv()) nav.navigateOnce(TvRoute) }
@@ -117,6 +129,7 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                     }
                 }
                 com.sokoul.iptv.ui.components.ReminderBanner { r -> nav.navigateOnce(PlayerRoute(PlayKind.LIVE, r.playlistId, r.channelId)) }
+                com.sokoul.iptv.ui.screens.profiles.WhoIsWatchingOverlay()
             }
         }
     }

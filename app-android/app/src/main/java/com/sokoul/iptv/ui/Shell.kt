@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -192,6 +193,7 @@ private fun PhoneTab(label: String, icon: androidx.compose.ui.graphics.vector.Im
 /** Téléphone : barre du bas (Accueil, Films, Séries, Direct, Plus). */
 @Composable
 private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolean, content: @Composable () -> Unit) {
+    val kids = com.sokoul.iptv.ui.screens.profiles.isKidsProfile()
     var more by remember { mutableStateOf(false) }
     val main = listOf(Dest.HOME, Dest.MOVIES, Dest.SERIES, Dest.LIVE)
     Column(Modifier.fillMaxSize().background(SokoulColors.Background)) {
@@ -208,7 +210,9 @@ private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolea
     if (more) {
         OptionsDialog(
             "Plus",
-            listOf(Dest.SEARCH, Dest.SAGAS, Dest.GUIDE, Dest.RECORDINGS, Dest.SETTINGS).map { d -> MenuOption(d.label, d.icon, d == current) { nav.goTo(d) } },
+            (listOf(Dest.SEARCH, Dest.SAGAS, Dest.GUIDE, Dest.RECORDINGS) + if (kids) emptyList() else listOf(Dest.SETTINGS))
+                .map { d -> MenuOption(d.label, d.icon, d == current) { nav.goTo(d) } } +
+                MenuOption("Changer de profil", Icons.Default.People) { com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.open.value = true },
             onDismiss = { more = false },
         )
     }

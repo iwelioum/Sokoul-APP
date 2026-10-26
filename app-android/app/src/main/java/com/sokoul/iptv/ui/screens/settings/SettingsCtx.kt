@@ -41,4 +41,6 @@ internal class SettingsCtx(
     /** Real-Debrid associé par code appareil (jeton renouvelé seul). */
     val debridLinked: Boolean = false,
     val pairDebrid: () -> Unit = {},
+    val profiles: List<com.sokoul.iptv.data.db.ProfileEntity> = emptyList(),
+    val currentProfileId: Long = 0,
 )

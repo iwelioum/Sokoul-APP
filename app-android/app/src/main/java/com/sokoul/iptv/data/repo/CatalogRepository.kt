@@ -149,6 +149,12 @@ class CatalogRepository @Inject constructor(
     suspend fun isCategoryLocked(pid: Long, type: ContentType, cat: String): Boolean =
         !cat.startsWith("__") && db.categories().getPref(pid, type, cat)?.locked == true
 
+    /** Profil Enfant : 0 = selon le nom, 1 = toujours visible, 2 = jamais (voir KidsAccess). */
+    suspend fun setCategoryKids(pid: Long, type: ContentType, cat: String, kids: Int) {
+        val current = db.categories().getPref(pid, type, cat) ?: CategoryPrefEntity(pid, type, cat)
+        db.categories().upsertPref(current.copy(kids = kids))
+    }
+
     suspend fun setCategoryPref(pid: Long, type: ContentType, cat: String, hidden: Boolean? = null, locked: Boolean? = null) {
         val current = db.categories().getPref(pid, type, cat) ?: CategoryPrefEntity(pid, type, cat)
         db.categories().upsertPref(current.copy(hidden = hidden ?: current.hidden, locked = locked ?: current.locked))

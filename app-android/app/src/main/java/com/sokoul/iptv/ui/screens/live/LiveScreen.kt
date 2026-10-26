@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -170,6 +171,7 @@ class LiveViewModel @Inject constructor(
     fun record(c: ChannelEntity, minutes: Int, done: (String) -> Unit) = launch { done(actions.recordNow(it, c, minutes)) }
     fun addToMultiview(c: ChannelEntity): String? = playlist.value?.let { actions.addToMultiview(it.id, c) }
     fun hideCategory(id: String) = launch { actions.setCategoryHidden(it, id, true) }
+    fun setKids(id: String, v: Int) = launch { catalog.setCategoryKids(it, ContentType.LIVE, id, v) }
     fun setLocked(id: String, locked: Boolean) = launch { actions.setCategoryLocked(it, ContentType.LIVE, id, locked) }
     suspend fun hasPin() = actions.parental.hasPin()
     suspend fun unlock(pin: String) = actions.parental.tryUnlock(pin)
@@ -210,7 +212,10 @@ fun LiveScreen(nav: NavHostController) {
         vm.lastPlayed = c.id
         nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
     }
-    val openCategoryMenu: (CategoryItem) -> Unit = { if (!it.id.startsWith("__")) categoryMenu = it }
+    val kidsProfile = com.sokoul.iptv.ui.screens.profiles.isKidsProfile()
+    var kidsMenu by remember { mutableStateOf<CategoryItem?>(null) }
+    // profil Enfant : pas de menu de groupe (masquer, verrouiller, autoriser)
+    val openCategoryMenu: (CategoryItem) -> Unit = { if (!it.id.startsWith("__") && !kidsProfile) categoryMenu = it }
 
     if (wide) {
         val l = com.sokoul.iptv.ui.theme.LocalLayout.current
@@ -255,11 +260,15 @@ fun LiveScreen(nav: NavHostController) {
             onDismiss = { channelMenu = null },
         )
     }
+    kidsMenu?.let { cat ->
+        OptionsDialog("« ${cat.name} » pour les enfants", com.sokoul.iptv.ui.screens.profiles.kidsAccessOptions { vm.setKids(cat.id, it) }, onDismiss = { kidsMenu = null })
+    }
     categoryMenu?.let { cat ->
         OptionsDialog(
             cat.name,
             listOf(
                 MenuOption("Masquer ce groupe", Icons.Default.VisibilityOff) { vm.hideCategory(cat.id) },
+                MenuOption("Profil Enfant…", Icons.Default.ChildCare) { kidsMenu = cat },
                 if (cat.locked) MenuOption("Déverrouiller", Icons.Default.LockOpen) {
                     if (vm.isUnlocked()) vm.setLocked(cat.id, false) else pinFor = cat.copy(name = "unlock:" + cat.id)
                 } else MenuOption("Verrouiller (contrôle parental)", Icons.Default.Lock) {

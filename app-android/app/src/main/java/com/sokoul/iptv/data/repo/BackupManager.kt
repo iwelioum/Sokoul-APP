@@ -13,6 +13,8 @@ import com.sokoul.iptv.data.db.ContentType
 import com.sokoul.iptv.data.db.FavoriteEntity
 import com.sokoul.iptv.data.db.PlaylistEntity
 import com.sokoul.iptv.data.db.PlaylistType
+import com.sokoul.iptv.data.db.ProfileEntity
+import com.sokoul.iptv.data.db.ProgressEntity
 import com.sokoul.iptv.parser.ServerUrl
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +38,11 @@ data class BackupFile(
     val withSecrets: Boolean = false,
     val playlists: List<PlaylistBackup>,
     val settings: SettingsBackup,
+    /** Profils (v3) ; le profil 0 « Principal » est toujours présent sur l'appareil. */
+    val profiles: List<ProfileBackup> = emptyList(),
 )
+
+@Serializable data class ProfileBackup(val id: Long, val name: String, val color: Int = 0, val kids: Boolean = false)
 
 @Serializable
 data class PlaylistBackup(
@@ -49,10 +55,17 @@ data class PlaylistBackup(
     val userAgent: String? = null,
     val favorites: List<FavoriteBackup> = emptyList(),
     val groups: List<GroupBackup> = emptyList(),
+    /** Reprise de lecture et vus (v3). */
+    val progress: List<ProgressBackup> = emptyList(),
 )
 
-@Serializable data class FavoriteBackup(val type: String, val id: String, val addedAt: Long)
-@Serializable data class GroupBackup(val type: String, val id: String, val hidden: Boolean, val locked: Boolean)
+@Serializable data class FavoriteBackup(val type: String, val id: String, val addedAt: Long, val profile: Long = 0)
+@Serializable data class GroupBackup(val type: String, val id: String, val hidden: Boolean, val locked: Boolean, val kids: Int = 0)
+@Serializable data class ProgressBackup(
+    val type: String, val id: String, val parentId: String? = null, val title: String, val subtitle: String? = null, val image: String? = null,
+    val positionMs: Long, val durationMs: Long, val updatedAt: Long, val finished: Boolean, val season: Int? = null, val episode: Int? = null,
+    val manual: Boolean = false, val profile: Long = 0,
+)
 
 @Serializable
 data class SettingsBackup(
@@ -152,13 +165,17 @@ class BackupManager @Inject constructor(
                 password = if (withSecrets) secrets.decrypt(p.passwordEnc) else null,
                 epgUrl = p.epgUrl?.takeIf { withSecrets || !BackupRules.hasCredentials(it) },
                 userAgent = p.userAgent,
-                favorites = db.library().allFavorites(p.id).map { FavoriteBackup(it.type.name, it.itemId, it.addedAt) },
-                groups = db.categories().allPrefs(p.id).map { GroupBackup(it.type.name, it.categoryId, it.hidden, it.locked) },
+                favorites = db.library().allFavorites(p.id).map { FavoriteBackup(it.type.name, it.itemId, it.addedAt, it.profileId) },
+                groups = db.categories().allPrefs(p.id).map { GroupBackup(it.type.name, it.categoryId, it.hidden, it.locked, it.kids) },
+                progress = db.profiles().allProgress(p.id).sortedByDescending { it.updatedAt }.take(MAX_ITEMS).map {
+                    ProgressBackup(it.type.name, it.itemId, it.parentId, it.title, it.subtitle, it.image, it.positionMs, it.durationMs, it.updatedAt, it.finished, it.season, it.episode, it.manual, it.profileId)
+                },
             )
         }
         val file = BackupFile(
             withSecrets = withSecrets,
             playlists = playlists,
+            profiles = db.profiles().all().map { ProfileBackup(it.id, it.name, it.color, it.kids) },
             settings = SettingsBackup(
                 s.bufferProfile.name, s.liveFormat.name, s.decoderMode.name, s.userAgent, s.audioLanguage, s.subtitleLanguage,
                 s.epgOffsetMinutes, s.playlistRefreshHours, s.epgRefreshHours,
@@ -196,6 +213,21 @@ class BackupManager @Inject constructor(
         val toSync = ArrayList<Long>()
         var skipped = 0
         var withoutPassword = 0
+        // profils de la sauvegarde → profils de l'appareil (même nom = même profil ; sinon créé)
+        val profileMap = HashMap<Long, Long>().apply { put(ProfileEntity.MAIN, ProfileEntity.MAIN) }
+        val local = db.profiles().all()
+        for (pr in file.profiles.take(ProfileRepository.MAX_PROFILES)) {
+            if (pr.id == ProfileEntity.MAIN) continue
+            val name = pr.name.trim().take(ProfileRepository.MAX_NAME)
+            if (name.isEmpty()) continue
+            val same = local.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            profileMap[pr.id] = same?.id ?: run {
+                if (db.profiles().all().size >= ProfileRepository.MAX_PROFILES) return@run ProfileEntity.MAIN
+                val id = (db.profiles().all().maxOfOrNull { it.id } ?: 0) + 1
+                db.profiles().upsert(ProfileEntity(id, name, pr.color.coerceIn(0, ProfileRepository.AVATAR_COLORS - 1), pr.kids, id.toInt()))
+                id
+            }
+        }
         db.withTransaction {
             for (pb in file.playlists) {
                 val p = BackupRules.validPlaylist(pb)
@@ -207,13 +239,21 @@ class BackupManager @Inject constructor(
                 pb.favorites.take(MAX_ITEMS).forEach { f ->
                     val t = enumOrNull<ContentType>(f.type) ?: return@forEach
                     if (f.id.isBlank() || f.id.length > 64) return@forEach
-                    db.library().addFavorite(FavoriteEntity(id, t, f.id, f.addedAt.coerceAtLeast(0)))
+                    db.library().addFavorite(FavoriteEntity(id, t, f.id, f.addedAt.coerceAtLeast(0), profileId = profileMap[f.profile] ?: ProfileEntity.MAIN))
                 }
                 pb.groups.take(MAX_ITEMS).forEach { g ->
                     val t = enumOrNull<ContentType>(g.type) ?: return@forEach
                     if (g.id.isBlank() || g.id.length > 128) return@forEach
-                    db.categories().upsertPref(CategoryPrefEntity(id, t, g.id, g.hidden, g.locked))
+                    db.categories().upsertPref(CategoryPrefEntity(id, t, g.id, g.hidden, g.locked, g.kids.coerceIn(0, 2)))
                 }
+                db.profiles().upsertProgress(pb.progress.take(MAX_ITEMS).mapNotNull { r ->
+                    val t = enumOrNull<ContentType>(r.type) ?: return@mapNotNull null
+                    if (r.id.isBlank() || r.id.length > 64 || r.positionMs < 0 || r.durationMs < 0) return@mapNotNull null
+                    ProgressEntity(
+                        id, t, r.id, r.parentId?.take(64), r.title.take(300), r.subtitle?.take(300), r.image?.take(1000), r.positionMs, r.durationMs,
+                        r.updatedAt.coerceAtLeast(0), r.finished, r.season, r.episode, r.manual, profileMap[r.profile] ?: ProfileEntity.MAIN,
+                    )
+                })
                 added += id
                 if (p.type == PlaylistType.M3U || password != null) toSync += id
             }
@@ -261,7 +301,7 @@ class BackupManager @Inject constructor(
 
     companion object {
         const val APP = "SokoulTV"
-        const val VERSION = 2
+        const val VERSION = 3
         const val FORMAT_ENCRYPTED = "encrypted"
         const val MAX_BYTES = 5 * 1024 * 1024
         const val MAX_PLAYLISTS = 50

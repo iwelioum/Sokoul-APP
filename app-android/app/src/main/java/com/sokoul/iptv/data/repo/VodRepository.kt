@@ -137,7 +137,7 @@ class VodRepository @Inject constructor(
     suspend fun toggleFavorite(pid: Long, type: ContentType, ids: List<String>, shownId: String) {
         val favs = db.vod().favoriteAmong(pid, type, ids)
         if (favs.isNotEmpty()) favs.forEach { db.library().removeFavorite(pid, type, it) }
-        else db.library().addFavorite(com.sokoul.iptv.data.db.FavoriteEntity(pid, type, shownId))
+        else db.library().addFavorite(com.sokoul.iptv.data.db.FavoriteEntity(pid, type, shownId, profileId = db.currentProfileId()))
     }
 
     suspend fun clearMovieProgress(pid: Long, ids: List<String>) = ids.forEach { db.library().deleteProgress(pid, ContentType.MOVIE, it) }

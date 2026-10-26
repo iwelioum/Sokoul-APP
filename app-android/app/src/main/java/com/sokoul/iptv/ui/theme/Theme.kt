@@ -62,6 +62,9 @@ object SokoulColors {
     /** Dégradé des cartes sans image. */
     val PlaceholderTop = Color(0xFF262638)
     val PlaceholderBottom = Color(0xFF15151F)
+    /** Couleurs des avatars de profil (ProfileRepository.AVATAR_COLORS). */
+    val Avatars = listOf(Color(0xFF7C6CFF), Color(0xFFFF6B8B), Color(0xFF3DDC97), Color(0xFFFFB547), Color(0xFF4DB6FF), Color(0xFFB36CFF))
+    fun avatar(i: Int) = Avatars[Math.floorMod(i, Avatars.size)]
 
     /** Fond d'écran assombri (dégradés et voiles posés sur les images). */
     fun bg(alpha: Float) = Background.copy(alpha = alpha)

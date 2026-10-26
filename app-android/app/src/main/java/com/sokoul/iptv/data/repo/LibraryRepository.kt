@@ -17,7 +17,7 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
 
     suspend fun toggleFavorite(pid: Long, type: ContentType, id: String): Boolean {
         val fav = db.library().observeIsFavorite(pid, type, id).first()
-        if (fav) db.library().removeFavorite(pid, type, id) else db.library().addFavorite(FavoriteEntity(pid, type, id))
+        if (fav) db.library().removeFavorite(pid, type, id) else db.library().addFavorite(FavoriteEntity(pid, type, id, profileId = db.currentProfileId()))
         return !fav
     }
 
@@ -34,12 +34,12 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
         if (durationMs <= 0 || positionMs < 0) return
         val finished = isFinished(positionMs, durationMs)
         db.library().saveProgress(
-            ProgressEntity(pid, type, id, parentId, title, subtitle, image, positionMs, durationMs, System.currentTimeMillis(), finished, season, episode, manual = false)
+            ProgressEntity(pid, type, id, parentId, title, subtitle, image, positionMs, durationMs, System.currentTimeMillis(), finished, season, episode, manual = false, profileId = db.currentProfileId())
         )
     }
 
     suspend fun markChannelWatched(pid: Long, channelId: String, name: String, logo: String?) {
-        db.library().saveProgress(ProgressEntity(pid, ContentType.LIVE, channelId, null, name, null, logo, 0, 0, System.currentTimeMillis(), false))
+        db.library().saveProgress(ProgressEntity(pid, ContentType.LIVE, channelId, null, name, null, logo, 0, 0, System.currentTimeMillis(), false, profileId = db.currentProfileId()))
     }
 
     suspend fun clearProgress(pid: Long, type: ContentType, id: String) = db.library().deleteProgress(pid, type, id)
@@ -47,7 +47,7 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
     /** Marquage manuel : ne déplace pas la reprise (voir [EpisodeResolver.primaryAction]). */
     suspend fun setWatched(pid: Long, type: ContentType, id: String, parentId: String?, title: String, watched: Boolean, season: Int? = null, episode: Int? = null) {
         if (watched) {
-            db.library().saveProgress(ProgressEntity(pid, type, id, parentId, title, null, null, 1, 1, System.currentTimeMillis(), true, season, episode, manual = true))
+            db.library().saveProgress(ProgressEntity(pid, type, id, parentId, title, null, null, 1, 1, System.currentTimeMillis(), true, season, episode, manual = true, profileId = db.currentProfileId()))
         } else db.library().deleteProgress(pid, type, id)
     }
 

@@ -55,7 +55,7 @@ interface CategoryDao {
     @Query(
         """
         SELECT c.playlistId, c.type, c.categoryId, c.name, c.position,
-               IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+               (IFNULL(p.hidden, 0) = 1 OR c.categoryId IN (${KIDS_BLOCKED_HEAD}:type${KIDS_BLOCKED_TAIL})) AS hidden, IFNULL(p.locked, 0) AS locked
         FROM categories c
         LEFT JOIN category_prefs p ON p.playlistId = c.playlistId AND p.type = c.type AND p.categoryId = c.categoryId
         WHERE c.playlistId = :pid AND c.type = :type
@@ -79,7 +79,7 @@ interface CategoryDao {
     @Query("SELECT * FROM category_prefs WHERE playlistId = :pid AND type = :type AND categoryId = :cat")
     suspend fun getPref(pid: Long, type: ContentType, cat: String): CategoryPrefEntity?
 
-    @Query("SELECT categoryId FROM category_prefs WHERE playlistId = :pid AND type = :type AND locked = 1")
+    @Query("SELECT categoryId FROM category_prefs WHERE playlistId = :pid AND type = :type AND locked = 1 UNION ${KIDS_BLOCKED_HEAD}:type${KIDS_BLOCKED_TAIL}")
     fun observeLocked(pid: Long, type: ContentType): Flow<List<String>>
 
     @Query("SELECT * FROM category_prefs WHERE playlistId = :pid")
@@ -128,6 +128,7 @@ interface ChannelDao {
         """
         SELECT * FROM channels WHERE playlistId = :pid AND categoryId NOT IN (
             SELECT categoryId FROM category_prefs WHERE playlistId = :pid AND type = 'LIVE' AND (hidden = 1 OR locked = 1)
+            UNION ${KIDS_BLOCKED_HEAD}'LIVE'${KIDS_BLOCKED_TAIL}
         ) ORDER BY position
         """
     )
@@ -136,7 +137,7 @@ interface ChannelDao {
     @Query(
         """
         SELECT c.* FROM channels c
-        JOIN favorites f ON f.playlistId = c.playlistId AND f.type = 'LIVE' AND f.itemId = c.id
+        JOIN favorites f ON f.profileId = ${CUR_PROFILE} AND f.playlistId = c.playlistId AND f.type = 'LIVE' AND f.itemId = c.id
         WHERE c.playlistId = :pid ORDER BY f.addedAt
         """
     )
@@ -145,7 +146,7 @@ interface ChannelDao {
     @Query(
         """
         SELECT c.* FROM channels c
-        JOIN progress p ON p.playlistId = c.playlistId AND p.type = 'LIVE' AND p.itemId = c.id
+        JOIN progress p ON p.profileId = ${CUR_PROFILE} AND p.playlistId = c.playlistId AND p.type = 'LIVE' AND p.itemId = c.id
         WHERE c.playlistId = :pid ORDER BY p.updatedAt DESC LIMIT :limit
         """
     )
@@ -173,6 +174,7 @@ interface ChannelDao {
         """
         SELECT * FROM channels WHERE playlistId = :pid AND categoryId NOT IN (
             SELECT categoryId FROM category_prefs WHERE playlistId = :pid AND type = 'LIVE' AND (hidden = 1 OR locked = 1)
+            UNION ${KIDS_BLOCKED_HEAD}'LIVE'${KIDS_BLOCKED_TAIL}
         ) ORDER BY position
         """
     )
@@ -181,7 +183,7 @@ interface ChannelDao {
     @Query(
         """
         SELECT c.* FROM channels c
-        JOIN favorites f ON f.playlistId = c.playlistId AND f.type = 'LIVE' AND f.itemId = c.id
+        JOIN favorites f ON f.profileId = ${CUR_PROFILE} AND f.playlistId = c.playlistId AND f.type = 'LIVE' AND f.itemId = c.id
         WHERE c.playlistId = :pid ORDER BY f.addedAt
         """
     )
@@ -230,6 +232,7 @@ interface MovieDao {
         """
         SELECT * FROM movies WHERE playlistId = :pid AND categoryId NOT IN (
             SELECT categoryId FROM category_prefs WHERE playlistId = :pid AND type = 'MOVIE' AND (hidden = 1 OR locked = 1)
+            UNION ${KIDS_BLOCKED_HEAD}'MOVIE'${KIDS_BLOCKED_TAIL}
         ) ORDER BY added DESC LIMIT :limit
         """
     )
@@ -238,7 +241,7 @@ interface MovieDao {
     @Query(
         """
         SELECT m.* FROM movies m
-        JOIN favorites f ON f.playlistId = m.playlistId AND f.type = 'MOVIE' AND f.itemId = m.id
+        JOIN favorites f ON f.profileId = ${CUR_PROFILE} AND f.playlistId = m.playlistId AND f.type = 'MOVIE' AND f.itemId = m.id
         WHERE m.playlistId = :pid ORDER BY f.addedAt DESC
         """
     )
@@ -275,6 +278,7 @@ interface SeriesDao {
         """
         SELECT * FROM series WHERE playlistId = :pid AND categoryId NOT IN (
             SELECT categoryId FROM category_prefs WHERE playlistId = :pid AND type = 'SERIES' AND (hidden = 1 OR locked = 1)
+            UNION ${KIDS_BLOCKED_HEAD}'SERIES'${KIDS_BLOCKED_TAIL}
         ) ORDER BY lastModified DESC LIMIT :limit
         """
     )
@@ -283,7 +287,7 @@ interface SeriesDao {
     @Query(
         """
         SELECT s.* FROM series s
-        JOIN favorites f ON f.playlistId = s.playlistId AND f.type = 'SERIES' AND f.itemId = s.id
+        JOIN favorites f ON f.profileId = ${CUR_PROFILE} AND f.playlistId = s.playlistId AND f.type = 'SERIES' AND f.itemId = s.id
         WHERE s.playlistId = :pid ORDER BY f.addedAt DESC
         """
     )
@@ -391,25 +395,25 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(f: FavoriteEntity)
 
-    @Query("DELETE FROM favorites WHERE playlistId = :pid AND type = :type AND itemId = :id")
+    @Query("DELETE FROM favorites WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type AND itemId = :id")
     suspend fun removeFavorite(pid: Long, type: ContentType, id: String)
 
-    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE playlistId = :pid AND type = :type AND itemId = :id)")
+    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type AND itemId = :id)")
     fun observeIsFavorite(pid: Long, type: ContentType, id: String): Flow<Boolean>
 
-    @Query("SELECT itemId FROM favorites WHERE playlistId = :pid AND type = :type")
+    @Query("SELECT itemId FROM favorites WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type")
     fun observeFavoriteIds(pid: Long, type: ContentType): Flow<List<String>>
 
     @Upsert
     suspend fun saveProgress(p: ProgressEntity)
 
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = :type AND itemId = :id")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type AND itemId = :id")
     suspend fun progress(pid: Long, type: ContentType, id: String): ProgressEntity?
 
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId = :sid")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = 'SERIES' AND parentId = :sid")
     fun observeSeriesProgress(pid: Long, sid: String): Flow<List<ProgressEntity>>
 
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId = :sid ORDER BY updatedAt DESC LIMIT 1")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = 'SERIES' AND parentId = :sid ORDER BY updatedAt DESC LIMIT 1")
     suspend fun lastEpisodeProgress(pid: Long, sid: String): ProgressEntity?
 
     /**
@@ -418,16 +422,16 @@ interface LibraryDao {
      */
     @Query(
         """
-        SELECT * FROM progress p WHERE p.playlistId = :pid AND p.manual = 0 AND (
+        SELECT * FROM progress p WHERE p.profileId = ${CUR_PROFILE} AND p.playlistId = :pid AND p.manual = 0 AND (
             (p.type = 'MOVIE' AND p.finished = 0 AND p.positionMs > 30000)
             OR (p.type = 'SERIES' AND p.updatedAt = (
-              SELECT MAX(q.updatedAt) FROM progress q WHERE q.playlistId = p.playlistId AND q.type = 'SERIES' AND q.parentId = p.parentId AND q.manual = 0)))
+              SELECT MAX(q.updatedAt) FROM progress q WHERE q.profileId = p.profileId AND q.playlistId = p.playlistId AND q.type = 'SERIES' AND q.parentId = p.parentId AND q.manual = 0)))
         ORDER BY p.updatedAt DESC LIMIT :limit
         """
     )
     fun observeContinueWatching(pid: Long, limit: Int = 20): Flow<List<ProgressEntity>>
 
-    @Query("DELETE FROM progress WHERE playlistId = :pid AND type = :type AND itemId = :id")
+    @Query("DELETE FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type AND itemId = :id")
     suspend fun deleteProgress(pid: Long, type: ContentType, id: String)
 
     @Query("SELECT * FROM favorites WHERE playlistId = :pid")
@@ -605,29 +609,29 @@ interface VodDao {
     suspend fun seriesKeys(pid: Long, ids: List<String>): List<IdKey>
 
     /** Dernière progression parmi plusieurs versions d'un film (reprise partagée). */
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'MOVIE' AND itemId IN (:ids) ORDER BY updatedAt DESC LIMIT 1")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = 'MOVIE' AND itemId IN (:ids) ORDER BY updatedAt DESC LIMIT 1")
     suspend fun latestMovieProgress(pid: Long, ids: List<String>): ProgressEntity?
 
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'MOVIE' AND itemId IN (:ids) ORDER BY updatedAt DESC LIMIT 1")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = 'MOVIE' AND itemId IN (:ids) ORDER BY updatedAt DESC LIMIT 1")
     fun observeLatestMovieProgress(pid: Long, ids: List<String>): Flow<ProgressEntity?>
 
     /** Progression des épisodes de toutes les versions d'une série. */
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids)")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids)")
     fun observeSeriesProgressIn(pid: Long, sids: List<String>): Flow<List<ProgressEntity>>
 
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids)")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = 'SERIES' AND parentId IN (:sids)")
     suspend fun seriesProgressIn(pid: Long, sids: List<String>): List<ProgressEntity>
 
     @Query("SELECT * FROM episodes WHERE playlistId = :pid AND seriesId IN (:sids) ORDER BY season, episode")
     suspend fun episodesIn(pid: Long, sids: List<String>): List<EpisodeEntity>
 
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type = 'SERIES' AND manual = 0 AND parentId IN (:sids) ORDER BY updatedAt DESC LIMIT 1")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = 'SERIES' AND manual = 0 AND parentId IN (:sids) ORDER BY updatedAt DESC LIMIT 1")
     suspend fun lastEpisodeProgressIn(pid: Long, sids: List<String>): ProgressEntity?
 
-    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE playlistId = :pid AND type = :type AND itemId IN (:ids))")
+    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type AND itemId IN (:ids))")
     fun observeAnyFavorite(pid: Long, type: ContentType, ids: List<String>): Flow<Boolean>
 
-    @Query("SELECT itemId FROM favorites WHERE playlistId = :pid AND type = :type AND itemId IN (:ids)")
+    @Query("SELECT itemId FROM favorites WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type = :type AND itemId IN (:ids)")
     suspend fun favoriteAmong(pid: Long, type: ContentType, ids: List<String>): List<String>
 
     @Query("SELECT * FROM episodes WHERE playlistId = :pid AND seriesId IN (:sids) ORDER BY season, episode")
@@ -736,7 +740,7 @@ interface BrowseDao {
     suspend fun collections(pid: Long, limit: Int): List<CollectionCount>
 
     /** Derniers films/épisodes regardés (terminés ou non), pour « Parce que vous avez regardé ». */
-    @Query("SELECT * FROM progress WHERE playlistId = :pid AND type != 'LIVE' ORDER BY updatedAt DESC LIMIT :limit")
+    @Query("SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND type != 'LIVE' ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun lastWatched(pid: Long, limit: Int): List<ProgressEntity>
 
     @Query("DELETE FROM tmdb_match WHERE playlistId = :pid")
@@ -768,4 +772,59 @@ data class IndexCandidate(val workKey: String, val id: String, val title: String
 /** Version repérée par son nom (titre sans année). */
 data class NamedRow(val playlistId: Long, val id: String, val groupKey: String?, val searchName: String) {
     val workKey get() = groupKey ?: "id:$id"
+}
+
+/** Profil en cours, dans une requête (0 = Principal si la table est vide, par ex. dans les tests). */
+const val CUR_PROFILE = "IFNULL((SELECT profileId FROM current_profile WHERE k = 0), 0)"
+
+/**
+ * Groupes interdits au profil Enfant (aucun si le profil en cours n'en est pas un). Autorisés : ceux marqués « Enfants »,
+ * ou, par défaut, ceux dont le nom l'indique (enfants, jeunesse, animation, famille…) sans être réservés aux adultes.
+ * S'écrit `KIDS_BLOCKED_HEAD + <type> + KIDS_BLOCKED_TAIL` ; :pid doit être un paramètre de la requête.
+ */
+const val KIDS_BLOCKED_HEAD = "SELECT kc.categoryId FROM categories kc " +
+    "LEFT JOIN category_prefs kp ON kp.playlistId = kc.playlistId AND kp.type = kc.type AND kp.categoryId = kc.categoryId " +
+    "WHERE EXISTS(SELECT 1 FROM profiles pr WHERE pr.id = ${CUR_PROFILE} AND pr.kids = 1) AND kc.playlistId = :pid AND kc.type = "
+const val KIDS_BLOCKED_TAIL = " AND NOT (IFNULL(kp.kids, 0) = 1 OR (IFNULL(kp.kids, 0) = 0 AND (" +
+    "LOWER(kc.name) LIKE '%kid%' OR LOWER(kc.name) LIKE '%enfant%' OR LOWER(kc.name) LIKE '%jeunesse%' OR LOWER(kc.name) LIKE '%junior%' " +
+    "OR LOWER(kc.name) LIKE '%anim%' OR LOWER(kc.name) LIKE '%cartoon%' OR LOWER(kc.name) LIKE '%disney%' OR LOWER(kc.name) LIKE '%famil%' " +
+    "OR LOWER(kc.name) LIKE '%dessin%') AND NOT (LOWER(kc.name) LIKE '%adult%' OR LOWER(kc.name) LIKE '%xxx%' OR kc.name LIKE '%18+%' OR kc.name LIKE '%+18%')))"
+
+@Dao
+interface ProfileDao {
+    @Query("SELECT * FROM profiles ORDER BY position, id")
+    fun observeAll(): Flow<List<ProfileEntity>>
+
+    @Query("SELECT * FROM profiles ORDER BY position, id")
+    suspend fun all(): List<ProfileEntity>
+
+    @Query("SELECT * FROM profiles WHERE id = $CUR_PROFILE")
+    fun observeCurrent(): Flow<ProfileEntity?>
+
+    @Query("SELECT * FROM profiles WHERE id = $CUR_PROFILE")
+    suspend fun current(): ProfileEntity?
+
+    @androidx.room.Upsert
+    suspend fun upsert(p: ProfileEntity)
+
+    @Query("INSERT OR REPLACE INTO current_profile (k, profileId) VALUES (0, :id)")
+    suspend fun setCurrent(id: Long)
+
+    @Query("DELETE FROM profiles WHERE id = :id")
+    suspend fun deleteProfile(id: Long)
+
+    @Query("DELETE FROM favorites WHERE profileId = :id")
+    suspend fun deleteFavorites(id: Long)
+
+    @Query("DELETE FROM progress WHERE profileId = :id")
+    suspend fun deleteProgress(id: Long)
+
+    @Query("SELECT * FROM progress WHERE playlistId = :pid")
+    suspend fun allProgress(pid: Long): List<ProgressEntity>
+
+    @androidx.room.Upsert
+    suspend fun upsertProgress(items: List<ProgressEntity>)
+
+    @androidx.room.Upsert
+    suspend fun upsertFavorites(items: List<FavoriteEntity>)
 }

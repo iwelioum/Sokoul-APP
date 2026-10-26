@@ -29,11 +29,13 @@ class DebridCloud @Inject constructor(
     private val rd: RealDebridClient,
     private val tmdb: com.sokoul.iptv.data.net.TmdbClient,
     private val settings: com.sokoul.iptv.data.SettingsStore,
+    private val profiles: com.sokoul.iptv.data.repo.ProfileRepository,
 ) {
     @Volatile private var cache: Pair<Long, List<CloudItem>>? = null
     @Volatile private var account: Pair<Long, RdUser?>? = null
 
     suspend fun items(force: Boolean = false): List<CloudItem> {
+        if (profiles.isKids()) return emptyList()
         cache?.takeIf { !force && System.currentTimeMillis() - it.first < TTL_MS }?.let { return it.second }
         if (!rd.configured()) return emptyList()
         val torrents = runCatching { rd.torrents(50) }.getOrDefault(emptyList()).filter { it.ready }

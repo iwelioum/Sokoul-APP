@@ -53,7 +53,7 @@ class DataTest {
             settings.update { it.copy(parentalPin = "", tmdbApiKey = "", activePlaylistId = 0) }
             settings.setPinAttempts(0, 0)
         }
-        gate = ParentalGate(settings)
+        gate = ParentalGate(settings, com.sokoul.iptv.data.repo.ProfileRepository(db))
     }
 
     @After fun tearDown() = db.close()
@@ -98,7 +98,7 @@ class DataTest {
         assertFalse(blocked.ok)
         assertTrue(blocked.message!!.contains("Trop d'essais"))
         // le blocage survit à une nouvelle instance (redémarrage de l'app)
-        assertFalse(ParentalGate(settings).tryUnlock("2580", t + 2_000).ok)
+        assertFalse(ParentalGate(settings, com.sokoul.iptv.data.repo.ProfileRepository(db)).tryUnlock("2580", t + 2_000).ok)
         assertTrue(gate.tryUnlock("2580", t + 31_000).ok)
         assertEquals(0, settings.pinAttempts().first)
     }

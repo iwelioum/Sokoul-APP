@@ -49,6 +49,8 @@ import com.sokoul.iptv.ui.screens.settings.sections.backupSection
 import com.sokoul.iptv.ui.screens.settings.sections.debridSection
 import com.sokoul.iptv.ui.screens.settings.sections.librarySection
 import com.sokoul.iptv.ui.screens.settings.sections.parentalSection
+import com.sokoul.iptv.ui.screens.settings.sections.profilesSection
+import androidx.compose.material.icons.filled.ChildCare
 import com.sokoul.iptv.ui.screens.settings.sections.playbackSection
 import com.sokoul.iptv.ui.screens.settings.sections.sourcesSection
 import com.sokoul.iptv.ui.screens.settings.sections.televisionSection
@@ -131,7 +133,16 @@ class SettingsViewModel @Inject constructor(
     private val tester: com.sokoul.iptv.data.net.providers.DataSourceTester,
     private val indexer: com.sokoul.iptv.data.repo.CatalogIndexer,
     private val rd: com.sokoul.iptv.data.debrid.RealDebridClient,
+    private val profileRepo: com.sokoul.iptv.data.repo.ProfileRepository,
 ) : ViewModel() {
+    // --- profils -----------------------------------------------------------------------------
+    val profiles = profileRepo.profiles
+    val currentProfile = profileRepo.current
+    fun addProfile(name: String, kids: Boolean) = viewModelScope.launch { profileRepo.create(name, kids) }
+    fun updateProfile(p: com.sokoul.iptv.data.db.ProfileEntity) = viewModelScope.launch { profileRepo.update(p) }
+    fun deleteProfile(id: Long) = viewModelScope.launch { profileRepo.delete(id) }
+    fun useProfile(id: Long) = viewModelScope.launch { profileRepo.switchTo(id); parental.lock() }
+
     // --- Real-Debrid : association par code ------------------------------------------------
     data class Pairing(val code: String?, val message: String)
     val pairing = MutableStateFlow<Pairing?>(null)
@@ -299,6 +310,18 @@ fun SettingsScreen(nav: NavHostController) {
     var sourceMenu by remember { mutableStateOf<ApiService?>(null) }
     val debridLinked by vm.debridLinked.collectAsStateWithLifecycle()
     val pairing by vm.pairing.collectAsStateWithLifecycle()
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val currentProfile by vm.currentProfile.collectAsStateWithLifecycle()
+    // profil Enfant : pas de réglages (l'icône est déjà masquée ; garde-fou si on arrive ici quand même)
+    if (currentProfile?.kids == true) {
+        com.sokoul.iptv.ui.components.EmptyState(
+            androidx.compose.material.icons.Icons.Filled.ChildCare, "Réglages indisponibles",
+            "Ce profil Enfant n'a pas accès aux réglages. Changez de profil pour les ouvrir.",
+        ) {
+            com.sokoul.iptv.ui.components.SokoulButton("Changer de profil", { com.sokoul.iptv.ui.screens.profiles.WhoIsWatching.open.value = true })
+        }
+        return
+    }
     val context = LocalContext.current
 
     var choice by remember { mutableStateOf<Pair<String, List<MenuOption>>?>(null) }
@@ -350,6 +373,8 @@ fun SettingsScreen(nav: NavHostController) {
         toast = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
         debridLinked = debridLinked,
         pairDebrid = { vm.startPairing() },
+        profiles = profiles,
+        currentProfileId = currentProfile?.id ?: com.sokoul.iptv.data.db.ProfileEntity.MAIN,
     )
 
     SettingsPanes { cat, modifier ->
@@ -362,6 +387,7 @@ fun SettingsScreen(nav: NavHostController) {
             ) {
                 when (cat) {
                     SettingsCategory.ACCOUNT -> accountSection(ctx)
+                    SettingsCategory.PROFILES -> profilesSection(ctx)
                     SettingsCategory.PLAYBACK -> playbackSection(ctx)
                     SettingsCategory.TV -> televisionSection(ctx)
                     SettingsCategory.LIBRARY -> librarySection(ctx)

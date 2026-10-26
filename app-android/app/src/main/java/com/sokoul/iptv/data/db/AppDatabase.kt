@@ -35,8 +35,10 @@ import javax.inject.Singleton
         TmdbMetaEntity::class,
         TmdbMatchEntity::class,
         VodProbeEntity::class,
+        ProfileEntity::class,
+        CurrentProfileEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -51,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tmdb(): TmdbDao
     abstract fun vod(): VodDao
     abstract fun browse(): BrowseDao
+    abstract fun profiles(): ProfileDao
 }
 
 @Module
@@ -64,6 +67,9 @@ object DatabaseModule {
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
             // migrations explicites uniquement : jamais d'effacement silencieux des données
             .addMigrations(*Migrations.ALL)
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) = Migrations.seed(db)
+            })
             .build()
 
     @Provides fun playlists(db: AppDatabase) = db.playlists()
@@ -177,5 +183,43 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+    /**
+     * v8 : profils. Favoris et reprises appartiennent à un profil (clé élargie, tables recopiées) ;
+     * tout l'existant revient au profil 0 « Principal », qui devient le profil courant.
+     * Groupes : choix « Enfants » (0 = selon le nom, 1 = oui, 2 = non).
+     */
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `profiles` (`id` INTEGER NOT NULL, `name` TEXT NOT NULL, `color` INTEGER NOT NULL, `kids` INTEGER NOT NULL, `position` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+            db.execSQL("CREATE TABLE IF NOT EXISTS `current_profile` (`k` INTEGER NOT NULL, `profileId` INTEGER NOT NULL, PRIMARY KEY(`k`))")
+            seed(db)
+
+            db.execSQL("CREATE TABLE IF NOT EXISTS `favorites_new` (`playlistId` INTEGER NOT NULL, `type` TEXT NOT NULL, `itemId` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, `profileId` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`profileId`, `playlistId`, `type`, `itemId`))")
+            db.execSQL("INSERT INTO `favorites_new` (`playlistId`, `type`, `itemId`, `addedAt`, `profileId`) SELECT `playlistId`, `type`, `itemId`, `addedAt`, 0 FROM `favorites`")
+            db.execSQL("DROP TABLE `favorites`")
+            db.execSQL("ALTER TABLE `favorites_new` RENAME TO `favorites`")
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `progress_new` (`playlistId` INTEGER NOT NULL, `type` TEXT NOT NULL, `itemId` TEXT NOT NULL, `parentId` TEXT, `title` TEXT NOT NULL, " +
+                    "`subtitle` TEXT, `image` TEXT, `positionMs` INTEGER NOT NULL, `durationMs` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `finished` INTEGER NOT NULL, " +
+                    "`season` INTEGER, `episode` INTEGER, `manual` INTEGER NOT NULL DEFAULT 0, `profileId` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`profileId`, `playlistId`, `type`, `itemId`))"
+            )
+            val cols = "`playlistId`, `type`, `itemId`, `parentId`, `title`, `subtitle`, `image`, `positionMs`, `durationMs`, `updatedAt`, `finished`, `season`, `episode`, `manual`"
+            db.execSQL("INSERT INTO `progress_new` ($cols, `profileId`) SELECT $cols, 0 FROM `progress`")
+            db.execSQL("DROP TABLE `progress`")
+            db.execSQL("ALTER TABLE `progress_new` RENAME TO `progress`")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_progress_profileId_playlistId_type_updatedAt` ON `progress` (`profileId`, `playlistId`, `type`, `updatedAt`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_progress_profileId_playlistId_parentId` ON `progress` (`profileId`, `playlistId`, `parentId`)")
+
+            db.execSQL("ALTER TABLE `category_prefs` ADD COLUMN `kids` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    /** Profil « Principal » et profil courant : posés à la création de la base comme après la migration. */
+    fun seed(db: SupportSQLiteDatabase) {
+        db.execSQL("INSERT OR IGNORE INTO `profiles` (`id`, `name`, `color`, `kids`, `position`) VALUES (0, 'Principal', 0, 0, 0)")
+        db.execSQL("INSERT OR IGNORE INTO `current_profile` (`k`, `profileId`) VALUES (0, 0)")
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
 }

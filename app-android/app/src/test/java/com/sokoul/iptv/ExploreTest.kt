@@ -63,7 +63,7 @@ class ExploreTest {
             settings.update { it.copy(parentalPin = "", tmdbApiKey = "", activePlaylistId = 0) }
             pid = db.playlists().insert(PlaylistEntity(name = "p", type = PlaylistType.M3U, url = "http://h/x.m3u"))
         }
-        gate = ParentalGate(settings)
+        gate = ParentalGate(settings, com.sokoul.iptv.data.repo.ProfileRepository(db))
     }
 
     @After fun tearDown() = db.close()

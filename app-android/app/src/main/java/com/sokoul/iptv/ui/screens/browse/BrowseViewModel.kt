@@ -74,7 +74,10 @@ abstract class BrowseViewModel(
     private val epg: EpgRepository,
     private val parental: ParentalGate,
     private val cloud: com.sokoul.iptv.data.debrid.DebridCloud,
+    private val profileRepo: com.sokoul.iptv.data.repo.ProfileRepository,
 ) : ViewModel() {
+    /** Profil en cours : en changer reconstruit la page (liste, reprise, profil Enfant). */
+    private val profileId = profileRepo.current.map { it?.id }.distinctUntilChanged()
     private val types: Set<ContentType> = when (kind) {
         BrowseKind.HOME -> setOf(ContentType.MOVIE, ContentType.SERIES)
         BrowseKind.MOVIES -> setOf(ContentType.MOVIE)
@@ -90,7 +93,7 @@ abstract class BrowseViewModel(
     private val loadingMore = MutableStateFlow(false)
     @Volatile private var more: List<String> = emptyList()
 
-    private val live: Flow<List<BrowseRow>> = playlist.flatMapLatest { p -> if (p == null) flowOf(emptyList()) else liveRows(p.id) }
+    private val live: Flow<List<BrowseRow>> = combine(playlist, profileId) { p, _ -> p }.flatMapLatest { p -> if (p == null) flowOf(emptyList()) else liveRows(p.id) }
 
     private val pageRows = combine(page, extra, loadingMore) { pg, ex, lm -> Triple(pg, ex, lm) }
 
@@ -141,17 +144,18 @@ abstract class BrowseViewModel(
 
     init {
         viewModelScope.launch {
-            var shownFor: Long? = null
-            combine(playlists.active, parental.unlocked, reload) { p, u, r -> Triple(p, u, r) }
+            var shownFor: Pair<Long?, Long?>? = null
+            combine(playlists.active, parental.unlocked, reload, profileId) { p, u, r, who -> Quad(p, u, r, who) }
                 .distinctUntilChanged { a, b ->
-                    a.first?.id == b.first?.id && a.first?.lastSync == b.first?.lastSync && a.second == b.second && a.third == b.third
+                    a.p?.id == b.p?.id && a.p?.lastSync == b.p?.lastSync && a.unlocked == b.unlocked && a.reload == b.reload && a.profile == b.profile
                 }
-                .collectLatest { (p, _, r) ->
+                .collectLatest { (p, _, r, who) ->
                     resolved.value = true
                     failed.value = false
                     // même playlist (synchro, contrôle parental) : l'ancienne page reste affichée jusqu'à la nouvelle
-                    if (p?.id != shownFor) page.value = null
-                    shownFor = p?.id
+                    // autre playlist ou autre profil : on n'affiche pas la page précédente
+                    if ((p?.id to who) != shownFor) { page.value = null; extra.value = emptyList() }
+                    shownFor = p?.id to who
                     if (p == null) return@collectLatest
                     val built = try {
                         repo.page(p, kind, force = r > 0, onPartial = { partial -> page.value = decorate(p.id, partial) })
@@ -221,8 +225,13 @@ abstract class BrowseViewModel(
 
     private suspend fun decorateRows(pid: Long, rows: List<BrowseRow>): List<BrowseRow> {
         val byUid = enrich.decorate(pid, rows.flatMap { it.works }.distinctBy { it.uid }).associateBy { it.uid }
-        return rows.map { r -> r.copy(works = r.works.map { byUid[it.uid] ?: it }) }
+        return rows.map { r -> r.copy(works = r.works.map { byUid[it.uid] ?: it }) }.kidsOnly()
     }
+
+    /** Profil Enfant : sans les œuvres classées 12 ans et plus (rangées vidées retirées). */
+    private suspend fun List<BrowseRow>.kidsOnly(): List<BrowseRow> =
+        if (!profileRepo.isKids()) this
+        else map { r -> r.copy(works = r.works.filter(com.sokoul.iptv.data.repo.KidsRating::allowed)) }.filter { it.works.isNotEmpty() || it.channels.isNotEmpty() || it.sagas.isNotEmpty() || it.platforms.isNotEmpty() }
 
     /** Ordre d'enrichissement : héros, puis les premières cartes de chaque rangée. */
     private fun priority(pg: BrowsePage): List<Work> =
@@ -232,7 +241,11 @@ abstract class BrowseViewModel(
         val all = (pg.hero + pg.rows.flatMap { it.works }).distinctBy { it.uid }
         val byUid = enrich.decorate(pid, all).associateBy { it.uid }
         fun List<Work>.d() = map { byUid[it.uid] ?: it }
-        return pg.copy(hero = pg.hero.d(), rows = pg.rows.map { it.copy(works = it.works.d()) })
+        val kids = profileRepo.isKids()
+        return pg.copy(
+            hero = pg.hero.d().let { h -> if (kids) h.filter(com.sokoul.iptv.data.repo.KidsRating::allowed) else h },
+            rows = pg.rows.map { it.copy(works = it.works.d()) }.kidsOnly(),
+        )
     }
 
     // --- rangées personnelles -----------------------------------------------------------------
@@ -296,19 +309,21 @@ abstract class BrowseViewModel(
 class HomeBrowseViewModel @Inject constructor(
     playlists: PlaylistRepository, repo: BrowseRepository, enrich: EnrichmentRepository, vod: VodRepository,
     library: LibraryRepository, catalog: CatalogRepository, epg: EpgRepository, parental: ParentalGate,
-    cloud: com.sokoul.iptv.data.debrid.DebridCloud,
-) : BrowseViewModel(BrowseKind.HOME, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud)
+    cloud: com.sokoul.iptv.data.debrid.DebridCloud, profiles: com.sokoul.iptv.data.repo.ProfileRepository,
+) : BrowseViewModel(BrowseKind.HOME, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud, profiles)
 
 @HiltViewModel
 class MoviesBrowseViewModel @Inject constructor(
     playlists: PlaylistRepository, repo: BrowseRepository, enrich: EnrichmentRepository, vod: VodRepository,
     library: LibraryRepository, catalog: CatalogRepository, epg: EpgRepository, parental: ParentalGate,
-    cloud: com.sokoul.iptv.data.debrid.DebridCloud,
-) : BrowseViewModel(BrowseKind.MOVIES, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud)
+    cloud: com.sokoul.iptv.data.debrid.DebridCloud, profiles: com.sokoul.iptv.data.repo.ProfileRepository,
+) : BrowseViewModel(BrowseKind.MOVIES, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud, profiles)
 
 @HiltViewModel
 class SeriesBrowseViewModel @Inject constructor(
     playlists: PlaylistRepository, repo: BrowseRepository, enrich: EnrichmentRepository, vod: VodRepository,
     library: LibraryRepository, catalog: CatalogRepository, epg: EpgRepository, parental: ParentalGate,
-    cloud: com.sokoul.iptv.data.debrid.DebridCloud,
-) : BrowseViewModel(BrowseKind.SERIES, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud)
+    cloud: com.sokoul.iptv.data.debrid.DebridCloud, profiles: com.sokoul.iptv.data.repo.ProfileRepository,
+) : BrowseViewModel(BrowseKind.SERIES, playlists, repo, enrich, vod, library, catalog, epg, parental, cloud, profiles)
+
+private data class Quad(val p: PlaylistEntity?, val unlocked: Boolean, val reload: Int, val profile: Long?)
