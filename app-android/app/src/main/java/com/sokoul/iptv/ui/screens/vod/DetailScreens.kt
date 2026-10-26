@@ -181,8 +181,31 @@ class MovieDetailViewModel @Inject constructor(
     private val enrich: EnrichmentRepository,
     private val browse: BrowseRepository,
     private val extrasRepo: ExtrasRepository,
+    private val debrid: com.sokoul.iptv.data.debrid.DebridSources,
+    private val gate: com.sokoul.iptv.player.ProviderGate,
 ) : ViewModel() {
     val details = MutableStateFlow<MovieDetails?>(null)
+    /** Versions Real-Debrid trouvées (vide sans compte, sans extension ou sans résultat). */
+    val debridStreams = MutableStateFlow<List<com.sokoul.iptv.data.debrid.DebridStream>>(emptyList())
+    /** Toutes les sources, IPTV et Real-Debrid, dans l'ordre de lancement (la première = « Lecture »). */
+    val ranked = MutableStateFlow<List<com.sokoul.iptv.data.debrid.Candidate>>(emptyList())
+    var debridQuery: com.sokoul.iptv.data.debrid.DebridQuery? = null
+        private set
+
+    private suspend fun rerank() {
+        val q = qualities.value
+        val iptv = versions.value.map { it.toVersion().copy(measured = q[it.id]) }
+        val iptvBlocked = gate.recording.value != null || gate.remainingMs() > 0
+        ranked.value = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, debridStreams.value, debrid.prefs(iptvBlocked))
+    }
+
+    private fun loadDebrid(tmdbId: Int) = viewModelScope.launch {
+        if (!debrid.enabled()) return@launch
+        val q = com.sokoul.iptv.data.debrid.DebridQuery(tmdbId, series = false)
+        debridQuery = q
+        debridStreams.value = runCatching { debrid.find(q) }.getOrDefault(emptyList())
+        rerank()
+    }
     val error = MutableStateFlow<String?>(null)
     /** Versions de l'œuvre dans l'ordre de lancement (la première est lancée par « Lecture »). */
     val versions = MutableStateFlow<List<MovieEntity>>(emptyList())
@@ -227,6 +250,7 @@ class MovieDetailViewModel @Inject constructor(
                 catalog.movie(p.id, m.id)?.let { fresh -> if (fresh.groupKey != m.groupKey) loadVersions(p, fresh) }
             }
             if (tm != null) {
+                loadDebrid(tm.id)
                 launch { extras.value = extrasRepo.extras(true, tm) }
                 launch { moreLikeThis(browse, extrasRepo, p.id, ContentType.MOVIE, tm, m.keyOf()) { similar.value = it } }
                 tm.collectionId?.let { cid -> launch { saga.value = runCatching { browse.saga(p.id, cid) }.getOrNull()?.takeIf { it.second.size >= 2 } } }
@@ -247,6 +271,7 @@ class MovieDetailViewModel @Inject constructor(
         versions.value = vod.orderedMovies(p.id, all)
         qualities.value = vod.qualities(p.id, ContentType.MOVIE, all.map { it.id })
         preferredId.value = vod.choice(p.id, ContentType.MOVIE, m.groupKey)
+        rerank()
     }
 
     fun prefer(v: MovieEntity) = viewModelScope.launch {
@@ -285,6 +310,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val qualities by vm.qualities.collectAsStateWithLifecycle()
     val similar by vm.similar.collectAsStateWithLifecycle()
     val saga by vm.saga.collectAsStateWithLifecycle()
+    val ranked by vm.ranked.collectAsStateWithLifecycle()
     val extras by vm.extras.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
@@ -315,6 +341,14 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val multi = versions.size > 1
     val title = tm?.title?.takeIf { it.isNotBlank() } ?: com.sokoul.iptv.data.repo.cleanDisplayTitle(m.title, m.year)
     val play = { v: MovieEntity, fromStart: Boolean -> nav.navigateOnce(PlayerRoute(PlayKind.MOVIE, pid, v.id, fromStart = fromStart)) }
+    // version Real-Debrid : la reprise reste rangée sous la fiche IPTV du film (une seule ligne « Reprendre »)
+    val playRd = { key: String, fromStart: Boolean ->
+        nav.navigateOnce(PlayerRoute(PlayKind.MOVIE, pid, best.id, fromStart = fromStart, source = key, query = vm.debridQuery?.encode()))
+    }
+    val top = ranked.firstOrNull()
+    val topRd = top as? com.sokoul.iptv.data.debrid.Candidate.Debrid
+    val playBest = { fromStart: Boolean -> if (topRd != null) playRd(topRd.stream.key, fromStart) else play(best, fromStart) }
+    val sourceCount = ranked.size
     val trailer = (tm?.trailerYoutubeKey ?: xt?.trailer)?.takeIf { it.isNotBlank() }
     val director = (tm?.director ?: xt?.director)?.takeIf { it.isNotBlank() }
 
@@ -329,13 +363,17 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         watched = watched, externalRatings = ratingBadges(extras.ratings), availability = availabilityPills(extras.offers),
     )
     val primary = PrimaryAction(
-        label = (when { resume != null -> "Reprendre"; watched -> "Revoir"; else -> "Lecture" }) + if (multi) " · ${versionLabel(best)}" else "",
+        label = (when { resume != null -> "Reprendre"; watched -> "Revoir"; else -> "Lecture" }) + when {
+            topRd != null -> " · ${SourceLabels.text(topRd.source)} · RD"
+            multi || sourceCount > 1 -> " · ${versionLabel(best)}"
+            else -> ""
+        },
         detail = resume?.let { EpisodeResolver.remaining(it) },
         progress = resume?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
-        onClick = { play(best, watched && resume == null) },
+        onClick = { playBest(watched && resume == null) },
     )
     val actions = buildList {
-        if (resume != null) add(SecondaryAction("restart", "Depuis le début", Icons.Default.Replay) { play(best, true) })
+        if (resume != null) add(SecondaryAction("restart", "Depuis le début", Icons.Default.Replay) { playBest(true) })
         add(SecondaryAction("fav", if (favorite) "Dans ma liste" else "Ma liste", if (favorite) Icons.Default.Check else Icons.Default.Add) { vm.toggleFavorite(m.id) })
         if (trailer != null) add(SecondaryAction("trailer", "Bande-annonce", Icons.Default.Theaters) { openYoutube(context, trailer) })
         add(SecondaryAction("more", "Plus", Icons.Default.MoreHoriz) { moreMenu = true })
@@ -348,12 +386,26 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     ) {
         // ▼ depuis les versions : première carte de la section suivante (évite le saut en bout de rangée de Compose)
         val belowVersions = (saga?.second?.firstOrNull()?.let { "saga:${it.uid}" } ?: similar.firstOrNull()?.let { "sim:${it.uid}" })?.let { memory.requester(it) }
-        if (multi) {
-            detailSection("versions", "Versions disponibles", if (l.isTouch) "Touchez pour lire · appui long pour la lancer toujours en premier" else "OK pour lire · appui long pour la lancer toujours en premier") {
+        if (multi || sourceCount > 1) {
+            // abonnement et Real-Debrid mêlés, dans l'ordre de lancement ; au plus 12 versions RD (les meilleures)
+            val shown = ranked.filter { it is com.sokoul.iptv.data.debrid.Candidate.Iptv } +
+                ranked.filterIsInstance<com.sokoul.iptv.data.debrid.Candidate.Debrid>().take(12)
+            val items = ranked.filter { it in shown }.mapIndexed { i, c ->
+                when (c) {
+                    is com.sokoul.iptv.data.debrid.Candidate.Iptv -> VersionItem(c.version.id, c.source, qualities[c.version.id], first = i == 0, preferred = c.version.id == preferredId)
+                    is com.sokoul.iptv.data.debrid.Candidate.Debrid -> VersionItem(RD_ITEM + c.stream.key, c.source, null, first = i == 0, preferred = false)
+                }
+            }.ifEmpty { versions.map { v -> VersionItem(v.id, versionSource(v), qualities[v.id], first = v.id == best.id, preferred = v.id == preferredId) } }
+            detailSection(
+                "versions", if (sourceCount > versions.size) "Sources disponibles ($sourceCount)" else "Versions disponibles",
+                if (l.isTouch) "Touchez pour lire · appui long pour la lancer toujours en premier" else "OK pour lire · appui long pour la lancer toujours en premier",
+            ) {
                 VersionsShelf(
-                    versions.map { v -> VersionItem(v.id, versionSource(v), qualities[v.id], first = v.id == best.id, preferred = v.id == preferredId) },
-                    memory, belowVersions,
-                    onPlay = { id -> versions.firstOrNull { it.id == id }?.let { play(it, false) } },
+                    items, memory, belowVersions,
+                    onPlay = { id ->
+                        if (id.startsWith(RD_ITEM)) playRd(id.removePrefix(RD_ITEM), false)
+                        else versions.firstOrNull { it.id == id }?.let { play(it, false) }
+                    },
                     onMenu = { id -> versionMenu = versions.firstOrNull { it.id == id } },
                 )
             }
@@ -936,6 +988,9 @@ private fun DetailError(message: String, onRetry: () -> Unit, onBack: () -> Unit
     }
     LaunchedEffect(Unit) { delay(80); runCatching { back.requestFocus() } }
 }
+
+/** Identifiant d'une version Real-Debrid dans l'étagère des versions. */
+internal const val RD_ITEM = "rd:"
 
 fun versionSource(m: MovieEntity) = com.sokoul.iptv.domain.PlaybackSources.fromIptv(m.toVersion())
 fun versionLabel(m: MovieEntity): String = com.sokoul.iptv.ui.components.SourceLabels.text(versionSource(m))

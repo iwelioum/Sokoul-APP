@@ -135,13 +135,15 @@ private fun VersionCard(v: VersionItem, bestImage: Boolean, bestSound: Boolean, 
     ) { focused ->
         val ink = if (focused) SokoulColors.OnLight else SokoulColors.TextPrimary
         val soft = if (focused) SokoulColors.OnLight.copy(alpha = 0.72f) else SokoulColors.TextSecondary
+        val rd = v.source.origin == com.sokoul.iptv.domain.SourceOrigin.DEBRID
         val q = v.quality
         Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.HighQuality, null, Modifier.size(18.dp), tint = soft)
                 // image : mesurée, sinon l'étiquette du nom (estimée)
                 val image = q?.imageLine()?.takeIf { it.isNotEmpty() }
-                    ?: listOfNotNull(v.source.quality?.let(SourceLabels::quality), v.source.hdr?.let(SourceLabels::hdr)).joinToString(" · ").ifEmpty { null }?.let { "$it (estimé)" }
+                    ?: listOfNotNull(v.source.quality?.let(SourceLabels::quality), v.source.hdr?.let(SourceLabels::hdr)).joinToString(" · ").ifEmpty { null }
+                        ?.let { if (rd) it else "$it (estimé)" }
                     ?: "Image non mesurée"
                 Text(image, Modifier.padding(start = 6.dp).weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (v.preferred) Icon(Icons.Default.Star, "Lancée en premier", Modifier.size(16.dp), tint = SokoulColors.Gold)
@@ -149,7 +151,8 @@ private fun VersionCard(v: VersionItem, bestImage: Boolean, bestSound: Boolean, 
             }
             Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.GraphicEq, null, Modifier.size(18.dp), tint = soft)
-                val sound = listOfNotNull(q?.soundLine()?.ifEmpty { null }, q?.durationSecs?.let(VodQuality::duration)).joinToString(" · ").ifEmpty { "Son non mesuré" }
+                val sound = if (rd) listOfNotNull("Real-Debrid", v.source.sizeBytes?.let(SourceLabels::size), v.source.rip).joinToString(" · ")
+                    else listOfNotNull(q?.soundLine()?.ifEmpty { null }, q?.durationSecs?.let(VodQuality::duration)).joinToString(" · ").ifEmpty { "Son non mesuré" }
                 Text(sound, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall, color = soft, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
@@ -163,6 +166,7 @@ private fun VersionCard(v: VersionItem, bestImage: Boolean, bestSound: Boolean, 
                 }
                 best?.let { SourceBadge(it, filled = false, onLight = focused) }
                 if (v.first && best == null) SourceBadge("LANCÉE PAR LECTURE", filled = true, onLight = focused)
+                if (v.source.state == com.sokoul.iptv.domain.SourceState.CACHED_INSTANT && !v.first) SourceBadge("INSTANTANÉ", filled = true, onLight = focused)
             }
         }
     }

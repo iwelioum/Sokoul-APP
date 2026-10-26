@@ -32,7 +32,7 @@ data class RdFile(val id: Int, val path: String, val bytes: Long, val selected: 
 }
 
 data class RdTorrent(
-    val id: String, val filename: String, val status: String, val progress: Int,
+    val id: String, val filename: String, val hash: String = "", val status: String, val progress: Int,
     val bytes: Long, val files: List<RdFile>, val links: List<String>, val addedAt: Long,
 ) {
     val ready get() = status == "downloaded"
@@ -232,7 +232,7 @@ class RealDebridClient @Inject constructor(
             .recoverCatching { java.time.Instant.parse(s).toEpochMilli() }.getOrDefault(0)
 
         fun parseTorrent(o: JsonObject) = RdTorrent(
-            id = o.str("id").orEmpty(), filename = o.str("filename").orEmpty(), status = o.str("status").orEmpty(),
+            id = o.str("id").orEmpty(), filename = o.str("filename").orEmpty(), hash = o.str("hash").orEmpty().lowercase(), status = o.str("status").orEmpty(),
             progress = (o.long("progress") ?: 0).toInt(), bytes = o.long("bytes") ?: 0,
             files = (o["files"] as? JsonArray).orEmpty().mapNotNull { f ->
                 val fo = f as? JsonObject ?: return@mapNotNull null

@@ -102,4 +102,65 @@ class DebridClientTest {
         try { rd.user(); fail() } catch (_: RdException) {}
         assertTrue(calls.isEmpty())
     }
+
+    // --- Résolution d'une version : pack de saison, version pas prête, torrent déjà dans le compte ---
+
+    private val hash = "abcdef0123456789abcdef0123456789abcdef01"
+    private fun packStream() = com.sokoul.iptv.data.debrid.DebridStream("$hash:-1", "Show.S02.1080p", null, hash, null, null, com.sokoul.iptv.data.debrid.Release())
+    private val episode = com.sokoul.iptv.data.debrid.DebridQuery(1396, true, 2, 5)
+    private val packFiles = """[{"id":1,"path":"/Show.S02E04.mkv","bytes":2000,"selected":0},{"id":2,"path":"/Show.S02E05.mkv","bytes":2100,"selected":0},{"id":3,"path":"/Show.S02E05.sample.mkv","bytes":10,"selected":0}]"""
+
+    @Test fun `pack de saison seul l'episode est choisi puis lien direct`() = runBlocking {
+        withKey()
+        var ready = false
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+                c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"T9"}""", emptyMap())
+                c.url.endsWith("/torrents/selectFiles/T9") -> { ready = true; Triple(204, "", emptyMap()) }
+                c.url.endsWith("/torrents/info/T9") -> Triple(200,
+                    if (!ready) """{"id":"T9","status":"waiting_files_selection","files":$packFiles,"links":[]}"""
+                    else """{"id":"T9","status":"downloaded","files":${packFiles.replace("\"id\":2,\"path\":\"/Show.S02E05.mkv\",\"bytes\":2100,\"selected\":0", "\"id\":2,\"path\":\"/Show.S02E05.mkv\",\"bytes\":2100,\"selected\":1")},"links":["https://real-debrid.com/d/E05"]}""", emptyMap())
+                c.url.endsWith("/unrestrict/link") -> Triple(200, """{"download":"https://dl.rd/E05.mkv","filename":"Show.S02E05.mkv","filesize":2100}""", emptyMap())
+                else -> Triple(404, "{}", emptyMap())
+            }
+        }
+        val r = com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }
+        assertEquals("https://dl.rd/E05.mkv", r.resolve(packStream(), episode))
+        assertEquals("files=2", calls.single { it.url.contains("selectFiles") }.body)
+        assertTrue("lien de l'épisode demandé", calls.single { it.url.endsWith("unrestrict/link") }.body.contains("E05"))
+    }
+
+    @Test fun `version pas prete torrent supprime et version suivante`() = runBlocking {
+        withKey()
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+                c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"T7"}""", emptyMap())
+                c.url.endsWith("/torrents/info/T7") -> Triple(200, """{"id":"T7","status":"downloading","progress":3,"files":$packFiles,"links":[]}""", emptyMap())
+                c.method == "DELETE" -> Triple(204, "", emptyMap())
+                else -> Triple(204, "", emptyMap())
+            }
+        }
+        val r = com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }
+        try { r.resolve(packStream(), episode); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridNotReady) {
+            assertEquals("Version pas encore prête sur Real-Debrid", e.message)
+        }
+        assertTrue("torrent ajouté puis supprimé", calls.any { it.method == "DELETE" && it.url.endsWith("/torrents/delete/T7") })
+    }
+
+    @Test fun `torrent deja pret dans le compte reutilise sans ajout`() = runBlocking {
+        withKey()
+        val selected = packFiles.replace("\"id\":2,\"path\":\"/Show.S02E05.mkv\",\"bytes\":2100,\"selected\":0", "\"id\":2,\"path\":\"/Show.S02E05.mkv\",\"bytes\":2100,\"selected\":1")
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, """[{"id":"OLD","hash":"${hash.uppercase()}","status":"downloaded","files":[]}]""", emptyMap())
+                c.url.endsWith("/torrents/info/OLD") -> Triple(200, """{"id":"OLD","status":"downloaded","files":$selected,"links":["https://real-debrid.com/d/OLD"]}""", emptyMap())
+                c.url.endsWith("/unrestrict/link") -> Triple(200, """{"download":"https://dl.rd/old.mkv"}""", emptyMap())
+                else -> Triple(500, "{}", emptyMap())
+            }
+        }
+        assertEquals("https://dl.rd/old.mkv", com.sokoul.iptv.data.debrid.DebridResolver(rd).resolve(packStream(), episode))
+        assertTrue(calls.none { it.url.contains("addMagnet") })
+    }
 }

@@ -42,6 +42,7 @@ import kotlinx.serialization.Serializable
  * - catchup : id = chaîne, start/end = programme
  * - episode : id = épisode, parentId = série
  * - recording : id = identifiant d'enregistrement
+ * - debrid : titre hors abonnement, lu via Real-Debrid (query, title) ; id = query
  */
 @Serializable
 data class PlayerRoute(
@@ -54,6 +55,12 @@ data class PlayerRoute(
     val end: Long = 0,
     /** Film / épisode : ignorer la reprise et lire depuis le début. */
     val fromStart: Boolean = false,
+    /** Film / épisode : version Real-Debrid choisie sur la fiche (clé de `DebridStream`). */
+    val source: String? = null,
+    /** Œuvre pour Real-Debrid (`DebridQuery.encode()`) ; seule pour `debrid` (titre absent de l'abonnement). */
+    val query: String? = null,
+    /** Titre affiché pour `debrid` (pas de fiche IPTV). */
+    val title: String? = null,
 )
 
 object PlayKind {
@@ -62,4 +69,5 @@ object PlayKind {
     const val MOVIE = "movie"
     const val EPISODE = "episode"
     const val RECORDING = "recording"
+    const val DEBRID = "debrid"
 }
