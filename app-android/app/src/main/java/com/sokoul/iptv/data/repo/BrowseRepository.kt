@@ -40,9 +40,12 @@ sealed interface GridSpec {
     data class Favorites(val type: ContentType?) : GridSpec
     /** Ambiance ou micro-genre (fiches TMDB indexées). */
     data class Mooded(val type: ContentType, val mood: Mood?, val micro: MicroGenre?) : GridSpec
+    /** Rangée du catalogue éditorial ([RowCatalog]). */
+    data class Spec(val type: ContentType, val id: String) : GridSpec
 
     fun encode(): String = when (this) {
         is Mooded -> join("mood", type.name, mood?.name ?: "-", micro?.name ?: "-")
+        is Spec -> join("spec", type.name, id)
         is Cats -> join("cats", type.name, if (byPosition) "p" else "a", *ids.toTypedArray())
         is Recent -> join("recent", type.name)
         is Ids -> join("ids", type.name, *ids.toTypedArray())
@@ -68,6 +71,7 @@ sealed interface GridSpec {
                 "saga" -> Saga(p[1].toInt())
                 "fav" -> Favorites(if (p[1] == "ALL") null else type(1))
                 "mood" -> Mooded(type(1), p[2].takeIf { it != "-" }?.let(Mood::valueOf), p[3].takeIf { it != "-" }?.let(MicroGenre::valueOf))
+                "spec" -> Spec(type(1), p[2])
                 else -> null
             }
         }.getOrNull()
@@ -192,24 +196,130 @@ class BrowseRepository @Inject constructor(
     suspend fun explore(pid: Long, type: ContentType, filter: ExploreFilter, sort: GridSort = GridSort.DEFAULT, limit: Int = GRID_LIMIT): List<Work> =
         withContext(Dispatchers.Default) { ctx(pid, type).explore(filter, sort, limit) }
 
-    /** Rangées d'ambiances et de micro-genres d'une page Films / Séries (au moins [MicroGenre.MIN_ROW] titres chacune). */
     /** Ambiances : chaque requête parcourt la table des fiches (~1 s sur la box) ; deux à la fois laissent des cœurs à l'interface. */
     private val moodGate = Semaphore(2)
 
-    private suspend fun Ctx.moodRows(): List<BrowseRow> = coroutineScope {
-        val moods = Mood.entries.map { m ->
-            async {
-                val works = runCatching { moodGate.withPermit { explore(ExploreFilter(mood = m), GridSort.DEFAULT, 24) } }.getOrDefault(emptyList())
-                BrowseRow("mood-" + m.name, m.title(type), m.tagline, works = works, seeAll = GridSpec.Mooded(type, m, null).encode())
+    // --- rangées éditoriales personnalisées ([RowCatalog], [TasteProfile], [HomeComposer]) --------------------------
+
+    private data class TasteKey(val pid: Long, val lastUpdate: Long, val favorites: Int)
+    @Volatile private var tasteCache: Pair<TasteKey, Pair<Long, TasteProfile>>? = null
+
+    /**
+     * Profil de goûts : les 60 derniers titres regardés et Ma liste, croisés avec leurs fiches TMDB.
+     * Recalculé quand l'historique ou Ma liste change, et au plus toutes les 10 minutes sinon.
+     */
+    suspend fun tasteProfile(pid: Long): TasteProfile = withContext(Dispatchers.Default) {
+        val recent = db.browse().lastWatched(pid, 60)
+        val favs = db.library().allFavorites(pid).filter { it.type != ContentType.LIVE }
+        val key = TasteKey(pid, recent.firstOrNull()?.updatedAt ?: 0L, favs.size)
+        val now = System.currentTimeMillis()
+        tasteCache?.let { (k, v) -> if (k == key && now - v.first < 600_000) return@withContext v.second }
+        val entries = ArrayList<TasteEntry>()
+        for (type in listOf(ContentType.MOVIE, ContentType.SERIES)) {
+            // une ligne par film ou par série (épisodes regroupés : la meilleure progression, la date la plus récente)
+            val watched = recent.filter { it.type == type }.groupBy { if (type == ContentType.SERIES) it.parentId ?: it.itemId else it.itemId }
+            val favIds = favs.filter { it.type == type }.associateBy { it.itemId }
+            val ids = (watched.keys + favIds.keys).filter { !it.startsWith("tmdb:") }.distinct()
+            val c = ctx(pid, type)
+            val works = c.byIds(ids)
+            val metaByKey = works.map { it.key }.distinct().partition { it.startsWith("tmdb:") }.let { (tmdbKeys, keys) ->
+                keys.chunked(500).flatMap { db.browse().metaFor(pid, type, it) }.associate { it.workKey to it.meta } +
+                    db.browse().metaByIds(type, tmdbKeys.mapNotNull(::tmdbIdOfKey)).associateBy { "tmdb:${it.tmdbId}" }
             }
-        }
-        val micros = MicroGenre.entries.filter { it != MicroGenre.SPECTACLE || DeviceCaps.supports4k }.map { g ->
-            async {
-                val works = runCatching { moodGate.withPermit { explore(ExploreFilter(micro = g), GridSort.DEFAULT, 24) } }.getOrDefault(emptyList())
-                BrowseRow("micro-" + g.name, g.title, g.tagline, works = works, seeAll = GridSpec.Mooded(type, null, g).encode())
+            // titres de Ma liste hors catalogue : leur fiche suffit
+            val offMetas = db.browse().metaByIds(type, favIds.keys.filter { it.startsWith("tmdb:") }.mapNotNull(::tmdbIdOfKey)).associateBy { "tmdb:${it.tmdbId}" }
+            fun entry(id: String, title: String, m: com.sokoul.iptv.data.db.TmdbMetaEntity) {
+                val p = watched[id].orEmpty()
+                val completion = p.maxOfOrNull { e -> if (e.finished) 1f else if (e.durationMs > 0) (e.positionMs.toFloat() / e.durationMs).coerceIn(0f, 1f) else 0f } ?: 0f
+                entries += TasteEntry(
+                    type, id, m.title.ifBlank { title },
+                    m.genreIds?.split(',')?.mapNotNull { it.toIntOrNull() }.orEmpty(), m.year, m.originalLanguage,
+                    m.keywords?.split('|')?.filter { it.isNotBlank() }.orEmpty(), m.collectionId,
+                    completion, p.maxOfOrNull { it.updatedAt } ?: favIds[id]?.addedAt ?: now, favorite = id in favIds,
+                )
             }
+            works.forEach { w -> metaByKey[w.key]?.let { entry(w.id, w.title, it) } }
+            offMetas.forEach { (k, m) -> entry(k, m.title, m) }
         }
-        (moods + micros).awaitAll().filter { it.works.size >= MicroGenre.MIN_ROW }
+        val profile = TasteProfile.from(entries, now)
+        tasteCache = key to (now to profile)
+        profile
+    }
+
+    /** Jour courant (change à minuit) : fait tourner les titres et l'aléa du classement. */
+    private fun today(): Int = Calendar.getInstance().let { it.get(Calendar.YEAR) * 400 + it.get(Calendar.DAY_OF_YEAR) }
+
+    /**
+     * Rangées éditoriales dans l'ordre de [ranked] : requêtes en parallèle (deux à la fois), puis dédoublonnage dans
+     * l'ordre : une œuvre apparaît au plus deux fois, et une rangée garde au moins [MicroGenre.MIN_ROW] titres inédits.
+     */
+    private suspend fun specRows(pid: Long, ranked: List<HomeComposer.Ranked>, day: Int, shown: MutableMap<String, Int>): List<BrowseRow> = coroutineScope {
+        val fetched = ranked.map { r ->
+            async {
+                runCatching { moodGate.withPermit { ctx(pid, r.spec.type).explore(ExploreFilter(rule = r.spec.rule), GridSort.DEFAULT, 36) } }.getOrDefault(emptyList())
+            }
+        }.awaitAll()
+        ranked.zip(fetched).mapNotNull { (r, works) ->
+            val fresh = works.filter { (shown[it.uid] ?: 0) < 2 }
+            if (fresh.size < MicroGenre.MIN_ROW) return@mapNotNull null
+            val kept = fresh.take(24)
+            kept.forEach { shown.merge(it.uid, 1, Int::plus) }
+            val (title, tagline) = r.title(day)
+            BrowseRow("spec-${r.spec.id}", title, tagline, works = kept, seeAll = GridSpec.Spec(r.spec.type, r.spec.id).encode())
+        }
+    }
+
+    /** Ordre des rangées éditoriales d'une page : films et séries alternés sur l'accueil. */
+    private fun plan(types: List<ContentType>, profile: TasteProfile, day: Int): List<HomeComposer.Ranked> {
+        val lists = types.map { HomeComposer.rank(RowCatalog.forType(it), profile, day) }
+        if (lists.size == 1) return lists[0]
+        val out = ArrayList<HomeComposer.Ranked>()
+        val its = lists.map { it.iterator() }
+        while (its.any { it.hasNext() }) its.forEach { if (it.hasNext()) out += it.next() }
+        return out
+    }
+
+    /**
+     * Rangées suivantes d'une page (chargement au fil du défilement) : [more] vient de [BrowsePage.more] ;
+     * renvoie les rangées construites et ce qui reste à charger.
+     */
+    suspend fun moreRows(pid: Long, more: List<String>, shownUids: Collection<String>, count: Int = MORE_BATCH): Pair<List<BrowseRow>, List<String>> =
+        ScreenLoading.track { withContext(Dispatchers.Default) {
+            val day = today()
+            val shown = HashMap<String, Int>().apply { shownUids.forEach { merge(it, 1, Int::plus) } }
+            val out = ArrayList<BrowseRow>()
+            var rest = more
+            // une rangée sur trois environ n'a pas assez de titres : on continue jusqu'à en avoir [count]
+            while (out.size < count && rest.isNotEmpty()) {
+                val batch = rest.take(count + 2)
+                rest = rest.drop(batch.size)
+                val ranked = batch.mapNotNull { decodeRanked(it) }
+                out += specRows(pid, ranked, day, shown)
+            }
+            out to rest
+        } }
+
+    private fun encodeRanked(r: HomeComposer.Ranked) = (if (r.personal) "p:" else "") + r.spec.id
+    private fun decodeRanked(s: String): HomeComposer.Ranked? {
+        val personal = s.startsWith("p:")
+        val spec = RowCatalog.byId(s.removePrefix("p:")) ?: return null
+        return HomeComposer.Ranked(spec, 0.0, personal)
+    }
+
+    /** Sagas commencées : « Finissez la saga X » (films non vus, dans l'ordre), pour la plus avancée. */
+    private suspend fun finishSaga(pid: Long, profile: TasteProfile): BrowseRow? {
+        val (collectionId, _) = profile.collections.entries.maxByOrNull { it.value }?.toPair() ?: return null
+        val (name, works) = saga(pid, collectionId) ?: return null
+        val done = db.browse().lastWatched(pid, 200).filter { it.type == ContentType.MOVIE && (it.finished || (it.durationMs > 0 && it.positionMs > it.durationMs * 0.9)) }
+            .map { it.itemId }.toSet()
+        val left = works.filter { it.id !in done }
+        if (works.size < 2 || left.isEmpty()) return null
+        val clean = name.replace(" - Saga", "").replace(" (Collection)", "").replace("Collection ", "")
+        return BrowseRow(
+            "finish-saga", "Finissez la saga $clean",
+            if (left.size > 1) "Il vous reste ${left.size} films à découvrir." else "Plus qu'un film pour boucler la boucle.",
+            RowStyle.LANDSCAPE, left, seeAll = GridSpec.Saga(collectionId).encode(),
+        )
     }
 
     private suspend fun Ctx.byIds(ids: List<String>): List<Work> {
@@ -277,21 +387,32 @@ class BrowseRepository @Inject constructor(
         return matchItems(net.withPermit { tmdb.list(api, kind, "top_rated") }, 30)
     }
 
-    /** « Parce que vous avez regardé X » : recommandations TMDB présentes dans le catalogue. */
-    private suspend fun becauseYouWatched(pid: Long, types: Set<ContentType>): BrowseRow? {
+    /**
+     * « Parce que vous avez regardé X » : recommandations TMDB présentes dans le catalogue, à partir d'une des œuvres
+     * de départ du profil ([index] : 0 = la plus marquante). Trois tournures, pour ne pas répéter la même phrase.
+     */
+    private suspend fun becauseYouWatched(pid: Long, types: Set<ContentType>, profile: TasteProfile, index: Int = 0): BrowseRow? {
         val api = enrich.apiKey()
         if (api.isBlank()) return null
-        val last = db.browse().lastWatched(pid, 12).firstOrNull { it.type in types } ?: return null
-        val type = last.type
-        val itemId = if (type == ContentType.SERIES) last.parentId ?: return null else last.itemId
+        val seedRef = profile.seeds.filter { it.type in types }.getOrNull(index)
+            ?: if (index == 0) db.browse().lastWatched(pid, 12).firstOrNull { it.type in types }?.let { last ->
+                TasteSeed(last.type, if (last.type == ContentType.SERIES) last.parentId ?: return null else last.itemId, last.title)
+            } else null
+        seedRef ?: return null
+        val type = seedRef.type
         val c = ctx(pid, type)
-        val seed = c.byIds(listOf(itemId)).firstOrNull() ?: return null
+        val seed = c.byIds(listOf(seedRef.itemId)).firstOrNull() ?: return null
         val meta = enrich.ensure(pid, seed) ?: return null
         val recs = net.withPermit { tmdb.recommendations(api, c.kind, meta.tmdbId) }
         val works = c.matchItems(recs, 24).filter { it.key != seed.key }
         if (works.size < 3) return null
+        val (title, tagline) = when (index) {
+            0 -> "Parce que vous avez regardé ${meta.title}" to "Dans la même veine, rien que pour vous."
+            1 -> "Si vous avez aimé ${meta.title}" to "Ces titres devraient vous plaire aussi."
+            else -> "Pour prolonger ${meta.title}" to "La suite logique de votre dernier coup de cœur."
+        }
         return BrowseRow(
-            "byw", "Parce que vous avez regardé ${meta.title}", "Dans la même veine, rien que pour vous.", RowStyle.LANDSCAPE, works,
+            "byw-$index", title, tagline, RowStyle.LANDSCAPE, works,
             seeAll = GridSpec.Ids(type, works.map { it.id }).encode(),
         )
     }
@@ -315,13 +436,19 @@ class BrowseRepository @Inject constructor(
     private suspend fun typedPage(pid: Long, type: ContentType, onPartial: (suspend (BrowsePage) -> Unit)?): BrowsePage = coroutineScope {
         val c = ctx(pid, type)
         val movies = type == ContentType.MOVIE
+        val types = setOf(type)
         val noun = if (movies) "films" else "séries"
+        val day = today()
+        val profile = runCatching { tasteProfile(pid) }.getOrDefault(TasteProfile.EMPTY)
+        val ranked = plan(listOf(type), profile, day)
         val trendingD = async { runCatching { c.trending() }.getOrDefault(emptyList()) }
         val topRatedD = async { runCatching { c.topRated() }.getOrDefault(emptyList()) }
-        val bywD = async { runCatching { becauseYouWatched(pid, setOf(type)) }.getOrNull() }
+        val bywD = (0 until 3).map { i -> async { runCatching { becauseYouWatched(pid, types, profile, i) }.getOrNull() } }
         val sagasD: Deferred<List<SagaCard>>? = if (movies) async { runCatching { sagas(pid) }.getOrDefault(emptyList()) } else null
-        // ambiances et micro-genres : fiches déjà indexées, sans réseau
-        val moodD = async { runCatching { c.moodRows() }.getOrDefault(emptyList()) }
+        val finishD: Deferred<BrowseRow?>? = if (movies) async { runCatching { finishSaga(pid, profile) }.getOrNull() } else null
+        // rangées éditoriales du premier écran (les suivantes se chargent au fil du défilement)
+        val first = ranked.take(FIRST_BATCH + 4)
+        val specD = async { runCatching { specRows(pid, first, day, HashMap()) }.getOrDefault(emptyList()) }
 
         // nouveautés : catégorie « récemment ajoutés » du fournisseur, sinon derniers ajouts
         val newCats = c.preferred(c.visible.filter { Theme.NEW.matches(it.name) })
@@ -367,7 +494,7 @@ class BrowseRepository @Inject constructor(
             }
         }
 
-        val tmdbParts = listOfNotNull(trendingD, topRatedD, bywD, sagasD, moodD)
+        val tmdbParts = listOfNotNull(trendingD, topRatedD, sagasD, specD, finishD) + bywD
         progressive(tmdbParts, onPartial) {
         val trending = trendingD.v(emptyList())
         val top10 = trending.take(10)
@@ -393,37 +520,43 @@ class BrowseRepository @Inject constructor(
         val platformRows = platformRowsD.awaitAll()
         val themeRows = themeRowsD.map { it.first to it.second.await() }
         val yearRows = yearRowsD.awaitAll()
-        val byw = bywD.v(null)
+        val byws = ArrayDeque(bywD.mapNotNull { it.v(null) })
+        val specs = ArrayDeque(specD.v(emptyList()))
 
-        // rythme : plateformes, genres et listes alternent ; les thèmes de saison passent devant
+        // rythme : rangées éditoriales (personnalisées) en fil conducteur, plateformes, thèmes du fournisseur et
+        // recommandations intercalés ; les thèmes de saison passent devant
         val seasonalRows = themeRows.filter { (t, _) -> (t == Theme.HORROR && season == Season.HALLOWEEN) || t == Theme.CHRISTMAS }.map { it.second }
         val themes = ArrayDeque(themeRows.map { it.second }.filter { it !in seasonalRows })
-        val moodRows = ArrayDeque(moodD.v(emptyList()))
         val plats = ArrayDeque(platformRows)
         val rows = ArrayList<BrowseRow>()
         rows += tiles
         rows += top10Row
         rows += seasonalRows
+        byws.removeFirstOrNull()?.let { rows += it }
         rows += newRow
         rows += BrowseRow(
             "moods", "Ambiances", "Choisissez une humeur, on s'occupe du reste.", RowStyle.MOODS,
             chips = Mood.entries.map { GridSpec.Mooded(type, it, null).encode() to it.chip },
         )
-        plats.removeFirstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
         rows += popularRow
-        moodRows.removeFirstOrNull()?.let { rows += it }
-        yearRows.firstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
+        finishD?.v(null)?.let { rows += it }
         plats.removeFirstOrNull()?.let { rows += it }
-        byw?.let { rows += it }
-        moodRows.removeFirstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
+        byws.removeFirstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
         themes.removeFirstOrNull()?.let { rows += it }
         if (movies) rows += sagaRow
-        plats.removeFirstOrNull()?.let { rows += it }
-        themes.removeFirstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
+        yearRows.firstOrNull()?.let { rows += it }
         rows += topRatedRow
-        while (plats.isNotEmpty() || themes.isNotEmpty() || moodRows.isNotEmpty()) {
-            moodRows.removeFirstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
+        byws.removeFirstOrNull()?.let { rows += it }
+        while (plats.isNotEmpty() || themes.isNotEmpty() || specs.isNotEmpty()) {
+            specs.removeFirstOrNull()?.let { rows += it }
             plats.removeFirstOrNull()?.let { rows += it }
+            specs.removeFirstOrNull()?.let { rows += it }
             themes.removeFirstOrNull()?.let { rows += it }
         }
         yearRows.drop(1).forEach { rows += it }
@@ -435,17 +568,24 @@ class BrowseRepository @Inject constructor(
         )
 
         val hero = heroFrom(top10 + popular, rows)
-        BrowsePage(hero, rows)
+        BrowsePage(hero, rows, more = ranked.drop(first.size).map(::encodeRanked))
         }
     }
 
     private suspend fun homePage(pid: Long, onPartial: (suspend (BrowsePage) -> Unit)?): BrowsePage = coroutineScope {
         val m = ctx(pid, ContentType.MOVIE)
         val s = ctx(pid, ContentType.SERIES)
+        val both = setOf(ContentType.MOVIE, ContentType.SERIES)
+        val day = today()
+        val profile = runCatching { tasteProfile(pid) }.getOrDefault(TasteProfile.EMPTY)
+        val ranked = plan(listOf(ContentType.MOVIE, ContentType.SERIES), profile, day)
+        val first = ranked.take(FIRST_BATCH + 4)
         val tmD = async { runCatching { m.trending() }.getOrDefault(emptyList()) }
         val tsD = async { runCatching { s.trending() }.getOrDefault(emptyList()) }
-        val bywD = async { runCatching { becauseYouWatched(pid, setOf(ContentType.MOVIE, ContentType.SERIES)) }.getOrNull() }
+        val bywD = (0 until 3).map { i -> async { runCatching { becauseYouWatched(pid, both, profile, i) }.getOrNull() } }
         val sagasD = async { runCatching { sagas(pid) }.getOrDefault(emptyList()) }
+        val finishD = async { runCatching { finishSaga(pid, profile) }.getOrNull() }
+        val specD = async { runCatching { specRows(pid, first, day, HashMap()) }.getOrDefault(emptyList()) }
         val newMoviesD = async {
             val cats = m.preferred(m.visible.filter { Theme.NEW.matches(it.name) })
             if (cats.isNotEmpty()) m.fromCats(cats, 24, false) else m.recent(24)
@@ -453,38 +593,51 @@ class BrowseRepository @Inject constructor(
         val newSeriesD = async { s.recent(24) }
         val platforms = Platform.entries.filter { p -> m.visible.any { p.matches(it.name) } || s.visible.any { p.matches(it.name) } }
 
-        progressive(listOf(tmD, tsD, bywD, sagasD), onPartial) {
+        progressive(listOf(tmD, tsD, sagasD, specD, finishD) + bywD, onPartial) {
         val tm = tmD.v(emptyList())
         val ts = tsD.v(emptyList())
+        val byws = ArrayDeque(bywD.mapNotNull { it.v(null) })
+        val specs = ArrayDeque(specD.v(emptyList()))
         val rows = ArrayList<BrowseRow>()
         rows += BrowseRow(
             "top10-m", "Top 10 des films cette semaine", "Les films que tout le monde regarde.", RowStyle.TOP10, tm.take(10),
             seeAll = GridSpec.Ids(ContentType.MOVIE, tm.map { it.id }).encode(),
         )
-        rows += BrowseRow("platforms", "Plateformes", null, RowStyle.PLATFORMS, platforms = platforms.map { PlatformTile(it, null, 0) })
+        byws.removeFirstOrNull()?.let { rows += it }
         rows += BrowseRow(
             "new-m", "Nouveaux films", "Fraîchement débarqués dans votre catalogue.", works = newMoviesD.await(),
             seeAll = GridSpec.Recent(ContentType.MOVIE).encode(),
         )
+        specs.removeFirstOrNull()?.let { rows += it }
         rows += BrowseRow(
             "top10-s", "Top 10 des séries cette semaine", "Les séries dont tout le monde parle.", RowStyle.TOP10, ts.take(10),
             seeAll = GridSpec.Ids(ContentType.SERIES, ts.map { it.id }).encode(),
         )
-        bywD.v(null)?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
         rows += BrowseRow(
             "new-s", "Nouveaux épisodes", "Vos séries continuent : les derniers épisodes sont là.", works = newSeriesD.await(),
             seeAll = GridSpec.Recent(ContentType.SERIES).encode(),
         )
+        finishD.v(null)?.let { rows += it }
+        byws.removeFirstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
         rows += BrowseRow("sagas", "Sagas cultes", "Toute l'histoire, dans l'ordre.", RowStyle.SAGAS, sagas = sagasD.v(emptyList()))
+        specs.removeFirstOrNull()?.let { rows += it }
+        rows += BrowseRow("platforms", "Plateformes", null, RowStyle.PLATFORMS, platforms = platforms.map { PlatformTile(it, null, 0) })
+        specs.removeFirstOrNull()?.let { rows += it }
         rows += BrowseRow("popular-m", "Films populaires", "À voir absolument cette semaine.", RowStyle.LANDSCAPE, tm.drop(10))
+        specs.removeFirstOrNull()?.let { rows += it }
+        byws.removeFirstOrNull()?.let { rows += it }
+        specs.removeFirstOrNull()?.let { rows += it }
         rows += BrowseRow("popular-s", "Séries populaires", "Le prochain marathon commence ici.", RowStyle.LANDSCAPE, ts.drop(10))
+        while (specs.isNotEmpty()) rows += specs.removeFirst()
 
         // héros : films et séries du moment en alternance
         val mixed = buildList {
             val a = tm.iterator(); val b = ts.iterator()
             while (a.hasNext() || b.hasNext()) { if (a.hasNext()) add(a.next()); if (b.hasNext()) add(b.next()) }
         }
-        BrowsePage(heroFrom(mixed, rows), rows)
+        BrowsePage(heroFrom(mixed, rows), rows, more = ranked.drop(first.size).map(::encodeRanked))
         }
     }
 
@@ -755,6 +908,14 @@ class BrowseRepository @Inject constructor(
                 val tagline = spec.mood?.tagline ?: spec.micro?.tagline
                 GridHeader(title, tagline) to ctx(pid, spec.type).explore(ExploreFilter(mood = spec.mood, micro = spec.micro), GridSort.DEFAULT, GRID_LIMIT)
             }
+            is GridSpec.Spec -> {
+                val rs = RowCatalog.byId(spec.id)
+                if (rs == null) null to emptyList()
+                else {
+                    val (title, tagline) = rs.title(today())
+                    GridHeader(title, tagline) to ctx(pid, rs.type).explore(ExploreFilter(rule = rs.rule), GridSort.DEFAULT, GRID_LIMIT)
+                }
+            }
             is GridSpec.Favorites -> {
                 val types = spec.type?.let { listOf(it) } ?: listOf(ContentType.MOVIE, ContentType.SERIES)
                 val favs = db.library().allFavorites(pid).filter { it.type in types }.sortedByDescending { it.addedAt }
@@ -791,6 +952,9 @@ class BrowseRepository @Inject constructor(
 
     companion object {
         const val HERO_SIZE = 6
+        /** Rangées éditoriales construites avec la page ; les suivantes arrivent par lots de [MORE_BATCH]. */
+        const val FIRST_BATCH = 8
+        const val MORE_BATCH = 6
         const val GRID_LIMIT = 300
         /** Films dont le générique est lu pour une saga (une requête TMDB chacun, en cache 7 jours). */
         private const val MAX_SAGA_CREDITS = 25

@@ -53,6 +53,8 @@ data class BrowseUi(
     val rows: List<BrowseRow> = emptyList(),
     /** La page n'a pas pu être construite (aucune page précédente à montrer). */
     val failed: Boolean = false,
+    /** Rangées suivantes en cours de chargement (fin de page). */
+    val loadingMore: Boolean = false,
 )
 
 /**
@@ -81,17 +83,24 @@ abstract class BrowseViewModel(
     private val playlist: StateFlow<PlaylistEntity?> = playlists.active.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val resolved = MutableStateFlow(false)
     private val failed = MutableStateFlow(false)
+    /** Rangées chargées au fil du défilement, et ce qui reste à charger. */
+    private val extra = MutableStateFlow<List<BrowseRow>>(emptyList())
+    private val loadingMore = MutableStateFlow(false)
+    @Volatile private var more: List<String> = emptyList()
 
     private val live: Flow<List<BrowseRow>> = playlist.flatMapLatest { p -> if (p == null) flowOf(emptyList()) else liveRows(p.id) }
 
-    val ui: StateFlow<BrowseUi> = combine(playlist, page, live, resolved, failed) { p, pg, lv, done, err ->
+    private val pageRows = combine(page, extra, loadingMore) { pg, ex, lm -> Triple(pg, ex, lm) }
+
+    val ui: StateFlow<BrowseUi> = combine(playlist, pageRows, live, resolved, failed) { p, (pg, ex, lm), lv, done, err ->
         BrowseUi(
             loading = pg == null && !err && (p != null || !done),
             failed = err && pg == null,
             playlist = p,
             hero = pg?.hero.orEmpty(),
             heroRanked = pg?.hero?.firstOrNull()?.let { h -> pg.rows.any { it.style == RowStyle.TOP10 && it.works.firstOrNull()?.uid == h.uid } } == true,
-            rows = lv + pg?.rows.orEmpty(),
+            rows = lv + withExtra(pg?.rows.orEmpty(), ex),
+            loadingMore = lm,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, BrowseUi())
 
@@ -125,6 +134,9 @@ abstract class BrowseViewModel(
                         return@collectLatest
                     }
                     page.value = decorate(p.id, base)
+                    // nouvelle page : les rangées chargées au défilement repartent de zéro
+                    extra.value = emptyList()
+                    more = base.more
                     enrich.request(p.id, priority(base))
                     var lastSagas = System.currentTimeMillis()
                     // nouvelles métadonnées TMDB → cartes redécorées (fonds, logos, titres français)
@@ -135,9 +147,49 @@ abstract class BrowseViewModel(
                             if (sagas.isNotEmpty()) base = base.copy(rows = base.rows.map { if (it.style == RowStyle.SAGAS) it.copy(sagas = sagas) else it })
                         }
                         page.value = decorate(p.id, base)
+                        if (extra.value.isNotEmpty()) extra.value = decorateRows(p.id, extra.value)
                     }
                 }
         }
+    }
+
+    /**
+     * Fin de page atteinte : les [BrowseRepository.MORE_BATCH] rangées éditoriales suivantes (une seule demande à la fois).
+     * Les œuvres déjà montrées deux fois ne reviennent pas.
+     */
+    fun loadMore() {
+        val pid = playlist.value?.id ?: return
+        if (loadingMore.value || more.isEmpty()) return
+        loadingMore.value = true
+        viewModelScope.launch {
+            try {
+                val shown = (page.value?.rows.orEmpty() + extra.value).flatMap { r -> r.works.map { it.uid } }
+                val (rows, rest) = repo.moreRows(pid, more, shown)
+                more = rest
+                if (rows.isNotEmpty()) {
+                    extra.value = extra.value + decorateRows(pid, rows)
+                    enrich.request(pid, rows.flatMap { it.works.take(8) })
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Rangées suivantes")
+            } finally {
+                loadingMore.value = false
+            }
+        }
+    }
+
+    /** Rangées chargées au défilement : avant « Explorer par catégorie », qui reste la dernière. */
+    private fun withExtra(rows: List<BrowseRow>, ex: List<BrowseRow>): List<BrowseRow> {
+        if (ex.isEmpty()) return rows
+        val cats = rows.indexOfFirst { it.style == RowStyle.CATEGORIES }
+        return if (cats < 0) rows + ex else rows.subList(0, cats) + ex + rows.subList(cats, rows.size)
+    }
+
+    private suspend fun decorateRows(pid: Long, rows: List<BrowseRow>): List<BrowseRow> {
+        val byUid = enrich.decorate(pid, rows.flatMap { it.works }.distinctBy { it.uid }).associateBy { it.uid }
+        return rows.map { r -> r.copy(works = r.works.map { byUid[it.uid] ?: it }) }
     }
 
     /** Ordre d'enrichissement : héros, puis les premières cartes de chaque rangée. */

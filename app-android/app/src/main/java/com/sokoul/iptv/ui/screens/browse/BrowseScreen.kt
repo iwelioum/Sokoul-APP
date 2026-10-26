@@ -247,6 +247,13 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
         if (withImage.size >= 3) withImage else ui.hero.filter { it.backdrop != null || it.poster != null }
     }
     val rows = ui.rows.filter { !it.isEmpty }
+    // fin de page proche (4 rangées) : les rangées suivantes se chargent pendant qu'on descend
+    LaunchedEffect(listState, vm) {
+        androidx.compose.runtime.snapshotFlow {
+            val info = listState.layoutInfo
+            (info.visibleItemsInfo.lastOrNull()?.index ?: 0) to info.totalItemsCount
+        }.collect { (last, total) -> if (total > 0 && last >= total - 4) vm.loadMore() }
+    }
     // ▼ depuis les onglets : « Lecture » du héros (s'il est affiché)
     bar?.down = { if (hero.isNotEmpty() && listState.firstVisibleItemIndex == 0) playFocus else null }
 
@@ -338,6 +345,7 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                     }
                 }
                 if (ui.loading) items(3) { SkeletonRow(landscape = it == 1) }
+                if (ui.loadingMore) item("more") { SkeletonRow() }
                 if (ui.failed) item("failed") {
                     Row(Modifier.padding(horizontal = l.margin, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Une partie de la page n'a pas pu se charger.", Modifier.weight(1f, fill = false), color = SokoulColors.TextSecondary)

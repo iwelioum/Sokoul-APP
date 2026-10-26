@@ -52,6 +52,13 @@ data class TitleRule(
     /** Tous publics (classification française absente ou TP/U/0). */
     val allAudiences: Boolean = false,
     val uhd: Boolean = false,
+    /** Langue originale (code ISO : « ko », « fr »…). */
+    val language: String? = null,
+    val minYear: Int? = null,
+    val maxYear: Int? = null,
+    val minRuntime: Int? = null,
+    /** Séries : nombre de saisons au plus (mini-séries). */
+    val maxSeasons: Int? = null,
 )
 
 /** Ambiances : pastilles courtes, titres de rangée en français naturel. */
@@ -72,7 +79,7 @@ enum class Mood(val chip: String, val movieTitle: String, val seriesTitle: Strin
         when (this@Mood) {
             FRISSONS -> TitleRule(setOf(HORROR, THRILLER), keywords = setOf("suspense", "survival", "supernatural"), minRating = 6.2)
             LEGER -> TitleRule(setOf(COMEDY, ROMANCE, ANIMATION), noGenre = setOf(DRAMA, WAR, HORROR), maxRuntime = 114)
-            FAMILLE -> TitleRule(setOf(FAMILY, ADVENTURE, ANIMATION, FANTASY), noGenre = setOf(HORROR, THRILLER, CRIME, WAR), allAudiences = true)
+            FAMILLE -> TitleRule(setOf(FAMILY), noGenre = setOf(HORROR, THRILLER, CRIME, WAR), allAudiences = true)
             PUZZLE -> TitleRule(
                 setOf(SCIFI, MYSTERY), keywords = setOf("twist ending", "plot twist", "nonlinear timeline", "dystopia", "mind game", "time loop"),
                 requireKeyword = true, minRating = 7.0,
@@ -89,7 +96,7 @@ enum class Mood(val chip: String, val movieTitle: String, val seriesTitle: Strin
         when (this@Mood) {
             FRISSONS -> TitleRule(setOf(MYSTERY, TV_SCIFI_FANTASY), keywords = setOf("supernatural", "survival", "suspense"), requireKeyword = true, minRating = 6.2)
             LEGER -> TitleRule(setOf(COMEDY, ANIMATION), noGenre = setOf(DRAMA, CRIME, TV_WAR_POLITICS))
-            FAMILLE -> TitleRule(setOf(FAMILY, TV_KIDS, ANIMATION), noGenre = setOf(CRIME, TV_WAR_POLITICS), allAudiences = true)
+            FAMILLE -> TitleRule(setOf(FAMILY, TV_KIDS), noGenre = setOf(CRIME, TV_WAR_POLITICS, TV_ACTION_ADVENTURE), allAudiences = true)
             PUZZLE -> TitleRule(
                 setOf(TV_SCIFI_FANTASY, MYSTERY), keywords = setOf("twist ending", "plot twist", "nonlinear timeline", "dystopia", "mind game", "time loop"),
                 requireKeyword = true, minRating = 7.0,
@@ -150,6 +157,8 @@ data class ExploreFilter(
     val uhd: Boolean = false,
     val mood: Mood? = null,
     val micro: MicroGenre? = null,
+    /** Rangée du catalogue éditorial ([RowCatalog]). */
+    val rule: TitleRule? = null,
 ) {
     val isEmpty get() = this == ExploreFilter()
 }
@@ -163,7 +172,7 @@ object ExploreQuery {
         val args = ArrayList<Any>()
         val table = if (type == ContentType.SERIES) "series" else "movies"
         val where = ArrayList<String>()
-        val rules = listOfNotNull(f.mood?.rule(type), f.micro?.rule(type))
+        val rules = listOfNotNull(f.mood?.rule(type), f.micro?.rule(type), f.rule)
         rules.forEach { r -> rule(r, where, args) }
         f.genre?.let { where += "t.genreIds LIKE ?"; args += "%,$it,%" }
         f.decade?.let { where += "t.year BETWEEN ? AND ?"; args += it; args += it + 9 }
@@ -242,5 +251,10 @@ object ExploreQuery {
         r.maxVotes?.let { where += "t.voteCount <= ?"; args += it }
         r.maxRuntime?.let { where += "(t.runtimeMin IS NULL OR t.runtimeMin <= ?)"; args += it }
         if (r.allAudiences) where += "(t.certification IS NULL OR t.certification IN ('TP', 'U', '0', '0+'))"
+        r.language?.let { where += "t.originalLanguage = ?"; args += it }
+        r.minYear?.let { where += "t.year >= ?"; args += it }
+        r.maxYear?.let { where += "t.year <= ?"; args += it }
+        r.minRuntime?.let { where += "t.runtimeMin >= ?"; args += it }
+        r.maxSeasons?.let { where += "t.seasons <= ?"; args += it }
     }
 }

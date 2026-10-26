@@ -94,7 +94,13 @@ data class BrowseRow(
 
 /** [partial] : construite sans certaines rangées TMDB (lentes ou en panne), non mise en cache. */
 @Immutable
-data class BrowsePage(val hero: List<Work>, val rows: List<BrowseRow>, val partial: Boolean = false)
+data class BrowsePage(
+    val hero: List<Work>,
+    val rows: List<BrowseRow>,
+    val partial: Boolean = false,
+    /** Rangées éditoriales encore à charger (au fil du défilement, voir [BrowseRepository.moreRows]). */
+    val more: List<String> = emptyList(),
+)
 
 /** En-tête d'une grille « Tout voir » (saga, plateforme). */
 data class GridHeader(val title: String, val subtitle: String? = null, val overview: String? = null, val backdrop: String? = null, val platform: Platform? = null)
