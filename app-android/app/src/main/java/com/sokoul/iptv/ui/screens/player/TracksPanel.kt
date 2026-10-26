@@ -51,7 +51,7 @@ import com.sokoul.iptv.ui.theme.Type
 import kotlinx.coroutines.delay
 
 /** Une colonne d'audio n'apparaît que s'il y a vraiment un choix (au moins deux pistes). */
-internal fun showAudioColumn(audio: List<TrackOption>) = audio.count { it.group != null } > 1
+internal fun showAudioColumn(audio: List<TrackOption>) = audio.size > 1
 
 /**
  * Carte compacte « Audio et sous-titres », en bas à droite au-dessus des pastilles : hauteur de son contenu
