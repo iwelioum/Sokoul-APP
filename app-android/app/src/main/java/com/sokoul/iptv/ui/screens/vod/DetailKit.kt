@@ -632,7 +632,7 @@ fun LazyListScope.detailSection(key: String, title: String?, tagline: String? = 
     item(key) {
         val l = LocalLayout.current
         Column(Modifier.padding(top = if (l.isTv) 34.dp else 26.dp)) {
-            if (title != null) Text(title, Modifier.padding(horizontal = l.margin), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            if (title != null) Text(title, Modifier.padding(horizontal = l.margin), style = com.sokoul.iptv.ui.theme.Type.Section)
             if (tagline != null) Text(tagline, Modifier.padding(horizontal = l.margin, vertical = 2.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextMuted)
             if (title != null) Spacer(Modifier.height(12.dp))
             content()

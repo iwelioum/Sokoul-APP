@@ -119,8 +119,8 @@ fun VodTopBar(ui: PlayerUi, leading: List<PlayerAction>) {
         leading.forEach { PlayerButton(it, Modifier.padding(end = 8.dp), compact = true) }
         Column(Modifier.weight(1f).padding(start = if (leading.isEmpty()) 0.dp else 4.dp, top = if (leading.isEmpty()) 0.dp else 2.dp)) {
             Text(
-                ui.title, style = if (l.isCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                ui.title, style = if (l.isCompact) MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold) else com.sokoul.iptv.ui.theme.Type.PlayerTitle,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 ui.subtitle?.let {

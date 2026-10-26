@@ -55,12 +55,27 @@ object Space {
 
 /** Rôles de texte : un même rôle a le même style sur tous les écrans. */
 object Type {
-    /** Titre de page (en-tête d'écran). */
-    val ScreenTitle: TextStyle
-        @Composable @ReadOnlyComposable get() = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.ExtraBold)
+    // Titres « cinéma » : DM Serif Display (une seule graisse, >= SERIF_MIN_SP). Le reste reste en Manrope.
+    private fun serif(size: Float, spacing: Float = 0f, line: Float? = null) = TextStyle(
+        fontFamily = SerifDisplay, fontWeight = FontWeight.Normal, fontSize = size.sp, letterSpacing = spacing.sp,
+        lineHeight = line?.sp ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+    )
+
+    /** Titre d'une œuvre sans logo (fiche, héros) : grand, à empattements. */
+    val Display: TextStyle = serif(46f, -0.4f, 50f)
+    /** Titre de page (en-tête d'écran, volets des réglages). */
+    val ScreenTitle: TextStyle = serif(38f, -0.2f)
     /** Titre de section ou de rangée. */
-    val Section: TextStyle
-        @Composable @ReadOnlyComposable get() = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+    val Section: TextStyle = serif(25f, 0.1f)
+    /** Onglets de la barre du haut. */
+    val Tab: TextStyle = serif(21f, 0.2f)
+    /** Titre dans le lecteur (film, épisode, chaîne). */
+    val PlayerTitle: TextStyle = serif(30f, -0.2f)
+    /** Étiquette au-dessus d'un titre de rangée (« POUR VOUS », « GENRE ») : petites capitales espacées, couleur d'accent. */
+    val Kicker: TextStyle
+        @Composable @ReadOnlyComposable get() = MaterialTheme.typography.labelSmall.copy(
+            color = SokoulColors.Accent, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.2.sp,
+        )
     /** Ligne d'informations secondaires (année · durée · genre). */
     val Meta: TextStyle
         @Composable @ReadOnlyComposable get() = MaterialTheme.typography.labelLarge.copy(color = SokoulColors.TextSecondary, fontWeight = FontWeight.Medium)

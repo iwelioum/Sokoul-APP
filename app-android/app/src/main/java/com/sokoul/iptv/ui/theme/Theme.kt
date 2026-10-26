@@ -95,6 +95,18 @@ private fun manrope(w: Int) = Font(
 
 val Manrope = FontFamily(manrope(300), manrope(400), manrope(500), manrope(600), manrope(700), manrope(800))
 
+/**
+ * DM Serif Display (Google Fonts, licence OFL — `assets/licenses/DMSerifDisplay-OFL.txt`) : titres de cinéma, contraste
+ * plein/délié. Une seule graisse (jamais de gras simulé) ; réservée aux tailles d'au moins 20 sp pour rester lisible à 3 m.
+ */
+val SerifDisplay = FontFamily(
+    Font(com.sokoul.iptv.R.font.dm_serif_display, FontWeight.Normal),
+    Font(com.sokoul.iptv.R.font.dm_serif_display_italic, FontWeight.Normal, androidx.compose.ui.text.font.FontStyle.Italic),
+)
+
+/** Taille minimale de la police à empattements. */
+const val SERIF_MIN_SP = 20
+
 private fun style(size: Int, weight: FontWeight = FontWeight.Normal, spacing: Float = 0f, line: Int? = null) = TextStyle(
     fontFamily = Manrope, fontSize = size.sp, fontWeight = weight, letterSpacing = spacing.sp,
     lineHeight = line?.sp ?: androidx.compose.ui.unit.TextUnit.Unspecified,

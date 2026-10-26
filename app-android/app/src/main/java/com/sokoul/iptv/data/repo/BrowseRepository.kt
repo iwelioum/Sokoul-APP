@@ -318,7 +318,7 @@ class BrowseRepository @Inject constructor(
         return BrowseRow(
             "finish-saga", "Finissez la saga $clean",
             if (left.size > 1) "Il vous reste ${left.size} films à découvrir." else "Plus qu'un film pour boucler la boucle.",
-            RowStyle.LANDSCAPE, left, seeAll = GridSpec.Saga(collectionId).encode(),
+            RowStyle.LANDSCAPE, left, seeAll = GridSpec.Saga(collectionId).encode(), emphasis = clean,
         )
     }
 
@@ -414,6 +414,7 @@ class BrowseRepository @Inject constructor(
         return BrowseRow(
             "byw-$index", title, tagline, RowStyle.LANDSCAPE, works,
             seeAll = GridSpec.Ids(type, works.map { it.id }).encode(),
+            emphasis = meta.title,
         )
     }
 

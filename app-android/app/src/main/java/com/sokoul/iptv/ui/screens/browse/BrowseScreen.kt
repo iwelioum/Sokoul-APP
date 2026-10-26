@@ -415,7 +415,7 @@ private fun RowView(
     val pid = vm.ui.value.playlist?.id ?: 0
     val seeAllAction = if (row.seeAll != null) onSeeAll else null
     Column(Modifier.padding(top = l.rowSpacing / 2, bottom = l.rowSpacing / 2)) {
-        if (row.style != RowStyle.PLATFORMS) RowHeader(row.title, row.tagline, row.platform, seeAllAction)
+        if (row.style != RowStyle.PLATFORMS) RowHeader(row.title, row.tagline, row.platform, seeAllAction, kicker = com.sokoul.iptv.data.repo.RowKicker.of(row.id, row.title), emphasis = row.emphasis)
         val tvSeeAll: (@Composable () -> Unit)? = if (l.isTv && seeAllAction != null) {
             { Box(m("__see_all")) { SeeAllCard(seeAllAction, landscape = row.style == RowStyle.LANDSCAPE || row.style == RowStyle.CONTINUE) } }
         } else null

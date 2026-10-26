@@ -113,15 +113,28 @@ fun SkeletonRow(landscape: Boolean = false) {
 // --- en-tête de rangée ---------------------------------------------------------------------------
 
 @Composable
-fun RowHeader(title: String, tagline: String?, platform: Platform? = null, onSeeAll: (() -> Unit)? = null) {
+fun RowHeader(
+    title: String, tagline: String?, platform: Platform? = null, onSeeAll: (() -> Unit)? = null,
+    kicker: String? = null, emphasis: String? = null,
+) {
     val l = LocalLayout.current
     Row(Modifier.fillMaxWidth().padding(start = l.margin, end = l.margin, bottom = 10.dp), verticalAlignment = Alignment.Bottom) {
         Column(Modifier.weight(1f)) {
+            // étiquette d'accent : pourquoi cette rangée est là
+            if (kicker != null) Text(kicker, Modifier.padding(bottom = 2.dp), style = com.sokoul.iptv.ui.theme.Type.Kicker, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (platform != null) {
                     PlatformBadge(platform, Modifier.padding(end = 10.dp), large = true)
                 }
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    rowTitle(title, emphasis), Modifier.weight(4f, fill = false), style = com.sokoul.iptv.ui.theme.Type.Section,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                // filet dégradé qui prolonge le titre
+                Box(
+                    Modifier.padding(start = 16.dp).weight(1f).height(1.dp).widthIn(min = 24.dp)
+                        .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(SokoulColors.Accent.copy(alpha = 0.55f), androidx.compose.ui.graphics.Color.Transparent)))
+                )
             }
             if (!tagline.isNullOrBlank()) {
                 Text(tagline, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -110,6 +110,8 @@ data class BrowseRow(
     val platform: Platform? = null,
     /** Grille « Tout voir » (voir [BrowseRepository.grid]). */
     val seeAll: String? = null,
+    /** Partie du titre mise en italique (le titre d'une œuvre : « Parce que vous avez regardé *Dune* »). */
+    val emphasis: String? = null,
 ) {
     val isEmpty get() = works.isEmpty() && sagas.isEmpty() && platforms.isEmpty() && channels.isEmpty() && chips.isEmpty()
 }

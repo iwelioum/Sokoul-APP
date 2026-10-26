@@ -223,8 +223,7 @@ private fun TextTab(d: Dest, selected: Boolean, visible: State<Boolean>, modifie
     ) { focused ->
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 7.dp, bottom = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                d.label, maxLines = 1, style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, letterSpacing = 0.2.sp),
-                fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.SemiBold,
+                d.label, maxLines = 1, style = com.sokoul.iptv.ui.theme.Type.Tab,
                 color = when { focused -> SokoulColors.OnLight; selected -> SokoulColors.TextPrimary; else -> SokoulColors.TextSecondary },
             )
             Box(

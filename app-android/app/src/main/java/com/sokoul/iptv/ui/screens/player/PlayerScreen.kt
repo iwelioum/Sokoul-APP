@@ -780,7 +780,7 @@ private fun LiveInfoBar(ui: PlayerUi) {
             }
             Column(Modifier.weight(1f).padding(start = if (compact) 12.dp else 22.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(ui.title, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(ui.title, style = if (compact) MaterialTheme.typography.headlineSmall else com.sokoul.iptv.ui.theme.Type.PlayerTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (ui.isFavorite) Icon(Icons.Default.Star, null, Modifier.padding(start = 8.dp).size(18.dp), tint = SokoulColors.Warning)
                     if (ui.canCatchup) Icon(Icons.Default.History, null, Modifier.padding(start = 8.dp).size(18.dp), tint = SokoulColors.TextSecondary)
                 }
