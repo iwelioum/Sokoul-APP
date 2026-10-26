@@ -118,6 +118,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -128,8 +129,10 @@ data class SearchUi(
     val programs: List<Pair<ProgramEntity, ChannelEntity?>>,
     val movies: List<Work>,
     val series: List<Work>,
+    /** « Aussi disponible via Real-Debrid ». */
+    val debrid: List<Work> = emptyList(),
 ) {
-    val isEmpty get() = channels.isEmpty() && programs.isEmpty() && movies.isEmpty() && series.isEmpty()
+    val isEmpty get() = channels.isEmpty() && programs.isEmpty() && movies.isEmpty() && series.isEmpty() && debrid.isEmpty()
 }
 
 /** Suggestions affichées quand le champ est vide : tendances de la semaine présentes dans l'abonnement. */
@@ -144,6 +147,8 @@ class SearchViewModel @Inject constructor(
     private val browse: BrowseRepository,
     private val enrich: EnrichmentRepository,
     private val settings: com.sokoul.iptv.data.SettingsStore,
+    private val debrid: com.sokoul.iptv.data.debrid.DebridSources,
+    private val tmdb: com.sokoul.iptv.data.net.TmdbClient,
 ) : ViewModel() {
     val query = MutableStateFlow("")
     /** Recherches récentes (8 dernières), proposées quand le champ est vide. */
@@ -184,16 +189,29 @@ class SearchViewModel @Inject constructor(
 
     val results: StateFlow<SearchUi?> = combine(query.debounce(300), scope.filterNotNull()) { q, s -> q.trim() to s }
         .distinctUntilChanged()
-        .mapLatest { (q, s) ->
-            val p = playlists.activeNow() ?: return@mapLatest null
+        .transformLatest { (q, s) ->
+            val p = playlists.activeNow() ?: return@transformLatest emit(null)
             playlistId = p.id
-            if (q.length < 2) return@mapLatest null
+            if (q.length < 2) return@transformLatest emit(null)
             val r = catalog.search(p.id, q, s)
             val movies = if (r.movies.isEmpty()) emptyList() else vod.groupMovies(p.id, r.movies).map { it.item.toWork(it.versions) }
             val series = if (r.series.isEmpty()) emptyList() else vod.groupSeries(p.id, r.series).map { it.item.toWork(it.versions) }
             enrich.request(p.id, (movies + series).take(30))
-            SearchUi(r.channels, r.programs, enrich.decorate(p.id, movies), enrich.decorate(p.id, series))
+            val ui = SearchUi(r.channels, r.programs, enrich.decorate(p.id, movies), enrich.decorate(p.id, series))
+            emit(ui)
+            // puis ce que Real-Debrid peut lire en plus (titres TMDB absents de l'abonnement)
+            val extra = debridExtras(q, s, movies + series)
+            if (extra.isNotEmpty()) emit(ui.copy(debrid = extra))
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Titres TMDB que l'abonnement n'a pas, lisibles via Real-Debrid (au plus 15 ; rien sans Real-Debrid ou en profil Enfant). */
+    private suspend fun debridExtras(q: String, s: Set<SearchKind>, have: List<Work>): List<Work> {
+        if (SearchKind.MOVIES !in s && SearchKind.SERIES !in s) return emptyList()
+        if (!runCatching { debrid.enabled() }.getOrDefault(false)) return emptyList()
+        val key = runCatching { settings.current().tmdbApiKey }.getOrDefault("")
+        val found = runCatching { tmdb.searchMulti(key, q) }.getOrDefault(emptyList())
+        return com.sokoul.iptv.data.debrid.DebridSearch.extras(found, have, movies = SearchKind.MOVIES in s, series = SearchKind.SERIES in s)
+    }
 
     /** Complétion : 3 titres du catalogue dont un mot commence par la saisie. */
     val completions: StateFlow<List<String>> = combine(query.debounce(150), scope.filterNotNull()) { q, s -> q.trim() to s }
@@ -381,6 +399,7 @@ private fun SearchResults(
     val l = LocalLayout.current
     val state = rememberLazyListState()
     val open: (Work) -> Unit = { w -> onPicked(); nav.openWork(w) }
+    val openRd: (Work) -> Unit = { w -> onPicked(); com.sokoul.iptv.ui.components.debridRoute(pid, w)?.let { nav.navigateOnce(it) } }
     when {
         r == null && trending.isEmpty() && recents.isEmpty() ->
             EmptyState(Icons.Default.Search, "Recherche", "Tapez au moins 2 lettres.", modifier)
@@ -419,6 +438,7 @@ private fun SearchResults(
             val series = r.series.filterNot { it.uid in bestIds }
             if (movies.isNotEmpty()) landscapeRow("Films", null, movies, "movies", memory, open)
             if (series.isNotEmpty()) landscapeRow("Séries", null, series, "series", memory, open)
+            if (r.debrid.isNotEmpty()) landscapeRow("Aussi disponible via Real-Debrid", "Hors abonnement · OK pour lancer la meilleure version", r.debrid, "rd", memory, openRd)
             if (r.channels.isNotEmpty()) item("channels") {
                 Column(Modifier.padding(bottom = l.rowSpacing)) {
                     RowHeader("Chaînes", count(r.channels.size))

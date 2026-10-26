@@ -255,6 +255,12 @@ class TmdbClient @Inject constructor(
     }
 
     /** Œuvre portant exactement ce titre (français ou original), la plus populaire : sert à rapprocher un nom (TasteDive). */
+    /** Recherche films et séries ensemble (une page, cache 1 jour) : rangée Real-Debrid de la recherche. */
+    suspend fun searchMulti(apiKey: String, query: String): List<TmdbItem> {
+        if (apiKey.isBlank() || query.trim().length < 2) return emptyList()
+        return safe { items(get(apiKey, "/3/search/multi", mapOf("query" to query.trim()), ttlMs = 24 * HOUR), "movie") } ?: emptyList()
+    }
+
     suspend fun findByName(apiKey: String, kind: String, title: String): TmdbItem? {
         if (apiKey.isBlank()) return null
         return safe {

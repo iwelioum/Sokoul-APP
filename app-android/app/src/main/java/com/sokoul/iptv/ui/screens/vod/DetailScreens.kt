@@ -182,6 +182,7 @@ class MovieDetailViewModel @Inject constructor(
     private val extrasRepo: ExtrasRepository,
     private val debrid: com.sokoul.iptv.data.debrid.DebridSources,
     private val gate: com.sokoul.iptv.player.ProviderGate,
+    private val trakt: com.sokoul.iptv.data.trakt.TraktSync,
 ) : ViewModel() {
     val details = MutableStateFlow<MovieDetails?>(null)
     /** Versions Real-Debrid trouvées (vide sans compte, sans extension ou sans résultat). */
@@ -280,7 +281,8 @@ class MovieDetailViewModel @Inject constructor(
     }
 
     fun toggleFavorite(shownId: String) = viewModelScope.launch {
-        playlist?.let { vod.toggleFavorite(it.id, ContentType.MOVIE, versions.value.map { v -> v.id }.ifEmpty { listOf(shownId) }, shownId) }
+        val added = playlist?.let { vod.toggleFavorite(it.id, ContentType.MOVIE, versions.value.map { v -> v.id }.ifEmpty { listOf(shownId) }, shownId) } ?: false
+        if (added) details.value?.tmdb?.id?.let { trakt.addedToList(com.sokoul.iptv.data.trakt.TraktItem(it)) }
     }
     fun clearProgress() = viewModelScope.launch {
         playlist?.let { p -> vod.clearMovieProgress(p.id, versions.value.map { it.id }) }
@@ -291,6 +293,7 @@ class MovieDetailViewModel @Inject constructor(
         val p = playlist ?: return@launch
         val m = details.value?.movie ?: return@launch
         val ids = versions.value.map { it.id }.ifEmpty { listOf(m.id) }
+        if (watched) details.value?.tmdb?.id?.let { trakt.markedWatched(listOf(com.sokoul.iptv.data.trakt.TraktItem(it))) }
         if (watched) library.setWatched(p.id, ContentType.MOVIE, ids.first(), null, m.title, true)
         else vod.clearMovieProgress(p.id, ids)
     }
@@ -483,7 +486,30 @@ class SeriesDetailViewModel @Inject constructor(
     private val enrich: EnrichmentRepository,
     private val browse: BrowseRepository,
     private val extrasRepo: ExtrasRepository,
+    private val debrid: com.sokoul.iptv.data.debrid.DebridSources,
+    private val trakt: com.sokoul.iptv.data.trakt.TraktSync,
 ) : ViewModel() {
+    /** Versions Real-Debrid d'un épisode, par (saison, épisode), chargées à la demande. */
+    val episodeRd = MutableStateFlow<Map<Pair<Int, Int>, List<com.sokoul.iptv.data.debrid.DebridStream>>>(emptyMap())
+    private val rdAsked = HashSet<Pair<Int, Int>>()
+    /** Épisodes dont la meilleure version est sur Real-Debrid (mieux que l'IPTV). */
+    val rdFirst = MutableStateFlow<Set<Pair<Int, Int>>>(emptySet())
+
+    /** Cherche les versions Real-Debrid d'un épisode (une fois ; rien sans compte ou en profil Enfant). */
+    fun loadEpisodeRd(season: Int, episode: Int) = viewModelScope.launch {
+        val tmdbId = tmdb.value?.id ?: return@launch
+        val k = season to episode
+        if (!rdAsked.add(k)) return@launch
+        if (!debrid.enabled()) return@launch
+        val q = com.sokoul.iptv.data.debrid.DebridQuery(tmdbId, series = true, season = season, episode = episode)
+        val found = runCatching { debrid.find(q) }.getOrDefault(emptyList())
+        // classé avec la version IPTV affichée : si une version RD passe devant, « Lecture » la lance
+        val iptv = versions.value.firstOrNull { it.id == primaryId.value }?.let { listOf(it.toVersion().copy(measured = qualities.value[it.id])) }.orEmpty()
+        val ranked = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, found, debrid.prefs())
+        if (ranked.firstOrNull() is com.sokoul.iptv.data.debrid.Candidate.Debrid) rdFirst.value = rdFirst.value + k
+        episodeRd.value = episodeRd.value + (k to ranked.filterIsInstance<com.sokoul.iptv.data.debrid.Candidate.Debrid>().map { it.stream })
+    }
+
     private var openedId: String? = null
     private val pidFlow = MutableStateFlow<Long?>(null)
     var playlist: PlaylistEntity? = null
@@ -602,7 +628,8 @@ class SeriesDetailViewModel @Inject constructor(
     }
 
     fun toggleFavorite(shownId: String) = viewModelScope.launch {
-        playlist?.let { vod.toggleFavorite(it.id, ContentType.SERIES, versions.value.map { v -> v.id }.ifEmpty { listOf(shownId) }, shownId) }
+        val added = playlist?.let { vod.toggleFavorite(it.id, ContentType.SERIES, versions.value.map { v -> v.id }.ifEmpty { listOf(shownId) }, shownId) } ?: false
+        if (added) tmdb.value?.id?.let { trakt.addedToList(com.sokoul.iptv.data.trakt.TraktItem(it)) }
     }
 
     /** Vu / non vu, sur toutes les versions de l'épisode (même saison/numéro). */
@@ -613,6 +640,7 @@ class SeriesDetailViewModel @Inject constructor(
         val keys = list.map { it.season to it.episode }.toSet()
         val same = allEpisodes.value.filter { (it.season to it.episode) in keys }.ifEmpty { list }
         same.forEach { e -> library.setWatched(p.id, ContentType.SERIES, e.id, e.seriesId, e.title, watched, e.season, e.episode) }
+        if (watched) tmdb.value?.id?.let { t -> trakt.markedWatched(keys.map { (s, n) -> com.sokoul.iptv.data.trakt.TraktItem(t, s, n) }) }
     }
 
     companion object {
@@ -641,6 +669,8 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val primaryId by vm.primaryId.collectAsStateWithLifecycle()
     val preferredId by vm.preferredId.collectAsStateWithLifecycle()
     val allEpisodes by vm.allEpisodes.collectAsStateWithLifecycle()
+    val episodeRd by vm.episodeRd.collectAsStateWithLifecycle()
+    val rdFirst by vm.rdFirst.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
     val memory = rememberFocusMemory()
@@ -675,6 +705,11 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val playEpisode = { e: EpisodeEntity, fromStart: Boolean ->
         nav.navigateOnce(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = e.seriesId, fromStart = fromStart))
     }
+    val playEpisodeRd = { e: EpisodeEntity, key: String, fromStart: Boolean ->
+        nav.navigateOnce(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = e.seriesId, fromStart = fromStart, source = key))
+    }
+    // Real-Debrid de l'épisode du bouton principal : cherché dès l'ouverture (une requête)
+    LaunchedEffect(action?.episode?.id, tmdb?.id) { action?.episode?.let { vm.loadEpisodeRd(it.season, it.episode) } }
     val seasonSeen = { n: Int ->
         val list = episodes.filter { it.season == n }
         list.isNotEmpty() && list.all { bySe[it.season to it.episode]?.finished == true }
@@ -700,11 +735,12 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     )
     val primary = action?.let { a ->
         val p = (a as? SeriesAction.Resume)?.progress
+        val rd = episodeRd[a.episode.season to a.episode.episode]?.firstOrNull()?.takeIf { (a.episode.season to a.episode.episode) in rdFirst }
         PrimaryAction(
             label = EpisodeResolver.label(a),
-            detail = EpisodeResolver.hint(a),
+            detail = listOfNotNull(EpisodeResolver.hint(a), rd?.let { "Real-Debrid · " + com.sokoul.iptv.ui.components.SourceLabels.text(it.toSource()) }).joinToString(" · ").ifEmpty { null },
             progress = p?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
-            onClick = { playEpisode(a.episode, a is SeriesAction.Rewatch) },
+            onClick = { if (rd != null) playEpisodeRd(a.episode, rd.key, a is SeriesAction.Rewatch) else playEpisode(a.episode, a is SeriesAction.Rewatch) },
         )
     }
     val actions = buildList {
@@ -823,6 +859,8 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
         )
     }
     episodeMenu?.let { e ->
+        LaunchedEffect(e.id) { vm.loadEpisodeRd(e.season, e.episode) }
+        val rdList = episodeRd[e.season to e.episode].orEmpty()
         val p = bySe[e.season to e.episode]
         val watched = p?.finished == true
         val resumable = p != null && !p.finished && LibraryRepository.resumeFrom(p) > 0
@@ -831,6 +869,10 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
             buildList {
                 add(MenuOption(if (resumable) "Reprendre" else "Lecture", Icons.Default.PlayArrow) { playEpisode(e, false) })
                 if (resumable) add(MenuOption("Depuis le début", Icons.Default.Replay) { playEpisode(e, true) })
+                // versions Real-Debrid de l'épisode (au plus 6, les meilleures d'abord)
+                rdList.take(6).forEach { st ->
+                    add(MenuOption("Real-Debrid · " + com.sokoul.iptv.ui.components.SourceLabels.text(st.toSource()), Icons.Default.PlayArrow) { playEpisodeRd(e, st.key, false) })
+                }
                 add(MenuOption(if (watched) "Marquer comme non vu" else "Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(e, !watched) })
             },
             subtitle = e.plot,

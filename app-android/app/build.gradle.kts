@@ -27,7 +27,7 @@ android {
         val localProps = Properties().also { p ->
             rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { p.load(it) }
         }
-        listOf("tvdb", "fanart", "motn", "watchmode", "tastedive", "omdb", "opensubtitles", "subdl", "realdebrid").forEach { k ->
+        listOf("tvdb", "fanart", "motn", "watchmode", "tastedive", "omdb", "opensubtitles", "subdl", "realdebrid", "trakt", "traktsecret").forEach { k ->
             val v = localProps.getProperty("sokoul.key.$k").orEmpty().trim().filter { it.isLetterOrDigit() || it in "._-" }
             buildConfigField("String", "KEY_${k.uppercase()}", "\"$v\"")
         }

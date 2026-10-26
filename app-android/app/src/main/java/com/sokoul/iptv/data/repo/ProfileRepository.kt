@@ -5,6 +5,7 @@ import com.sokoul.iptv.data.db.ProfileEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,10 +25,19 @@ class ProfileRepository @Inject constructor(private val db: AppDatabase) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val dao get() = db.profiles()
 
-    val profiles: StateFlow<List<ProfileEntity>> = dao.observeAll().catch { }.stateIn(scope, SharingStarted.Eagerly, emptyList())
-    val current: StateFlow<ProfileEntity?> = dao.observeCurrent().catch { }.stateIn(scope, SharingStarted.Eagerly, null)
+    val profiles: StateFlow<List<ProfileEntity>> = dao.observeAll().catch { }.stateIn(scope, SharingStarted.Lazily, emptyList())
+    val current: StateFlow<ProfileEntity?> = dao.observeCurrent().catch { }.stateIn(scope, SharingStarted.Lazily, null)
     /** Profil Enfant actif (faux tant que rien n'est chargé : le contrôle parental fait alors foi). */
-    val kids: StateFlow<Boolean> = current.map { it?.kids == true }.stateIn(scope, SharingStarted.Eagerly, false)
+    val kids: StateFlow<Boolean> = current.map { it?.kids == true }.stateIn(scope, SharingStarted.Lazily, false)
+
+    /**
+     * Démarre le suivi du profil en cours (appelé par l'application) : le contrôle parental lit [kids] sans attendre.
+     * Rien ne démarre seul, si bien qu'un test qui ferme sa base ne croise jamais une lecture en cours.
+     */
+    fun start() {
+        scope.launch { kids.collect { } }
+        scope.launch { profiles.collect { } }
+    }
 
     suspend fun currentId(): Long = dao.current()?.id ?: ProfileEntity.MAIN
     suspend fun isKids(): Boolean = dao.current()?.kids == true

@@ -134,6 +134,8 @@ class SettingsViewModel @Inject constructor(
     private val indexer: com.sokoul.iptv.data.repo.CatalogIndexer,
     private val rd: com.sokoul.iptv.data.debrid.RealDebridClient,
     private val profileRepo: com.sokoul.iptv.data.repo.ProfileRepository,
+    private val traktClient: com.sokoul.iptv.data.trakt.TraktClient,
+    private val traktSync: com.sokoul.iptv.data.trakt.TraktSync,
 ) : ViewModel() {
     // --- profils -----------------------------------------------------------------------------
     val profiles = profileRepo.profiles
@@ -144,7 +146,7 @@ class SettingsViewModel @Inject constructor(
     fun useProfile(id: Long) = viewModelScope.launch { profileRepo.switchTo(id); parental.lock() }
 
     // --- Real-Debrid : association par code ------------------------------------------------
-    data class Pairing(val code: String?, val message: String)
+    data class Pairing(val code: String?, val message: String, val service: String = "Real-Debrid")
     val pairing = MutableStateFlow<Pairing?>(null)
     val debridLinked = MutableStateFlow(false)
     private var pairJob: kotlinx.coroutines.Job? = null
@@ -179,6 +181,67 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun cancelPairing() { pairJob?.cancel(); pairing.value = null }
+
+    // --- Trakt (par profil) ---------------------------------------------------------------------
+    data class TraktState(val app: Boolean = false, val linked: Boolean = false, val user: String? = null, val last: String? = null, val busy: Boolean = false)
+    val trakt = MutableStateFlow(TraktState())
+
+    fun refreshTrakt() = viewModelScope.launch {
+        val id = profileRepo.currentId()
+        trakt.value = trakt.value.copy(app = traktClient.appConfigured(), linked = traktClient.linked(id), user = traktClient.username(id))
+    }
+
+    fun setTraktApp(key: String, value: String) = viewModelScope.launch {
+        store.update { it.copy(apiKeys = it.apiKeys + (key to value.trim())) }
+        refreshTrakt()
+    }
+
+    /** Code à saisir sur trakt.tv/activate pour le profil en cours, puis attente de la validation. */
+    fun startTraktPairing() {
+        pairJob?.cancel()
+        pairing.value = Pairing(null, "Demande d'un code…", "Trakt")
+        pairJob = viewModelScope.launch {
+            try {
+                val profile = profileRepo.currentId()
+                val code = traktClient.deviceCode()
+                pairing.value = Pairing(code.userCode, "Sur votre téléphone, ouvrez ${code.verificationUrl.removePrefix("https://")} et saisissez ce code. Cette fenêtre se fermera seule.", "Trakt")
+                while (System.currentTimeMillis() < code.expiresAtMs) {
+                    kotlinx.coroutines.delay(code.intervalS.coerceAtLeast(5) * 1000L)
+                    if (traktClient.pollDevice(code, profile)) {
+                        pairing.value = null
+                        refreshTrakt()
+                        syncTrakt()
+                        return@launch
+                    }
+                }
+                pairing.value = Pairing(null, "Code expiré : recommencez.", "Trakt")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                pairing.value = Pairing(null, e.message ?: "Association impossible", "Trakt")
+            }
+        }
+    }
+
+    fun unlinkTrakt() = viewModelScope.launch { traktClient.unlink(profileRepo.currentId()); refreshTrakt() }
+
+    /** Import immédiat (vus et liste « à voir ») pour le profil en cours. */
+    fun syncTrakt() = viewModelScope.launch {
+        trakt.value = trakt.value.copy(busy = true)
+        val msg = try {
+            val r = traktSync.sync(profileRepo.currentId())
+            if (r.movies + r.episodes + r.listed == 0) "À jour" else listOfNotNull(
+                r.movies.takeIf { it > 0 }?.let { "$it film${if (it > 1) "s" else ""} vu${if (it > 1) "s" else ""}" },
+                r.episodes.takeIf { it > 0 }?.let { "$it épisode${if (it > 1) "s" else ""} vu${if (it > 1) "s" else ""}" },
+                r.listed.takeIf { it > 0 }?.let { "$it ajouté${if (it > 1) "s" else ""} à Ma liste" },
+            ).joinToString(" · ")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.message ?: "Synchronisation impossible"
+        }
+        trakt.value = trakt.value.copy(busy = false, last = msg)
+    }
 
     fun unlinkDebrid() = viewModelScope.launch {
         rd.unlink(); debridLinked.value = false
@@ -310,6 +373,7 @@ fun SettingsScreen(nav: NavHostController) {
     var sourceMenu by remember { mutableStateOf<ApiService?>(null) }
     val debridLinked by vm.debridLinked.collectAsStateWithLifecycle()
     val pairing by vm.pairing.collectAsStateWithLifecycle()
+    val traktState by vm.trakt.collectAsStateWithLifecycle()
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val currentProfile by vm.currentProfile.collectAsStateWithLifecycle()
     // profil Enfant : pas de réglages (l'icône est déjà masquée ; garde-fou si on arrive ici quand même)
@@ -373,6 +437,7 @@ fun SettingsScreen(nav: NavHostController) {
         toast = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
         debridLinked = debridLinked,
         pairDebrid = { vm.startPairing() },
+        trakt = traktState,
         profiles = profiles,
         currentProfileId = currentProfile?.id ?: com.sokoul.iptv.data.db.ProfileEntity.MAIN,
     )
@@ -404,7 +469,7 @@ fun SettingsScreen(nav: NavHostController) {
     choice?.let { (title, options) -> OptionsDialog(title, options, onDismiss = { choice = null }) }
     pairing?.let { p ->
         OptionsDialog(
-            p.code?.let { "Code : $it" } ?: "Association Real-Debrid",
+            p.code?.let { "Code ${p.service} : $it" } ?: "Association ${p.service}",
             listOf(MenuOption("Annuler", Icons.Default.Delete) { vm.cancelPairing() }),
             subtitle = p.message,
             onDismiss = { vm.cancelPairing() },

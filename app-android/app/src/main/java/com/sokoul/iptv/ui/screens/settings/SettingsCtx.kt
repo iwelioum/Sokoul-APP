@@ -43,4 +43,5 @@ internal class SettingsCtx(
     val pairDebrid: () -> Unit = {},
     val profiles: List<com.sokoul.iptv.data.db.ProfileEntity> = emptyList(),
     val currentProfileId: Long = 0,
+    val trakt: SettingsViewModel.TraktState = SettingsViewModel.TraktState(),
 )

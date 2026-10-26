@@ -132,6 +132,7 @@ class PlayerViewModel @Inject constructor(
     private val debrid: com.sokoul.iptv.data.debrid.DebridSources,
     private val rdResolver: com.sokoul.iptv.data.debrid.DebridResolver,
     private val cloud: com.sokoul.iptv.data.debrid.DebridCloud,
+    private val trakt: com.sokoul.iptv.data.trakt.TraktSync,
 ) : ViewModel() {
 
     val route: PlayerRoute = savedState.toRoute()
@@ -1054,17 +1055,33 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /** Titre en cours pour Trakt (identifiants TMDB du film ou de l'épisode), null en direct ou sans identifiant. */
+    private fun traktItem(): com.sokoul.iptv.data.trakt.TraktItem? {
+        if (_ui.value.isLive) return null
+        val q = debridQuery ?: return null
+        return if (q.series) q.season?.let { s -> q.episode?.let { e -> com.sokoul.iptv.data.trakt.TraktItem(q.tmdbId, s, e) } }
+        else com.sokoul.iptv.data.trakt.TraktItem(q.tmdbId)
+    }
+
+    private fun percent(): Float? {
+        val p = _player.value?.player ?: return null
+        val dur = p.duration
+        return if (dur == C.TIME_UNSET || dur <= 0) null else p.currentPosition * 100f / dur
+    }
+
     suspend fun saveNow() {
         val p = _player.value?.player ?: return
         val dur = p.duration
         val pos = p.currentPosition
         if (dur == C.TIME_UNSET || dur <= 0 || pos < 5_000) return
         saver?.invoke(pos, dur)
+        if (p.isPlaying) trakt.playing(traktItem(), pos * 100f / dur)
     }
 
     /** Pause (bouton, télécommande) : la position est enregistrée tout de suite. */
     fun pauseAndSave() {
         _player.value?.player?.pause()
+        trakt.paused(percent())
         viewModelScope.launch { saveNow() }
     }
 
@@ -1075,6 +1092,7 @@ class PlayerViewModel @Inject constructor(
         if (timeshift.active) stopTimeshift(backToNetwork = false)
         if (_ui.value.isLive) { sp.stop(); return }
         sp.player.pause()
+        trakt.paused(percent())
         viewModelScope.launch { saveNow() }
     }
 
@@ -1396,6 +1414,7 @@ class PlayerViewModel @Inject constructor(
     fun state(): StateFlow<StreamState>? = _player.value?.state
 
     override fun onCleared() {
+        trakt.stopped(percent())
         tickJob?.cancel()
         timeshift.stop()
         val sp = _player.value

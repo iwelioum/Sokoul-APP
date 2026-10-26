@@ -134,10 +134,12 @@ class VodRepository @Inject constructor(
     fun observeAnyFavorite(pid: Long, type: ContentType, ids: List<String>) = db.vod().observeAnyFavorite(pid, type, ids)
 
     /** « Ma liste » sur l'œuvre : retire toutes les versions favorites, sinon ajoute la version affichée. */
-    suspend fun toggleFavorite(pid: Long, type: ContentType, ids: List<String>, shownId: String) {
+    /** Ajoute ou retire de Ma liste ; true si le titre vient d'être ajouté. */
+    suspend fun toggleFavorite(pid: Long, type: ContentType, ids: List<String>, shownId: String): Boolean {
         val favs = db.vod().favoriteAmong(pid, type, ids)
-        if (favs.isNotEmpty()) favs.forEach { db.library().removeFavorite(pid, type, it) }
-        else db.library().addFavorite(com.sokoul.iptv.data.db.FavoriteEntity(pid, type, shownId, profileId = db.currentProfileId()))
+        if (favs.isNotEmpty()) { favs.forEach { db.library().removeFavorite(pid, type, it) }; return false }
+        db.library().addFavorite(com.sokoul.iptv.data.db.FavoriteEntity(pid, type, shownId, profileId = db.currentProfileId()))
+        return true
     }
 
     suspend fun clearMovieProgress(pid: Long, ids: List<String>) = ids.forEach { db.library().deleteProgress(pid, ContentType.MOVIE, it) }

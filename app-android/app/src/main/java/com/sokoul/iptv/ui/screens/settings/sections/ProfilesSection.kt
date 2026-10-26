@@ -10,6 +10,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.runtime.LaunchedEffect
+import com.sokoul.iptv.data.trakt.TraktClient
 import com.sokoul.iptv.data.db.ProfileEntity
 import com.sokoul.iptv.data.repo.ProfileRepository
 import com.sokoul.iptv.ui.components.MenuOption
@@ -43,6 +49,45 @@ internal fun LazyListScope.profilesSection(c: SettingsCtx) {
             if (c.s.parentalPin.isBlank()) "Définissez un code parental (Contrôle parental) : sans lui, n'importe qui peut quitter le profil Enfant."
             else "Quitter un profil Enfant demande le code parental.",
     )
+    traktRows(c)
+}
+
+/** Trakt du profil en cours : appli de l'utilisateur, association par code, import à la demande. */
+private fun LazyListScope.traktRows(c: SettingsCtx) {
+    val t = c.trakt
+    subsection("Trakt")
+    item("trakt-app") {
+        LaunchedEffect(c.currentProfileId) { c.vm.refreshTrakt() }
+        SettingRow(
+            "Appli Trakt", if (t.app) "Configurée" else "À renseigner",
+            "Créez une appli sur trakt.tv/oauth/applications (adresse de retour urn:ietf:wg:oauth:2.0:oob), puis saisissez son identifiant et son secret",
+            icon = Icons.Default.Key,
+        ) {
+            c.choose("Appli Trakt", listOf(
+                MenuOption("Identifiant (Client ID)…", Icons.Default.Key) {
+                    c.edit(TextEdit("Client ID de l'appli Trakt", "") { v -> c.vm.setTraktApp(TraktClient.K_ID, v) })
+                },
+                MenuOption("Secret (Client Secret)…", Icons.Default.Lock) {
+                    c.edit(TextEdit("Client Secret de l'appli Trakt", "") { v -> c.vm.setTraktApp(TraktClient.K_SECRET, v) })
+                },
+            ))
+        }
+    }
+    if (!t.app) return
+    item("trakt-link") {
+        SettingRow(
+            if (t.linked) "Profil associé à Trakt" else "Associer ce profil à Trakt",
+            if (t.linked) (t.user ?: "Associé") + " · Dissocier" else null,
+            "Ce que vous regardez est envoyé à Trakt ; ce que vous avez vu ailleurs et votre liste reviennent ici",
+            icon = Icons.Default.Link,
+        ) { if (t.linked) c.vm.unlinkTrakt() else c.vm.startTraktPairing() }
+    }
+    if (t.linked) item("trakt-sync") {
+        SettingRow(
+            "Synchroniser maintenant", if (t.busy) "En cours…" else t.last,
+            "Automatique toutes les 6 heures", icon = Icons.Default.Sync,
+        ) { if (!t.busy) c.vm.syncTrakt() }
+    }
 }
 
 private fun askName(c: SettingsCtx, kids: Boolean) {
