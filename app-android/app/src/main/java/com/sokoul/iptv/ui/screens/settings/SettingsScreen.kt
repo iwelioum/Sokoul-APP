@@ -42,6 +42,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.sokoul.iptv.ui.screens.settings.sections.aboutSection
+import com.sokoul.iptv.ui.screens.settings.sections.accountSection
+import com.sokoul.iptv.ui.screens.settings.sections.backupSection
+import com.sokoul.iptv.ui.screens.settings.sections.librarySection
+import com.sokoul.iptv.ui.screens.settings.sections.parentalSection
+import com.sokoul.iptv.ui.screens.settings.sections.playbackSection
+import com.sokoul.iptv.ui.screens.settings.sections.sourcesSection
+import com.sokoul.iptv.ui.screens.settings.sections.televisionSection
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -251,7 +260,7 @@ fun SettingsScreen(nav: NavHostController) {
     var confirmDelete by remember { mutableStateOf<PlaylistEntity?>(null) }
     var pinStep by remember { mutableStateOf<PinStep?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
-    val firstFocus = remember { FocusRequester() }
+    val advanced = rememberSaveable { mutableStateOf(false) }
 
     var exportPass by remember { mutableStateOf<String?>(null) }
     var exportMenu by remember { mutableStateOf(false) }
@@ -279,191 +288,42 @@ fun SettingsScreen(nav: NavHostController) {
         else vm.exportToFolder(pass, toast)
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = LocalLayout.current.margin, end = LocalLayout.current.margin, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        item { ScreenHeader("Réglages") }
+    val ctx = SettingsCtx(
+        vm = vm, s = s, nav = nav, context = context, playlists = playlists, active = active,
+        status = { status[it] }, epgStatus = { epgStatus[it] }, flagged = flagged,
+        serviceState = { serviceStates[it] }, testResult = { testResults[it] }, testing = testing,
+        advanced = advanced,
+        choose = { title, options -> choice = title to options },
+        edit = { textEdit = it },
+        playlistMenu = { playlistMenu = it },
+        pin = { pinStep = it },
+        sourceMenu = { sourceMenu = it },
+        exportMenu = { exportMenu = true },
+        restore = { if (hasPicker) importLauncher.launch(arrayOf("application/json", "*/*")) else restoreMenu = true },
+        toast = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
+    )
 
-        section("Playlists")
-        items(playlists, key = { it.id }) { p ->
-            PlaylistRow(p, p.id == active?.id, status[p.id], epgStatus[p.id], Modifier.then(if (p == playlists.first()) Modifier.focusRequester(firstFocus) else Modifier)) { playlistMenu = p }
-        }
-        item { SettingRow("Ajouter une playlist", "Xtream Codes, lien M3U ou fichier local", icon = Icons.Default.Add) { nav.navigate(PlaylistEditRoute()) } }
-
-        section("Lecteur")
-        item {
-            SettingRow("Format des chaînes (Xtream)", s.liveFormat.label) {
-                choice = "Format des chaînes" to LiveFormat.entries.map { f -> MenuOption(f.label, selected = f == s.liveFormat) { vm.update { it.copy(liveFormat = f) } } }
-            }
-        }
-        item {
-            SettingRow("Mémoire tampon", s.bufferProfile.label) {
-                choice = "Mémoire tampon" to BufferProfile.entries.map { b -> MenuOption(b.label, selected = b == s.bufferProfile) { vm.update { it.copy(bufferProfile = b) } } }
-            }
-        }
-        item {
-            SettingRow("Décodage", s.decoderMode.label, "Passez en « Logiciel prioritaire » si le son ou l'image ne passe pas sur certaines chaînes") {
-                choice = "Décodage" to DecoderMode.entries.map { d -> MenuOption(d.label, selected = d == s.decoderMode) { vm.update { it.copy(decoderMode = d) } } }
-            }
-        }
-        item {
-            SettingRow("Langue audio préférée", languageName(s.audioLanguage)) {
-                choice = "Langue audio" to languages.map { (code, name) -> MenuOption(name, selected = code == s.audioLanguage) { vm.update { it.copy(audioLanguage = code) } } }
-            }
-        }
-        item {
-            SettingRow("Sous-titres par défaut", if (s.subtitleLanguage.isBlank()) "Désactivés" else languageName(s.subtitleLanguage)) {
-                choice = "Sous-titres" to (listOf("" to "Désactivés") + languages).map { (code, name) ->
-                    MenuOption(name, selected = code == s.subtitleLanguage) { vm.update { it.copy(subtitleLanguage = code) } }
-                }
-            }
-        }
-        item { ToggleRow("Épisode suivant automatique", s.autoplayNextEpisode) { v -> vm.update { it.copy(autoplayNextEpisode = v) } } }
-        item {
-            SettingRow("User-Agent", s.userAgent) {
-                textEdit = TextEdit("User-Agent", s.userAgent) { v -> vm.update { it.copy(userAgent = v.ifBlank { AppSettings.DEFAULT_USER_AGENT }) } }
-            }
-        }
-
-        section("Télévision")
-        item {
-            SettingRow("Au démarrage", if (s.resumeLastChannel) "Dernière chaîne regardée" else "Accueil", "Pour ceux qui allument la box pour regarder la télé") {
-                choice = "Au démarrage" to listOf(false to "Accueil", true to "Dernière chaîne regardée").map { (v, label) ->
-                    MenuOption(label, selected = v == s.resumeLastChannel) { vm.update { it.copy(resumeLastChannel = v) } }
-                }
-            }
-        }
-        item {
-            SettingRow("Sens du zapping", zapLabel(s.zapInverted)) {
-                choice = "Sens du zapping" to listOf(false, true).map { v ->
-                    MenuOption(zapLabel(v), selected = v == s.zapInverted) { vm.update { it.copy(zapInverted = v) } }
-                }
-            }
-        }
-
-        section("Guide TV et mises à jour")
-        item {
-            SettingRow("Décalage horaire du guide", offsetLabel(s.epgOffsetMinutes), "À ajuster si les programmes sont décalés") {
-                choice = "Décalage du guide" to (-12..12).map { h -> h * 60 }.map { m ->
-                    MenuOption(offsetLabel(m), selected = m == s.epgOffsetMinutes) { vm.update { it.copy(epgOffsetMinutes = m) } }
-                }
-            }
-        }
-        item {
-            SettingRow("Mise à jour des playlists", "Toutes les ${s.playlistRefreshHours} h") {
-                choice = "Fréquence" to listOf(6, 12, 24, 48, 168).map { h -> MenuOption("Toutes les $h h", selected = h == s.playlistRefreshHours) { vm.update { it.copy(playlistRefreshHours = h) } } }
-            }
-        }
-        item {
-            SettingRow("Mise à jour du guide TV", "Toutes les ${s.epgRefreshHours} h") {
-                choice = "Fréquence" to listOf(6, 12, 24, 48).map { h -> MenuOption("Toutes les $h h", selected = h == s.epgRefreshHours) { vm.update { it.copy(epgRefreshHours = h) } } }
-            }
-        }
-
-        section("Groupes masqués et verrouillés")
-        if (flagged.isEmpty()) item { Text("Aucun. Appui long (ou touche Menu) sur un groupe pour le masquer ou le verrouiller.", Modifier.padding(8.dp), color = SokoulColors.TextMuted) }
-        items(flagged, key = { "${it.type}|${it.categoryId}" }) { g ->
-            SettingRow(
-                g.name,
-                listOfNotNull(typeLabel(g.type), if (g.hidden) "masqué" else null, if (g.locked) "verrouillé" else null).joinToString(" · "),
-                icon = if (g.locked) Icons.Default.Lock else Icons.Default.Visibility,
+    SettingsPanes { cat, modifier ->
+        // une liste par rubrique : chacune repart en haut
+        androidx.compose.runtime.key(cat) {
+            LazyColumn(
+                modifier,
+                contentPadding = PaddingValues(start = if (LocalLayout.current.isTouch) LocalLayout.current.margin else 0.dp, end = if (LocalLayout.current.isTouch) LocalLayout.current.margin else 0.dp, top = 4.dp, bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                vm.unflag(g) { needsPin ->
-                    if (needsPin) pinStep = PinStep.UNFLAG(g)
-                    else Toast.makeText(context, "« ${g.name} » rétabli", Toast.LENGTH_SHORT).show()
+                when (cat) {
+                    SettingsCategory.ACCOUNT -> accountSection(ctx)
+                    SettingsCategory.PLAYBACK -> playbackSection(ctx)
+                    SettingsCategory.TV -> televisionSection(ctx)
+                    SettingsCategory.LIBRARY -> librarySection(ctx)
+                    SettingsCategory.PARENTAL -> parentalSection(ctx)
+                    SettingsCategory.SOURCES -> sourcesSection(ctx)
+                    SettingsCategory.BACKUP -> backupSection(ctx)
+                    SettingsCategory.ABOUT -> aboutSection(ctx)
                 }
             }
         }
-
-        section("Contrôle parental")
-        item {
-            SettingRow(if (s.parentalPin.isBlank()) "Définir un code parental" else "Modifier le code parental", "Code à 4 chiffres pour les groupes verrouillés", icon = Icons.Default.Lock) {
-                pinStep = if (s.parentalPin.isBlank()) PinStep.NEW else PinStep.CURRENT
-            }
-        }
-        if (s.parentalPin.isNotBlank()) {
-            item { SettingRow("Reverrouiller maintenant", "Masque à nouveau les groupes verrouillés", icon = Icons.Default.LockOpen) { vm.lockNow(); Toast.makeText(context, "Groupes verrouillés", Toast.LENGTH_SHORT).show() } }
-            item { SettingRow("Supprimer le code", null, icon = Icons.Default.Delete) { pinStep = PinStep.REMOVE } }
-        }
-
-        section("Fiches films et séries")
-        item {
-            SettingRow("Clé API TMDB", if (s.tmdbApiKey.isBlank()) "Non configurée — affiches HD, résumés, casting et bandes-annonces" else "Configurée") {
-                textEdit = TextEdit("Clé API TMDB (gratuite sur themoviedb.org)", s.tmdbApiKey) { v -> vm.setTmdbKey(v) }
-            }
-        }
-        if (s.tmdbApiKey.isNotBlank()) item {
-            val cov by vm.coverage.collectAsStateWithLifecycle()
-            LaunchedEffect(Unit) { vm.refreshCoverage() }
-            SettingRow(
-                cov?.let { "Fiches enrichies : " + it.percent + " % du catalogue" } ?: "Fiches enrichies",
-                when {
-                    cov == null -> "Calcul…"
-                    cov?.complete == true -> "Genres, ambiances et Explorer couvrent tout le catalogue"
-                    else -> "L'analyse continue en arrière-plan, et se met en pause pendant la lecture"
-                },
-            ) { vm.refreshCoverage() }
-        }
-
-        item {
-            ToggleRow("Regrouper les doublons (une fiche par film/série)", s.groupDuplicates) { v -> vm.update { it.copy(groupDuplicates = v) } }
-        }
-        item {
-            val order = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(s.vodLanguages)
-            val presetName = com.sokoul.iptv.data.repo.VersionPicker.PRESETS.firstOrNull { it.second == order }?.first ?: order.joinToString(" › ")
-            SettingRow("Version lancée en premier", "$presetName (${order.joinToString(" › ")}), puis la meilleure qualité lisible") {
-                choice = "Version lancée en premier" to com.sokoul.iptv.data.repo.VersionPicker.PRESETS.map { (name, langs) ->
-                    MenuOption("$name — ${langs.joinToString(" › ")}", selected = langs == order) { vm.update { it.copy(vodLanguages = langs.joinToString(",")) } }
-                }
-            }
-        }
-        item {
-            SettingRow("Statistiques du catalogue", "Doublons regroupés, versions par œuvre, plus gros regroupements") {
-                vm.stats { st ->
-                    if (st == null) { Toast.makeText(context, "Aucune playlist active", Toast.LENGTH_SHORT).show(); return@stats }
-                    fun pct(a: Int, b: Int) = if (b == 0) 0 else a * 100 / b
-                    choice = "Statistiques du catalogue" to buildList {
-                        add(MenuOption("Films : ${st.movies} versions → ${st.movieWorks} œuvres (TMDB fourni : ${pct(st.moviesWithTmdb, st.movies)} %)") {})
-                        add(MenuOption("Séries : ${st.series} versions → ${st.seriesWorks} œuvres (TMDB fourni : ${pct(st.seriesWithTmdb, st.series)} %)") {})
-                        if (st.pending > 0) add(MenuOption("Calcul en cours : ${st.pending} titres pas encore regroupés") {})
-                        st.biggestMovies.forEach { g -> add(MenuOption("Film · ${com.sokoul.iptv.data.repo.VodGrouping.stripCountry(g.title)} — ${g.c} versions") {}) }
-                        st.biggestSeries.forEach { g -> add(MenuOption("Série · ${com.sokoul.iptv.data.repo.VodGrouping.stripCountry(g.title)} — ${g.c} versions") {}) }
-                    }
-                }
-            }
-        }
-
-        section("Sources de données")
-        item {
-            Text(
-                "Compléments facultatifs à TMDB : notes, « Aussi sur », prochain épisode, sous-titres en ligne, logos. Sans clé, un service est simplement ignoré.",
-                Modifier.padding(horizontal = 8.dp, vertical = 4.dp).widthIn(max = 900.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        items(ApiService.entries.filter { it != ApiService.WATCHMODE }, key = { "src-" + it.id }) { svc ->
-            val key = ApiKeys.resolve(svc, s.apiKeys)
-            SettingRow(
-                svc.label,
-                sourceStatus(svc, key, serviceStates[svc], testResults[svc], testing == svc),
-                svc.purpose + (if (svc.needsKey && key.isNotEmpty()) " · ${ApiKeys.origin(svc, s.apiKeys)} ${ApiKeys.masked(key)}" else ""),
-            ) { sourceMenu = svc }
-        }
-        item {
-            SettingRow("Guide TV xmltv.fr", if (s.epgXmltvFr) "Activé" else "Désactivé", "Chaînes françaises, belges et suisses en complément du guide du fournisseur (fichier d'environ 8 Mo téléchargé à chaque mise à jour du guide)") {
-                vm.update { it.copy(epgXmltvFr = !it.epgXmltvFr) }
-            }
-        }
-
-        section("Sauvegarde")
-        item { SettingRow("Exporter la configuration", "Playlists, favoris, groupes et réglages") { exportMenu = true } }
-        item {
-            SettingRow("Restaurer une sauvegarde", null) {
-                if (hasPicker) importLauncher.launch(arrayOf("application/json", "*/*")) else restoreMenu = true
-            }
-        }
-
-        section("À propos")
-        item { SettingRow("Sokoul TV ${BuildConfig.VERSION_NAME}", "Lecteur IPTV pour Android TV, Fire TV et mobiles", icon = Icons.Default.CheckCircle) {} }
     }
-    LaunchedEffect(playlists.isNotEmpty()) { if (playlists.isNotEmpty()) runCatching { firstFocus.requestFocus() } }
 
     choice?.let { (title, options) -> OptionsDialog(title, options, onDismiss = { choice = null }) }
     sourceMenu?.let { svc ->
@@ -567,7 +427,7 @@ fun SettingsScreen(nav: NavHostController) {
     } }
 }
 
-private sealed interface PinStep {
+internal sealed interface PinStep {
     data object CURRENT : PinStep
     data object NEW : PinStep
     data object REMOVE : PinStep
@@ -575,7 +435,7 @@ private sealed interface PinStep {
     data class UNFLAG(val group: CategoryWithPrefs) : PinStep
 }
 
-private data class TextEdit(
+internal data class TextEdit(
     val title: String,
     val value: String,
     val password: Boolean = false,
@@ -584,65 +444,6 @@ private data class TextEdit(
     val validate: (String) -> String? = { null },
     val onSave: (String) -> Unit,
 )
-
-private fun androidx.compose.foundation.lazy.LazyListScope.section(title: String) = item(key = "section-$title") {
-    Text(title.uppercase(), Modifier.padding(top = 22.dp, bottom = 4.dp, start = 4.dp), color = SokoulColors.Accent, style = MaterialTheme.typography.labelLarge)
-}
-
-@Composable
-private fun SettingRow(
-    title: String,
-    value: String?,
-    hint: String? = null,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    FocusSurface(style = FocusStyle.Row, onClick = onClick, modifier = modifier.fillMaxWidth().widthIn(max = 900.dp), color = SokoulColors.Surface) { _ ->
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) Icon(icon, null, Modifier.padding(end = 14.dp).size(22.dp), tint = SokoulColors.TextSecondary)
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                if (hint != null) Text(hint, color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall)
-            }
-            if (value != null) Text(value, Modifier.padding(start = 16.dp).widthIn(max = if (com.sokoul.iptv.ui.theme.LocalLayout.current.isCompact) 140.dp else 380.dp), color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
-private fun ToggleRow(title: String, value: Boolean, onChange: (Boolean) -> Unit) =
-    SettingRow(title, if (value) "Activé" else "Désactivé") { onChange(!value) }
-
-@Composable
-private fun PlaylistRow(p: PlaylistEntity, active: Boolean, status: SyncStatus?, epg: SyncStatus?, modifier: Modifier, onClick: () -> Unit) {
-    FocusSurface(style = FocusStyle.Row, onClick = onClick, modifier = modifier.fillMaxWidth().widthIn(max = 900.dp), color = if (active) SokoulColors.AccentTint else SokoulColors.Surface) { _ ->
-        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(p.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                Text(if (p.type == PlaylistType.XTREAM) "Xtream" else "M3U", color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelMedium)
-                if (active) Text("  ·  ACTIVE", color = SokoulColors.Accent, style = MaterialTheme.typography.labelMedium)
-            }
-            Text(
-                "${p.liveCount} chaînes · ${p.movieCount} films · ${p.seriesCount} séries" +
-                    (if (p.lastSync > 0) " · synchronisée ${formatDateTime(p.lastSync)}" else ""),
-                color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall,
-            )
-            p.expiresAt?.let { Text("Abonnement valable jusqu'au ${formatDate(it)}" + (p.maxConnections?.let { n -> " · $n connexion${if (n > 1) "s" else ""} simultanée${if (n > 1) "s" else ""}" } ?: ""), color = if (it < System.currentTimeMillis() + 7 * 86_400_000L) SokoulColors.Warning else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
-            statusLine("Playlist", status)?.let { Text(it, color = if (status?.error != null) SokoulColors.Live else SokoulColors.Accent, style = MaterialTheme.typography.bodySmall) }
-            statusLine("Guide", epg)?.let { Text(it, color = if (epg?.error != null) SokoulColors.Live else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
-        }
-    }
-}
-
-private fun statusLine(label: String, s: SyncStatus?): String? = when {
-    s == null -> null
-    s.running -> "$label : ${s.step} ${if (s.count > 0) s.count.toString() else ""}".trim()
-    s.error != null -> "$label : ${s.error}"
-    s.warnings.isNotEmpty() -> "$label : ${s.warnings.joinToString(" ; ")}"
-    s.finishedAt > 0 -> "$label : à jour (${s.count})"
-    else -> null
-}
 
 @Composable
 private fun TextEditDialog(t: TextEdit, onDismiss: () -> Unit) {
@@ -667,20 +468,20 @@ private fun TextEditDialog(t: TextEdit, onDismiss: () -> Unit) {
     }
 }
 
-private val languages = listOf(
+internal val languages = listOf(
     "fr" to "Français", "en" to "Anglais", "ar" to "Arabe", "es" to "Espagnol", "de" to "Allemand",
     "it" to "Italien", "pt" to "Portugais", "tr" to "Turc", "nl" to "Néerlandais",
 )
 
-private fun languageName(code: String) = languages.firstOrNull { it.first == code }?.second ?: code.ifBlank { "Automatique" }
+internal fun languageName(code: String) = languages.firstOrNull { it.first == code }?.second ?: code.ifBlank { "Automatique" }
 
-private fun offsetLabel(min: Int) = when {
+internal fun offsetLabel(min: Int) = when {
     min == 0 -> "Aucun"
     min > 0 -> "+${min / 60} h"
     else -> "−${-min / 60} h"
 }
 
-private fun typeLabel(t: ContentType) = when (t) {
+internal fun typeLabel(t: ContentType) = when (t) {
     ContentType.LIVE -> "Direct"
     ContentType.MOVIE -> "Films"
     ContentType.SERIES -> "Séries"
@@ -701,4 +502,4 @@ internal fun sourceStatus(
 }
 
 /** ▲ = chaîne précédente dans la liste (numéro plus petit), comme sur la plupart des box. */
-private fun zapLabel(inverted: Boolean) = if (inverted) "▲ chaîne suivante · ▼ précédente" else "▲ chaîne précédente · ▼ suivante"
+internal fun zapLabel(inverted: Boolean) = if (inverted) "▲ chaîne suivante · ▼ précédente" else "▲ chaîne précédente · ▼ suivante"
