@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -104,6 +105,17 @@ class RecordingsViewModel @Inject constructor(
         }
     }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    /** Image du programme enregistré (guide TV), par enregistrement : illustre la carte quand le guide en fournit une. */
+    val art: StateFlow<Map<Long, String?>> = scheduler.recordings().map { list ->
+        list.associate { r ->
+            r.id to runCatching {
+                val c = db.channels().get(r.playlistId, r.channelId) ?: return@runCatching null
+                val key = c.epgKey ?: (com.sokoul.iptv.data.repo.EpgRepository.XT_PREFIX + c.id)
+                db.programs().range(r.playlistId, key, r.startAt + 60_000, r.endAt - 60_000).firstNotNullOfOrNull { it.icon?.takeIf(String::isNotBlank) }
+            }.getOrNull()
+        }
+    }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     /** Espace libre là où les enregistrements sont écrits. */
     fun freeBytes(): Long = runCatching {
         (context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir).let { File(it, "Enregistrements").apply { mkdirs() } }.usableSpace
@@ -120,6 +132,7 @@ fun RecordingsScreen(nav: NavHostController) {
     val recordings by vm.recordings.collectAsStateWithLifecycle()
     val reminders by vm.reminders.collectAsStateWithLifecycle()
     val logos by vm.logos.collectAsStateWithLifecycle()
+    val art by vm.art.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf<RecordingEntity?>(null) }
     var reminderMenu by remember { mutableStateOf<ReminderEntity?>(null) }
     val l = LocalLayout.current
@@ -160,7 +173,7 @@ fun RecordingsScreen(nav: NavHostController) {
                         com.sokoul.iptv.ui.components.RowHeader(section.title, countLabel(list.size, "enregistrement"), kicker = section.kicker)
                         LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                             items(list, key = { it.id }) { r ->
-                                RecordingCard(r, logos["${r.playlistId}|${r.channelId}"], now, onClick = { open(r) }, onLongClick = { menu = r })
+                                RecordingCard(r, logos["${r.playlistId}|${r.channelId}"], art[r.id], now, onClick = { open(r) }, onLongClick = { menu = r })
                             }
                         }
                     }
@@ -171,7 +184,7 @@ fun RecordingsScreen(nav: NavHostController) {
                     com.sokoul.iptv.ui.components.RowHeader("Programmes à ne pas manquer", countLabel(reminders.size, "rappel"), kicker = "RAPPELS")
                     LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         items(reminders, key = { "${it.playlistId}|${it.channelId}|${it.start}" }) { r ->
-                            FocusSurface(onClick = { reminderMenu = r }, style = FocusStyle.Row, color = SokoulColors.Surface, modifier = Modifier.width(320.dp)) { _ ->
+                            FocusSurface(onClick = { reminderMenu = r }, style = FocusStyle.Row, color = SokoulColors.Surface, modifier = Modifier.width(l.landscape)) { _ ->
                                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.NotificationsActive, null, Modifier.size(22.dp), tint = SokoulColors.Warning)
                                     Column(Modifier.padding(start = 12.dp)) {
@@ -221,11 +234,13 @@ private fun countLabel(n: Int, word: String) = "$n $word" + if (n > 1) "s" else 
  * (● REC, heure de début, Échec), barre d'avancement pendant l'enregistrement, infos dans la carte.
  */
 @Composable
-private fun RecordingCard(r: RecordingEntity, logo: String?, now: Long, onClick: () -> Unit, onLongClick: () -> Unit) {
-    FocusSurface(onClick = onClick, onLongClick = onLongClick, style = FocusStyle.Card, modifier = Modifier.width(320.dp).aspectRatio(16f / 9f)) { _ ->
+private fun RecordingCard(r: RecordingEntity, logo: String?, image: String?, now: Long, onClick: () -> Unit, onLongClick: () -> Unit) {
+    FocusSurface(onClick = onClick, onLongClick = onLongClick, style = FocusStyle.Card, modifier = Modifier.width(LocalLayout.current.landscape).aspectRatio(16f / 9f)) { _ ->
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SokoulColors.PlaceholderTop, SokoulColors.PlaceholderBottom)))) {
             val dim = r.status == RecordingStatus.FAILED || r.status == RecordingStatus.CANCELLED
-            TitleArt(
+            // image du programme (guide) si elle existe ; sinon le titre dessiné sur le fond sombre
+            if (image != null) com.sokoul.iptv.ui.components.NetImage(image, null, Modifier.fillMaxSize().alpha(if (dim) 0.45f else 1f))
+            if (image == null) TitleArt(
                 r.title, emptyList(), com.sokoul.iptv.ui.theme.TitleSize.Recording,
                 Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp),
                 maxLines = 2, align = androidx.compose.ui.text.style.TextAlign.Center,
@@ -238,6 +253,7 @@ private fun RecordingCard(r: RecordingEntity, logo: String?, now: Long, onClick:
                     .background(Brush.verticalGradient(listOf(Color.Transparent, SokoulColors.black(0.85f))))
                     .padding(start = 12.dp, end = 12.dp, top = 18.dp, bottom = 9.dp),
             ) {
+                if (image != null) Text(r.title, style = com.sokoul.iptv.ui.theme.Type.Button, color = SokoulColors.OnVideo, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     RecordingRules.channelLabel(r.channelName) + " · " + dayLabel(r.startAt, now) + " " + formatRange(r.startAt, r.endAt),
                     style = MaterialTheme.typography.labelMedium, color = if (dim) SokoulColors.TextMuted else SokoulColors.TextSecondary,

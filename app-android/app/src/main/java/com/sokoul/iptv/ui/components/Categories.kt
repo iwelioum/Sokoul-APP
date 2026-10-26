@@ -22,7 +22,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,12 +49,18 @@ import androidx.compose.ui.unit.dp
 import com.sokoul.iptv.data.db.CategoryWithPrefs
 import com.sokoul.iptv.data.repo.SpecialCategory
 
-data class CategoryItem(val id: String, val name: String, val locked: Boolean = false)
+data class CategoryItem(
+    val id: String, val name: String, val locked: Boolean = false,
+    /** Nombre d'éléments du groupe, quand on le connaît (affiché à droite). */
+    val count: Int? = null,
+    /** Icône des groupes spéciaux (Favoris, Récents, Tout). */
+    val icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+)
 
 fun buildCategoryItems(categories: List<CategoryWithPrefs>, withRecent: Boolean = true): List<CategoryItem> = buildList {
-    add(CategoryItem(SpecialCategory.FAVORITES, "★ Favoris"))
-    if (withRecent) add(CategoryItem(SpecialCategory.RECENT, "Récents"))
-    add(CategoryItem(SpecialCategory.ALL, "Tout"))
+    add(CategoryItem(SpecialCategory.FAVORITES, "Favoris", icon = Icons.Default.Star))
+    if (withRecent) add(CategoryItem(SpecialCategory.RECENT, "Récents", icon = Icons.Default.History))
+    add(CategoryItem(SpecialCategory.ALL, "Tout", icon = Icons.Default.Apps))
     categories.filter { !it.hidden }.forEach { add(CategoryItem(it.categoryId, it.name, it.locked)) }
 }
 
@@ -85,12 +94,14 @@ fun CategoryColumn(
                 shape = Radius.Card,
             ) { _ ->
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                    c.icon?.let { Icon(it, null, Modifier.padding(end = 10.dp).size(18.dp), tint = if (isSel) SokoulColors.Accent else SokoulColors.TextSecondary) }
                     Text(
                         c.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (isSel) SokoulColors.Accent else SokoulColors.TextPrimary,
                     )
                     if (c.locked) Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = SokoulColors.TextMuted)
+                    else c.count?.let { Text(it.toString(), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextMuted) }
                 }
             }
         }

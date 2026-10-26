@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -319,7 +320,8 @@ fun GuideScreen(nav: NavHostController) {
 
         when {
             list == null -> com.sokoul.iptv.ui.components.GuideSkeleton()
-            list.isEmpty() -> EmptyState(Icons.Default.Star, "Aucune chaîne dans ce groupe")
+            list.isEmpty() -> if (selected == SpecialCategory.FAVORITES) EmptyState(Icons.Default.Star, "Aucune chaîne favorite", "Dans le Direct, ouvrez le menu d'une chaîne et choisissez « Ajouter aux favoris ».")
+                else EmptyState(Icons.Default.LiveTv, "Aucune chaîne dans ce groupe", "Choisissez un autre groupe dans la liste.")
             else -> BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp)) {
                 // colonne des chaînes : logo + nom sur TV ; logos seuls sur écran étroit
                 val channelCol = if (isTv || maxWidth > 700.dp) 236.dp else 84.dp

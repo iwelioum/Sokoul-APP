@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -88,6 +89,9 @@ class CatalogRepository @Inject constructor(
     private val vodInfoCache = ConcurrentHashMap<String, XtVodInfo>()
 
     fun categories(pid: Long, type: ContentType): Flow<List<CategoryWithPrefs>> = db.categories().observe(pid, type)
+
+    /** Nombre de chaînes par groupe (identifiant du groupe → nombre). */
+    fun channelCounts(pid: Long): Flow<Map<String, Int>> = db.channels().observeCounts(pid).map { l -> l.associate { it.k to it.c } }
 
     fun channels(pid: Long, categoryId: String): Flow<List<ChannelEntity>> = when (categoryId) {
         SpecialCategory.FAVORITES -> hideLocked(pid, ContentType.LIVE, db.channels().observeFavorites(pid)) { it.categoryId }

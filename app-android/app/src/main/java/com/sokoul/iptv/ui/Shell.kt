@@ -39,9 +39,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -175,6 +173,22 @@ private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
     }
 }
 
+/** Onglet de la barre du bas : trait d'accent au-dessus de l'onglet actif, icône et libellé 12 sp. */
+@Composable
+private fun PhoneTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val tint by androidx.compose.animation.animateColorAsState(if (selected) SokoulColors.TextPrimary else SokoulColors.TextMuted, label = "tab")
+    Column(
+        modifier.fillMaxHeight().selectable(selected, role = androidx.compose.ui.semantics.Role.Tab, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.width(28.dp).height(3.dp).background(if (selected) SokoulColors.Accent else androidx.compose.ui.graphics.Color.Transparent, com.sokoul.iptv.ui.theme.Radius.Round))
+        Spacer(Modifier.weight(1f))
+        Icon(icon, null, Modifier.size(22.dp), tint = tint)
+        Text(label, Modifier.padding(top = 3.dp), style = com.sokoul.iptv.ui.theme.Type.NavLabel, color = tint, maxLines = 1)
+        Spacer(Modifier.weight(1f))
+    }
+}
+
 /** Téléphone : barre du bas (Accueil, Films, Séries, Direct, Plus). */
 @Composable
 private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolean, content: @Composable () -> Unit) {
@@ -183,23 +197,12 @@ private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolea
     Column(Modifier.fillMaxSize().background(SokoulColors.Background)) {
         // écrans à héros : bord à bord, l'image passe sous la barre d'état
         Box(Modifier.weight(1f).fillMaxWidth().then(if (edgeToEdge) Modifier else Modifier.statusBarsPadding())) { content() }
-        NavigationBar(containerColor = SokoulColors.Surface, tonalElevation = 0.dp, modifier = Modifier.navigationBarsPadding().height(64.dp)) {
-            val colors = NavigationBarItemDefaults.colors(
-                indicatorColor = SokoulColors.AccentSoft, selectedIconColor = SokoulColors.TextPrimary, selectedTextColor = SokoulColors.TextPrimary,
-                unselectedIconColor = SokoulColors.TextMuted, unselectedTextColor = SokoulColors.TextMuted,
-            )
-            main.forEach { d ->
-                NavigationBarItem(
-                    selected = d == current, onClick = { nav.goTo(d) },
-                    icon = { Icon(d.icon, d.label, Modifier.size(22.dp)) },
-                    label = { Text(d.label, style = com.sokoul.iptv.ui.theme.Type.NavLabel, maxLines = 1) }, colors = colors,
-                )
-            }
-            NavigationBarItem(
-                selected = current !in main, onClick = { more = true },
-                icon = { Icon(Icons.Default.MoreHoriz, "Plus", Modifier.size(22.dp)) },
-                label = { Text("Plus", style = com.sokoul.iptv.ui.theme.Type.NavLabel) }, colors = colors,
-            )
+        Row(
+            Modifier.fillMaxWidth().background(SokoulColors.Surface).navigationBarsPadding().height(64.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            main.forEach { d -> PhoneTab(d.label, d.icon, d == current, Modifier.weight(1f)) { nav.goTo(d) } }
+            PhoneTab("Plus", Icons.Default.MoreHoriz, current !in main, Modifier.weight(1f)) { more = true }
         }
     }
     if (more) {

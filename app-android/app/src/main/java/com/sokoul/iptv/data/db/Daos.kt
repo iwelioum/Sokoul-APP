@@ -97,6 +97,10 @@ interface CategoryDao {
 
 @Dao
 interface ChannelDao {
+    /** Nombre de chaînes par groupe (colonne des groupes du Direct). */
+    @Query("SELECT categoryId AS k, COUNT(*) AS c FROM channels WHERE playlistId = :pid GROUP BY categoryId")
+    fun observeCounts(pid: Long): Flow<List<GroupCount>>
+
     /** Chaînes sans logo du fournisseur (id, identifiant EPG, nom normalisé), pour les logos de secours. */
     @Query("SELECT id, tvgId, nameKey FROM channels WHERE playlistId = :pid AND (logo IS NULL OR logo = '')")
     suspend fun withoutLogo(pid: Long): List<ChannelLogoRef>

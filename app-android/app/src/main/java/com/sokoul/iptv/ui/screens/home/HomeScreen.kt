@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -60,8 +61,20 @@ fun ChannelCard(c: ChannelEntity, now: ProgramEntity?, onClick: () -> Unit) {
     Column(Modifier.width(w)) {
         FocusSurface(onClick = onClick) { _ ->
             Column {
-                Box(Modifier.fillMaxWidth().height(w * 0.5f).background(SokoulColors.SurfaceHigher), contentAlignment = Alignment.Center) {
-                    ChannelLogo(c.logo, c.name, Modifier.size(w * 0.7f, w * 0.36f))
+                val art = now?.icon?.takeIf(String::isNotBlank)
+                Box(
+                    Modifier.fillMaxWidth().height(w * 0.5f)
+                        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(SokoulColors.SurfaceHigher, SokoulColors.PlaceholderBottom))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (art != null) {
+                        // image du programme en cours (guide), logo de la chaîne en petit dans le coin
+                        com.sokoul.iptv.ui.components.NetImage(art, null, Modifier.fillMaxSize())
+                        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(0.45f to androidx.compose.ui.graphics.Color.Transparent, 1f to SokoulColors.Scrim)))
+                        ChannelLogo(c.logo, c.name, Modifier.align(Alignment.BottomStart).padding(8.dp).size(w * 0.26f, w * 0.13f))
+                    } else {
+                        ChannelLogo(c.logo, c.name, Modifier.size(w * 0.7f, w * 0.36f))
+                    }
                 }
                 if (now != null) {
                     val t = System.currentTimeMillis()

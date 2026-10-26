@@ -98,7 +98,7 @@ class MultiviewViewModel @Inject constructor(
             val p = playlists.activeNow() ?: return@launch
             pid = p.id
             maxConnections.value = p.maxConnections?.takeIf { it > 0 }
-            groups.value = listOf(SpecialCategory.FAVORITES to "★ Favoris") +
+            groups.value = listOf(SpecialCategory.FAVORITES to "Favoris") +
                 catalog.categories(p.id, com.sokoul.iptv.data.db.ContentType.LIVE).first()
                     .filter { !it.hidden && !it.locked }.map { it.categoryId to it.name }
             session.slots.value.forEachIndexed { i, s -> if (s != null) catalog.channel(s.playlistId, s.channelId)?.let { assign(i, it) } }

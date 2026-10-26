@@ -32,6 +32,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
+import androidx.compose.ui.graphics.toArgb
+import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Type
+
+// mêmes couleurs que l'app (ui/theme), converties pour les vues Android classiques
+private val Bg get() = SokoulColors.Background.toArgb()
+private val Fg get() = SokoulColors.TextPrimary.toArgb()
 
 /** Choix des diapositives de l'économiseur (pur, testé) : un fond par œuvre, celles avec logo d'abord. */
 object ScreensaverPicks {
@@ -73,22 +80,22 @@ class SokoulDream : DreamService() {
         val serif = runCatching { ResourcesCompat.getFont(this, R.font.dm_serif_display) }.getOrNull()
         val sans = runCatching { ResourcesCompat.getFont(this, R.font.manrope) }.getOrNull()
 
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(10, 10, 15)) }
+        val root = FrameLayout(this).apply { setBackgroundColor(Bg) }
         val images = List(2) { ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f } }
         images.forEach { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
         // voile bas-gauche pour la lisibilité du titre
         root.addView(View(this).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.BL_TR, intArrayOf(Color.argb(230, 10, 10, 15), Color.argb(90, 10, 10, 15), Color.TRANSPARENT))
+            background = GradientDrawable(GradientDrawable.Orientation.BL_TR, intArrayOf(SokoulColors.bg(0.9f).toArgb(), SokoulColors.bg(0.35f).toArgb(), Color.TRANSPARENT))
         }, FrameLayout.LayoutParams(-1, -1))
         val caption = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val logo = ImageView(this).apply { adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START }
-        val title = TextView(this).apply { typeface = serif; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 44f) }
-        val meta = TextView(this).apply { typeface = sans; setTextColor(Color.argb(200, 242, 242, 247)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f) }
+        val title = TextView(this).apply { typeface = serif; setTextColor(Fg); setTextSize(TypedValue.COMPLEX_UNIT_SP, Type.Display.fontSize.value) }
+        val meta = TextView(this).apply { typeface = sans; setTextColor(SokoulColors.TextSecondary.toArgb()); setTextSize(TypedValue.COMPLEX_UNIT_SP, Type.Tab.fontSize.value) }
         caption.addView(logo, LinearLayout.LayoutParams(dp(420), dp(120)))
         caption.addView(title)
         caption.addView(meta)
         root.addView(caption, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(64), 0, 0, dp(56)) })
-        val clock = TextView(this).apply { typeface = serif; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f) }
+        val clock = TextView(this).apply { typeface = serif; setTextColor(Fg); setTextSize(TypedValue.COMPLEX_UNIT_SP, Type.Display.fontSize.value - 6f) }
         root.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(36), dp(56), 0) })
         setContentView(root)
 

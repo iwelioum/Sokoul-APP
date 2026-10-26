@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -44,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
@@ -136,8 +138,7 @@ class LiveViewModel @Inject constructor(
     }
 
     val categories: StateFlow<List<CategoryItem>> = playlist.filterNotNull()
-        .flatMapLatest { catalog.categories(it.id, ContentType.LIVE) }
-        .map { buildCategoryItems(it) }
+        .flatMapLatest { p -> combine(catalog.categories(p.id, ContentType.LIVE), catalog.channelCounts(p.id)) { cats, n -> buildCategoryItems(cats).map { it.copy(count = n[it.id]) } } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** null = chargement en cours. */
@@ -393,11 +394,17 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modif
         Spacer(Modifier.height(20.dp))
         val now = nn.now
         if (now != null) {
+            val art = now.icon?.takeIf(String::isNotBlank)
+            if (art != null) {
+                // image du programme fournie par le guide
+                com.sokoul.iptv.ui.components.NetImage(art, null, Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(com.sokoul.iptv.ui.theme.Radius.Card))
+                Spacer(Modifier.height(14.dp))
+            }
             Text("EN CE MOMENT", style = com.sokoul.iptv.ui.theme.Type.Kicker.copy(color = SokoulColors.Live))
             Text(now.title, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(formatRange(now.start, now.end) + (now.episode?.let { "  ·  $it" } ?: ""), style = com.sokoul.iptv.ui.theme.Type.Meta)
             com.sokoul.iptv.ui.components.ProgressLine(nn.progress(time), Modifier.padding(vertical = 8.dp), tone = com.sokoul.iptv.ui.components.ProgressTone.Live, onImage = false)
-            now.description?.let { Text(it, color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 7, overflow = TextOverflow.Ellipsis) }
+            now.description?.let { Text(it, color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = if (art != null) 3 else 7, overflow = TextOverflow.Ellipsis) }
         } else {
             Text("Pas d'information de programme", color = SokoulColors.TextMuted)
         }

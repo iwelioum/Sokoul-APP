@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,11 +22,19 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -170,28 +179,35 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
         nav.navigate(SyncRoute(newId)) { popUpTo(nav.graph.id) { inclusive = true } }
     }
 
-    Box(Modifier.fillMaxSize().background(SokoulColors.Background).statusBarsPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            if (firstRun) {
-                SetupSteps(1)
-                Text("BIENVENUE", style = com.sokoul.iptv.ui.theme.Type.Kicker)
-                Text("Sokoul TV", style = com.sokoul.iptv.ui.theme.Type.Display)
-                Text(
-                    "Ajoutez votre abonnement IPTV pour commencer. Les comptes Xtream Codes donnent accès au guide TV complet, au replay et aux fiches détaillées des films et séries.",
-                    color = SokoulColors.TextSecondary,
-                )
-            } else {
-                if (existing == null) SetupSteps(1)
-                Text(if (existing != null) "Modifier la playlist" else "Nouvelle playlist", style = com.sokoul.iptv.ui.theme.Type.ScreenTitle)
+    val l = com.sokoul.iptv.ui.theme.LocalLayout.current
+    val wide = !l.isCompact
+    val welcome = firstRun || existing == null
+    val intro: @Composable () -> Unit = {
+        if (firstRun) {
+            SetupSteps(1)
+            Text("BIENVENUE", Modifier.padding(top = 28.dp), style = com.sokoul.iptv.ui.theme.Type.Kicker)
+            Text("Sokoul TV", style = com.sokoul.iptv.ui.theme.Type.Display)
+            Text(
+                "La télé en direct, les films et les séries de votre abonnement, réunis dans une seule app.",
+                Modifier.padding(top = 10.dp).widthIn(max = 520.dp), style = MaterialTheme.typography.titleMedium, color = SokoulColors.TextSecondary,
+            )
+            Column(Modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Feature(Icons.Default.LiveTv, "Guide TV, replay et pause du direct")
+                Feature(Icons.Default.Movie, "Fiches complètes, sagas et reprise de lecture")
+                Feature(Icons.Default.Bolt, "Real-Debrid en option pour les meilleures versions")
             }
-
+        } else {
+            if (existing == null) SetupSteps(1)
+            Text(if (existing != null) "Modifier la playlist" else "Nouvelle playlist", Modifier.padding(top = 16.dp), style = com.sokoul.iptv.ui.theme.Type.ScreenTitle)
+        }
+    }
+    val form: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (existing == null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TypeChoice("Xtream Codes", type == PlaylistType.XTREAM, Modifier.weight(1f).focusRequester(firstFocus)) { type = PlaylistType.XTREAM }
-                    TypeChoice("Lien M3U / fichier", type == PlaylistType.M3U, Modifier.weight(1f)) { type = PlaylistType.M3U }
+                Text("TYPE D'ABONNEMENT", style = com.sokoul.iptv.ui.theme.Type.Overline)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    com.sokoul.iptv.ui.components.SokoulChip("Xtream Codes", { type = PlaylistType.XTREAM }, Modifier.focusRequester(firstFocus), icon = Icons.Default.Dns, selected = type == PlaylistType.XTREAM)
+                    com.sokoul.iptv.ui.components.SokoulChip("Lien M3U / fichier", { type = PlaylistType.M3U }, icon = Icons.Default.Link, selected = type == PlaylistType.M3U)
                 }
             }
 
@@ -205,7 +221,10 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
             } else if (existing == null) {
                 FormField("URL de la playlist M3U", m3u, { m3u = it }, placeholder = "http://…/playlist.m3u", keyboardType = KeyboardType.Uri)
                 if (ServerUrl.extractXtream(m3u) != null) {
-                    Text("✓ Lien Xtream détecté : le compte sera ajouté en mode Xtream (guide, replay et fiches complètes).", color = SokoulColors.Success, style = MaterialTheme.typography.bodyMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, null, Modifier.size(18.dp), tint = SokoulColors.Success)
+                        Text("Lien Xtream détecté : le compte sera ajouté en mode Xtream (guide, replay et fiches complètes).", Modifier.padding(start = 8.dp), color = SokoulColors.Success, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
                 // Masqué sur Android TV : le sélecteur de fichiers y est factice (rien ne s'ouvrirait)
                 if (remember { context.hasDocumentPicker() }) {
@@ -225,7 +244,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val p = existing
                 SokoulButton(
                     text = if (busy) "Vérification…" else if (p != null) "Enregistrer" else "Ajouter et synchroniser",
@@ -236,6 +255,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                             else -> vm.addM3u(name, m3u, epg, ua, onSaved)
                         }
                     },
+                    icon = if (p != null) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
                     kind = ButtonKind.Primary,
                     enabled = !busy,
                     focusRequester = if (p != null) firstFocus else null,
@@ -246,7 +266,33 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                 }
                 if (!firstRun && p == null) SokoulButton("Annuler", { nav.popBackStack() })
             }
-            Spacer(Modifier.height(40.dp))
+            Text(
+                "Vos identifiants restent sur cet appareil. Une seule connexion est utilisée à la fois.",
+                Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextMuted,
+            )
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+        if (welcome) com.sokoul.iptv.ui.components.PosterMosaic()
+        if (wide) {
+            // TV / tablette : présentation à gauche sur le mur d'affiches, formulaire dans un panneau à droite
+            Row(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
+                Column(Modifier.weight(0.9f).fillMaxHeight().padding(start = l.margin, end = 32.dp), verticalArrangement = Arrangement.Center) { intro() }
+                com.sokoul.iptv.ui.components.GlassPanel(Modifier.padding(top = 32.dp, bottom = 32.dp, end = l.margin).weight(1.1f).fillMaxHeight()) {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp)) { form() }
+                }
+            }
+        } else {
+            Column(
+                Modifier.fillMaxSize().statusBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                intro()
+                Spacer(Modifier.height(8.dp))
+                form()
+                Spacer(Modifier.height(40.dp))
+            }
         }
     }
 
@@ -263,19 +309,6 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
     }
 }
 
-@Composable
-private fun TypeChoice(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    FocusSurface(style = FocusStyle.Row,
-        onClick = onClick,
-        modifier = modifier,
-        color = if (selected) SokoulColors.AccentTint else SokoulColors.Surface,
-    ) { _ ->
-        Text(
-            label, Modifier.fillMaxWidth().padding(16.dp), textAlign = TextAlign.Center,
-            color = if (selected) SokoulColors.Accent else SokoulColors.TextPrimary, style = MaterialTheme.typography.titleMedium,
-        )
-    }
-}
 
 // --- Synchronisation initiale ------------------------------------------------------------
 
@@ -298,6 +331,9 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
     val epg by remember(playlistId) { vm.epgStatus(playlistId) }.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
     val done = status?.let { !it.running && it.error == null && it.finishedAt > 0 } == true
+    // compteurs par section (chaînes, films, séries) : le plus grand nombre vu pour chacune
+    var counters by remember { mutableStateOf(SyncCounters.State()) }
+    LaunchedEffect(status) { counters = SyncCounters.update(counters, status?.step, status?.count ?: 0) }
 
     Box(Modifier.fillMaxSize().background(SokoulColors.Background), contentAlignment = Alignment.Center) {
         Column(Modifier.widthIn(max = 560.dp).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -335,11 +371,12 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
                 }
                 else -> {
                     SetupSteps(2)
-                    com.sokoul.iptv.ui.components.SokoulSpinner(Modifier.padding(top = 28.dp))
-                    Text("Synchronisation en cours", Modifier.padding(top = 20.dp), style = com.sokoul.iptv.ui.theme.Type.Section)
-                    Text(s?.step ?: "En attente du réseau…", Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary)
-                    if ((s?.count ?: 0) > 0) Text("${s?.count} éléments", color = SokoulColors.TextMuted)
-                    Box(Modifier.padding(top = 20.dp).fillMaxWidth().height(4.dp).shimmer(Radius.Tiny))
+                    Text("Synchronisation en cours", Modifier.padding(top = 28.dp), style = com.sokoul.iptv.ui.theme.Type.Section)
+                    Text(s?.step?.ifBlank { null } ?: "En attente du réseau…", Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary)
+                    Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SyncCounters.sections(counters).forEach { (label, value, state) -> CounterTile(label, value, state) }
+                    }
+                    Box(Modifier.padding(top = 24.dp).fillMaxWidth().height(4.dp).shimmer(Radius.Tiny))
                     Text(
                         "Les grosses playlists peuvent prendre une à deux minutes. Les mises à jour suivantes se font en arrière-plan.",
                         Modifier.padding(top = 16.dp), color = SokoulColors.TextMuted, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall,
@@ -365,12 +402,80 @@ internal fun SetupSteps(current: Int, modifier: Modifier = Modifier) {
                 Modifier.size(22.dp).background(if (done || active) SokoulColors.Accent else SokoulColors.SurfaceHigher, Radius.Round),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (done) "✓" else "$n", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = if (done || active) SokoulColors.OnVideo else SokoulColors.TextMuted)
+                if (done) Icon(Icons.Default.Check, null, Modifier.size(14.dp), tint = SokoulColors.OnVideo)
+                else Text("$n", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = if (active) SokoulColors.OnVideo else SokoulColors.TextMuted)
             }
-            Text(
+            // libellé seulement pour l'étape en cours : la frise reste lisible même dans une colonne étroite
+            if (active) Text(
                 label, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge,
-                color = if (active) SokoulColors.TextPrimary else SokoulColors.TextMuted, maxLines = 1,
+                color = SokoulColors.TextPrimary, maxLines = 1,
             )
         }
+    }
+}
+
+/** Atout de l'app sur l'écran de bienvenue : icône dans une pastille teintée et phrase courte. */
+@Composable
+private fun Feature(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(40.dp).background(SokoulColors.AccentSoft, Radius.Card), contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(22.dp), tint = SokoulColors.Accent)
+        }
+        Text(text, Modifier.padding(start = 14.dp), style = MaterialTheme.typography.titleMedium, color = SokoulColors.TextPrimary)
+    }
+}
+
+/** Compteurs de l'écran de synchronisation, déduits de l'étape en cours (« Chaînes… », « Films… »…). */
+object SyncCounters {
+    enum class Phase { WAITING, RUNNING, DONE }
+    data class State(val counts: Map<String, Int> = emptyMap(), val current: String? = null)
+
+    private val XTREAM = listOf("Chaînes", "Films", "Séries")
+    private const val M3U = "Éléments"
+
+    fun keyOf(step: String?): String? = when {
+        step == null -> null
+        step.startsWith("Lecture de la playlist") -> M3U
+        else -> XTREAM.firstOrNull { step.startsWith(it) }
+    }
+
+    fun update(s: State, step: String?, count: Int): State {
+        val k = keyOf(step) ?: return s.copy(current = null)
+        return State(s.counts + (k to maxOf(count, s.counts[k] ?: 0)), k)
+    }
+
+    /** (libellé, valeur, état) à afficher : les trois sections Xtream, ou un seul compteur pour une M3U. */
+    fun sections(s: State): List<Triple<String, Int, Phase>> {
+        if (M3U in s.counts) return listOf(Triple(M3U, s.counts.getValue(M3U), Phase.RUNNING))
+        val at = XTREAM.indexOf(s.current)
+        return XTREAM.mapIndexed { i, k ->
+            val phase = when {
+                k == s.current -> Phase.RUNNING
+                k in s.counts && (at < 0 || i < at) -> Phase.DONE
+                else -> Phase.WAITING
+            }
+            Triple(k, s.counts[k] ?: 0, phase)
+        }
+    }
+}
+
+/** Tuile de compteur : le nombre défile jusqu'à sa valeur ; coche une fois la section terminée. */
+@Composable
+private fun CounterTile(label: String, value: Int, phase: SyncCounters.Phase) {
+    val shown by androidx.compose.animation.core.animateIntAsState(value, androidx.compose.animation.core.tween(600), label = "count")
+    val active = phase == SyncCounters.Phase.RUNNING
+    Column(
+        Modifier.width(150.dp).background(if (active) SokoulColors.AccentTint else SokoulColors.SurfaceHigh, Radius.Card).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (phase == SyncCounters.Phase.DONE) Icon(Icons.Default.Check, null, Modifier.padding(end = 4.dp).size(16.dp), tint = SokoulColors.Success)
+            Text(label.uppercase(), style = com.sokoul.iptv.ui.theme.Type.Overline, color = if (active) SokoulColors.Accent else SokoulColors.TextMuted)
+        }
+        Text(
+            if (phase == SyncCounters.Phase.WAITING && value == 0) "—" else "%,d".format(java.util.Locale.FRANCE, shown),
+            Modifier.padding(top = 6.dp), style = com.sokoul.iptv.ui.theme.Type.Section,
+            color = if (phase == SyncCounters.Phase.WAITING) SokoulColors.TextMuted else SokoulColors.TextPrimary,
+        )
     }
 }

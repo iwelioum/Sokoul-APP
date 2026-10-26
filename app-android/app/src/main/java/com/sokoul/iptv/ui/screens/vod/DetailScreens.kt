@@ -355,7 +355,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         title = title, logo = tm?.logo ?: extras.art?.logo, backdrop = tm?.backdrop ?: xt?.backdrop ?: extras.art?.background, poster = tm?.poster ?: xt?.poster ?: m.poster,
         rating = tm?.rating ?: xt?.rating ?: m.rating,
         facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), durationMin?.takeIf { it > 0 }?.let { com.sokoul.iptv.ui.util.endsAt(it) }, best.language),
-        certification = tm?.certification, quality = qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
+        certification = tm?.certification, quality = topRd?.let { (listOfNotNull(it.source.quality?.let(SourceLabels::quality), it.source.hdr?.let(SourceLabels::hdr)) + "Real-Debrid").joinToString(" · ") } ?: qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
         genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
         tagline = tm?.tagline, synopsis = synopsis,
         credit = director?.let { "Réalisation : $it" } ?: xt?.cast?.takeIf { tm?.cast.isNullOrEmpty() && it.isNotBlank() }?.let { "Avec : $it" },
