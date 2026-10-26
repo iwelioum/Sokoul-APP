@@ -799,7 +799,7 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
             }
         }
         Text(
-            "${ev.entity.episode}. ${ev.title}", Modifier.padding(top = 10.dp),
+            "${ev.entity.episode}. ${ev.title}", Modifier.padding(top = 14.dp),
             style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
         val meta = listOfNotNull(ev.runtimeMin?.let { formatRuntime(it) }, progress?.takeIf { resumable }?.let { EpisodeResolver.remaining(it) }).joinToString(" · ")

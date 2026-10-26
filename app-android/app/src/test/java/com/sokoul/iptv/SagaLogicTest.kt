@@ -44,6 +44,19 @@ class SagaLogicTest {
         assertNull(SagaLogic.next(films, setOf("MOVIE|a", "MOVIE|b", "MOVIE|d", "MOVIE|e")))
     }
 
+    @Test fun `commencer la saga - suit l'ordre choisi (sortie ou recit)`() {
+        // Star Wars : sortie 4-5-6-1-2-3, récit 1-2-3-4-5-6
+        val release = listOf(4, 5, 6, 1, 2, 3).map { Work(ContentType.MOVIE, "e$it", "e$it", "Episode $it", null, null, tmdbId = it) }
+        val story = SagaLogic.storyOrder(release, listOf(1, 2, 3, 4, 5, 6))
+        assertEquals(listOf(1, 2, 3, 4, 5, 6), story.map { it.tmdbId })
+        assertEquals(4, SagaLogic.next(release, emptySet())?.tmdbId)
+        assertEquals(1, SagaLogic.next(story, emptySet())?.tmdbId)
+        // épisodes 1 et 2 vus : on continue au 3 dans le récit, au 3 aussi dans la sortie (après le dernier vu)
+        val seen = setOf("MOVIE|e1", "MOVIE|e2")
+        assertEquals(3, SagaLogic.next(story, seen)?.tmdbId)
+        assertEquals(3, SagaLogic.next(release, seen)?.tmdbId)
+    }
+
     @Test fun `sagas editorialisees - au moins 20, cles et collections uniques`() {
         val sagas = CuratedSagaParser.parse(File("src/main/assets/curated_sagas.json").readText())
         assertTrue("sagas : ${sagas.size}", sagas.size >= 20)

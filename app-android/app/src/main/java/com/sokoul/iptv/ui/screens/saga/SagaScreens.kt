@@ -315,6 +315,7 @@ class SagaViewModel @Inject constructor(
     private val playlists: PlaylistRepository,
     private val repo: BrowseRepository,
     private val enrich: EnrichmentRepository,
+    private val settings: com.sokoul.iptv.data.SettingsStore,
     library: LibraryRepository,
 ) : ViewModel() {
     val ui = MutableStateFlow(SagaUi())
@@ -331,11 +332,19 @@ class SagaViewModel @Inject constructor(
         }
     }
 
+    /** Ordre choisi, retenu pour cette saga. */
+    fun setStory(v: Boolean) {
+        story.value = v
+        val c = id ?: return
+        viewModelScope.launch { settings.setSagaStoryOrder(c, v) }
+    }
+
     fun load(collectionId: Int, force: Boolean = false) {
         if (id == collectionId && !force) return
         id = collectionId
         ui.value = SagaUi()
         viewModelScope.launch {
+            story.value = settings.sagaStoryOrder(collectionId)
             val p = playlists.activeNow() ?: run { ui.value = SagaUi(loading = false, failed = true); return@launch }
             pid.value = p.id
             if (enrich.apiKey().isBlank()) { ui.value = SagaUi(loading = false, noKey = true); return@launch }
@@ -388,7 +397,7 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
                 val next = SagaLogic.next(films, page.seen)
                 LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 56.dp)) {
                     item("head") {
-                        SagaHeader(page, story, next, memory, entered, onStory = { vm.story.value = it }, onNext = { w -> nav.openWork(w) })
+                        SagaHeader(page, story, next, memory, entered, onStory = { vm.setStory(it) }, onNext = { w -> nav.openWork(w) })
                     }
                     item("films") {
                         // changement d'ordre : les cartes glissent à leur nouvelle place, la frise repart du début
@@ -544,7 +553,9 @@ private fun SagaHeader(
         ) {
             if (next != null) {
                 AppButton(
-                    if (page.seen.isEmpty()) "Commencer la saga" else "Continuer la saga", { onNext(next) },
+                    (if (page.seen.isEmpty()) "Commencer" else "Continuer") +
+                        (if (page.story == null) " la saga" else if (story) " · ordre du récit" else " · ordre de sortie"),
+                    { onNext(next) },
                     Modifier.focusMemory(memory, "go"), icon = Icons.Default.PlayArrow, primary = true,
                 )
             }

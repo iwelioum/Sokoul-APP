@@ -1,5 +1,6 @@
 package com.sokoul.iptv.player
 
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -56,6 +57,8 @@ class StreamPlayer(
     private var refusalRetries = 0
     private var retryJob: Job? = null
     private var watchdog: Job? = null
+    private var videoGuard: Job? = null
+    private val stall = VideoStallDetector()
     private var startPositionMs = 0L
 
     private val listener = object : Player.Listener {
@@ -66,6 +69,7 @@ class StreamPlayer(
                     refusalRetries = 0
                     _state.value = StreamState.Playing
                     watchdog?.cancel()
+                    if (stream?.isLive == true) guardVideo()
                 }
                 Player.STATE_BUFFERING -> {
                     if (stream?.isLive == true) armWatchdog()
@@ -149,6 +153,7 @@ class StreamPlayer(
 
     private fun load(keepPosition: Boolean) {
         val s = stream ?: return
+        videoGuard?.cancel()
         val (url, forceHls) = candidates.getOrNull(candidateIndex) ?: return
         retryJob?.cancel()
         val position = if (keepPosition && !s.isLive) player.currentPosition.takeIf { it > 0 } ?: startPositionMs else startPositionMs
@@ -199,6 +204,31 @@ class StreamPlayer(
         }
     }
 
+    /**
+     * Image figée alors que le son continue : on recrée le décodeur vidéo (piste coupée puis rétablie),
+     * sans rouvrir la connexion au fournisseur. Au plus [VideoStallDetector] réparations par flux.
+     */
+    private fun guardVideo() {
+        if (videoGuard?.isActive == true) return
+        stall.reset()
+        videoGuard = scope.launch {
+            while (isActive) {
+                delay(1_000)
+                val counters = player.videoDecoderCounters
+                counters?.ensureUpdated()
+                val rendered = counters?.renderedOutputBufferCount ?: continue
+                val hasVideo = player.videoFormat != null
+                if (stall.sample(System.currentTimeMillis(), rendered, player.isPlaying, hasVideo)) {
+                    Timber.i("Vidéo figée, réparation ${stall.recoveries}")
+                    val params = player.trackSelectionParameters
+                    player.trackSelectionParameters = params.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build()
+                    delay(200)
+                    player.trackSelectionParameters = params
+                }
+            }
+        }
+    }
+
     /** Un direct qui reste en BUFFERING plus de 12 s est relancé. */
     private fun armWatchdog() {
         watchdog?.cancel()
@@ -215,6 +245,7 @@ class StreamPlayer(
     fun stop() {
         retryJob?.cancel()
         watchdog?.cancel()
+        videoGuard?.cancel()
         player.stop()
         _state.value = StreamState.Idle
     }

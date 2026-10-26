@@ -186,7 +186,20 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
 
     suspend fun clearRecentSearches() { context.dataStore.edit { it.remove(recentKey) } }
 
+    /** Sagas regardées dans l'ordre du récit (identifiants de collection TMDB). */
+    suspend fun sagaStoryOrder(collectionId: Int): Boolean =
+        context.dataStore.data.first()[sagaStoryKey]?.split(',')?.contains(collectionId.toString()) == true
+
+    suspend fun setSagaStoryOrder(collectionId: Int, story: Boolean) {
+        context.dataStore.edit { p ->
+            val ids = p[sagaStoryKey]?.split(',')?.filter { it.isNotBlank() }.orEmpty().toMutableSet()
+            if (story) ids += collectionId.toString() else ids -= collectionId.toString()
+            p[sagaStoryKey] = ids.joinToString(",")
+        }
+    }
+
     private val recentKey = stringPreferencesKey("recent_searches")
+    private val sagaStoryKey = stringPreferencesKey("saga_story_order")
     private val pinFailures = intPreferencesKey("pin_failures")
     private val groupingRules = intPreferencesKey("grouping_rules")
 

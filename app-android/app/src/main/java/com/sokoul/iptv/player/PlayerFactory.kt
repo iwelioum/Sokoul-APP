@@ -29,7 +29,7 @@ import javax.inject.Singleton
  * Crée des ExoPlayer réglés pour l'IPTV :
  * - démarrage rapide (1 s de tampon) pour un zapping quasi instantané ;
  * - décodeur FFmpeg en renfort pour AC3/E-AC3/DTS/TrueHD, absents de beaucoup de box ;
- * - extracteur TS tolérant (flux sans IDR, PTS désordonnés) ;
+ * - extracteur TS tolérant (flux sans IDR) ;
  * - réseau partagé avec OkHttp (connexions réutilisées entre chaînes).
  */
 @Singleton
@@ -38,9 +38,16 @@ class PlayerFactory @Inject constructor(
     private val okHttp: OkHttpClient,
 ) {
     fun create(settings: AppSettings, forMultiview: Boolean = false): ExoPlayer {
+        val diag = diagFlags()
+        val mode = when {
+            "sw" in diag -> DecoderMode.SOFTWARE
+            "hw" in diag -> DecoderMode.HARDWARE
+            else -> settings.decoderMode
+        }
         val renderers = DefaultRenderersFactory(context)
+            .apply { if ("sync" in diag) forceDisableMediaCodecAsynchronousQueueing() }
             .setExtensionRendererMode(
-                when (settings.decoderMode) {
+                when (mode) {
                     DecoderMode.HARDWARE -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF
                     DecoderMode.AUTO -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
                     DecoderMode.SOFTWARE -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
@@ -87,7 +94,12 @@ class PlayerFactory @Inject constructor(
             .apply { if (!referrer.isNullOrBlank()) setDefaultRequestProperties(mapOf("Referer" to referrer)) }
         val upstream = DefaultDataSource.Factory(context, http)
         val extractors = DefaultExtractorsFactory()
-            .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS)
+            .setTsExtractorFlags(diagFlags().let { f ->
+                // Pas de FLAG_DETECT_ACCESS_UNITS : sur les flux entrelacés (TF1, TL7…) il coupait chaque image en
+                // morceaux et bloquait le décodeur MediaTek après 0,4 s (image figée, son qui continue).
+                (if ("idr" in f) 0 else DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES) or
+                    (if ("au" in f) DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS else 0)
+            })
             .setConstantBitrateSeekingEnabled(true)
         return DefaultMediaSourceFactory(upstream, extractors)
             .setLoadErrorHandlingPolicy(IptvLoadErrorPolicy())
@@ -107,6 +119,12 @@ class PlayerFactory @Inject constructor(
             return super.getRetryDelayMsFor(info)
         }
     }
+
+    /** Diagnostic sur la box : adb shell setprop debug.sokoul.codec "sync,hw" (sync, hw, sw, idr, au). */
+    private fun diagFlags(): Set<String> = runCatching {
+        (Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, "debug.sokoul.codec") as String)
+            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }.getOrDefault(emptySet())
 
     /** Construit l'élément à lire ; `forceHls` sert de repli pour les URL sans extension. */
     fun mediaItem(url: String, title: String, forceHls: Boolean = false, live: Boolean): MediaItem {

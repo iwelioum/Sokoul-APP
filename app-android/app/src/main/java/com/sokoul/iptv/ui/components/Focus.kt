@@ -172,15 +172,12 @@ fun FocusSurface(
                     0f to SokoulColors.black(0.55f), 1f to Color.Transparent,
                     startY = size.height - 2f, endY = size.height + shadowH,
                 )
-                val accentGap = 7.dp.toPx(); val accentH = Edge.Accent.toPx()
                 onDrawBehind {
                     val p = progress.value.coerceIn(0f, 1f)
                     if (card && p > 0.01f) {
                         drawRect(shadow, topLeft = Offset(size.width * 0.06f, size.height - 2f), size = Size(size.width * 0.88f, shadowH + 2f), alpha = p)
                         halo2?.let { o -> translate(-glow2, -glow2) { drawOutline(o, SokoulColors.Accent, alpha = 0.10f * p) } }
                         halo1?.let { o -> translate(-glow1, -glow1) { drawOutline(o, SokoulColors.AccentEnd, alpha = 0.22f * p) } }
-                        // liseré d'accent sous la carte : même signe que le soulignement de l'onglet actif
-                        drawRect(SokoulColors.Accent, topLeft = Offset(size.width * 0.3f, size.height + accentGap), size = Size(size.width * 0.4f * p.coerceAtLeast(0.2f), accentH), alpha = p)
                     }
                     val fill = androidx.compose.ui.graphics.lerp(bg, fbg, p)
                     if (fill.alpha > 0f) drawOutline(outline, fill)
@@ -192,6 +189,17 @@ fun FocusSurface(
                 }
             }
             .clip(shape)
+            // liseré d'accent dans le bas de la carte (même signe que le soulignement de l'onglet actif) :
+            // dessiné à l'intérieur, il ne déborde jamais sur le titre placé sous la carte
+            .then(if (card) Modifier.drawWithContent {
+                drawContent()
+                val p = progress.value.coerceIn(0f, 1f)
+                if (p > 0.01f) {
+                    val h = Edge.Accent.toPx(); val inset = style.border.toPx() + 3.dp.toPx()
+                    val w = size.width * 0.4f * p.coerceAtLeast(0.2f)
+                    drawRect(SokoulColors.Accent, topLeft = Offset((size.width - w) / 2f, size.height - inset - h), size = Size(w, h), alpha = p)
+                }
+            } else Modifier)
             .then(if (card) Modifier.focusRing(shape, style.border) { progress.value } else Modifier)
             .dpadClickable(onClick, onLongClick)
     ) {
