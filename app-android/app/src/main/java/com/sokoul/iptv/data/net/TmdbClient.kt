@@ -173,6 +173,12 @@ class TmdbClient @Inject constructor(
         }
     }
 
+    /** Identifiant IMDb (« tt0816692 ») d'une œuvre TMDB, pour les extensions de sources. Cache 30 jours. */
+    suspend fun imdbId(apiKey: String, kind: String, id: Int): String? {
+        if (apiKey.isBlank()) return null
+        return safe { get(apiKey, "/3/$kind/$id/external_ids", emptyMap(), ttlMs = 30 * 24 * HOUR)?.str("imdb_id")?.takeIf { it.startsWith("tt") } }
+    }
+
     suspend fun trending(apiKey: String, kind: String): List<TmdbItem> {
         if (apiKey.isBlank()) return emptyList()
         return safe {

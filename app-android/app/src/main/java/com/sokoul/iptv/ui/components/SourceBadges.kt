@@ -22,12 +22,14 @@ import com.sokoul.iptv.ui.theme.Type
 
 /** Libellés des sources, calculés ici à partir des valeurs typées (un seul endroit à traduire). */
 object SourceLabels {
-    fun origin(o: SourceOrigin) = when (o) { SourceOrigin.IPTV -> "IPTV"; SourceOrigin.DEBRID -> "Debrid" }
+    fun origin(o: SourceOrigin) = when (o) { SourceOrigin.IPTV -> "IPTV"; SourceOrigin.DEBRID -> "RD" }
     fun quality(q: VideoQuality) = when (q) {
         VideoQuality.UHD_4K -> "4K"; VideoQuality.FHD_1080 -> "1080p"; VideoQuality.HD_720 -> "720p"; VideoQuality.SD -> "SD"
     }
     fun hdr(h: HdrFormat) = when (h) { HdrFormat.HDR10 -> "HDR"; HdrFormat.DOLBY_VISION -> "Dolby Vision" }
     fun language(a: AudioLanguage) = a.name
+    /** « 18 Go », « 700 Mo ». */
+    fun size(bytes: Long): String = if (bytes >= 1_000_000_000L) "${(bytes / 1e8).toLong().let { if (it % 10 == 0L) "${it / 10}" else "${it / 10},${it % 10}" }} Go" else "${bytes / 1_000_000} Mo"
     fun state(s: SourceState) = when (s) {
         SourceState.AVAILABLE -> null; SourceState.CACHED_INSTANT -> "INSTANTANÉ"; SourceState.UNAVAILABLE -> "HORS CATALOGUE"
     }
@@ -37,6 +39,8 @@ object SourceLabels {
         s.language?.let(::language) ?: s.region,
         s.quality?.let(::quality),
         s.hdr?.let(::hdr),
+        s.rip,
+        s.sizeBytes?.let(::size),
     )
 
     /** Libellé court pour les menus et messages : « VF · 1080p », « AR · 4K », sinon « Version ». */

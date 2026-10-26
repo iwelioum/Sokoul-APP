@@ -47,7 +47,7 @@ class PlaybackSourceTest {
         // langue inconnue : le pays du fournisseur
         assertEquals("AR · 720p", SourceLabels.text(PlaybackSources.fromIptv(v("HD", null, name = "AR - Le Film"))))
         assertEquals("IPTV", SourceLabels.origin(SourceOrigin.IPTV))
-        assertEquals("Debrid", SourceLabels.origin(SourceOrigin.DEBRID))
+        assertEquals("RD", SourceLabels.origin(SourceOrigin.DEBRID))
         assertEquals("Dolby Vision", SourceLabels.hdr(HdrFormat.DOLBY_VISION))
         // chaque valeur a un libellé (un ajout d'enum sans libellé casserait la compilation, un libellé vide ce test)
         VideoQuality.entries.forEach { assertTrue(SourceLabels.quality(it).isNotBlank()) }

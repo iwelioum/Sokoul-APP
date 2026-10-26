@@ -1,0 +1,167 @@
+package com.sokoul.iptv.data.debrid
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import com.sokoul.iptv.data.AppSettings
+import com.sokoul.iptv.data.SettingsStore
+import com.sokoul.iptv.data.net.TmdbClient
+import com.sokoul.iptv.data.net.await
+import com.sokoul.iptv.domain.PlaybackSource
+import com.sokoul.iptv.domain.SourceOrigin
+import com.sokoul.iptv.domain.SourceState
+import com.sokoul.iptv.parser.long
+import com.sokoul.iptv.parser.str
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/** Une version proposée par l'extension de sources, lisible via Real-Debrid. */
+data class DebridStream(
+    /** Clé stable : « hash:fichier », ou empreinte du lien de l'extension. */
+    val key: String,
+    /** Nom brut de la version (affiché en détail, jamais analysé ailleurs). */
+    val title: String,
+    /** Lien déjà résolu par l'extension (extension configurée avec Real-Debrid). */
+    val url: String?,
+    val infoHash: String?,
+    val fileIdx: Int?,
+    val filename: String?,
+    val release: Release,
+) {
+    val magnet get() = infoHash?.let { "magnet:?xt=urn:btih:$it" }
+
+    fun toSource(): PlaybackSource = PlaybackSource(
+        id = key, origin = SourceOrigin.DEBRID, quality = release.quality, hdr = release.hdr, language = release.language,
+        state = if (release.cached == true) SourceState.CACHED_INSTANT else SourceState.AVAILABLE,
+        sizeBytes = release.sizeBytes, rip = release.source?.label,
+    )
+}
+
+/** Œuvre à chercher : film, ou épisode d'une série (identifiants TMDB). */
+data class DebridQuery(val tmdbId: Int, val series: Boolean, val season: Int? = null, val episode: Int? = null) {
+    /** Forme sérialisable pour une route : « m:157336 », « s:1396:2:5 ». */
+    fun encode() = if (series) "s:$tmdbId:$season:$episode" else "m:$tmdbId"
+
+    companion object {
+        fun decode(s: String?): DebridQuery? {
+            val p = s?.split(':') ?: return null
+            return when (p.firstOrNull()) {
+                "m" -> p.getOrNull(1)?.toIntOrNull()?.let { DebridQuery(it, false) }
+                "s" -> {
+                    val id = p.getOrNull(1)?.toIntOrNull() ?: return null
+                    DebridQuery(id, true, p.getOrNull(2)?.toIntOrNull(), p.getOrNull(3)?.toIntOrNull())
+                }
+                else -> null
+            }
+        }
+    }
+}
+
+/**
+ * Sources Real-Debrid d'une œuvre : TMDB → IMDb, puis extension au format Stremio
+ * (`/stream/movie/tt….json`, `/stream/series/tt…:S:E.json`). Résultats gardés 6 h en mémoire.
+ * L'adresse de l'extension peut contenir une clé : elle n'est jamais écrite dans un journal.
+ */
+@Singleton
+class DebridSources @Inject constructor(
+    private val http: OkHttpClient,
+    private val json: Json,
+    private val settings: SettingsStore,
+    private val tmdb: TmdbClient,
+    private val rd: RealDebridClient,
+    @ApplicationContext private val context: Context,
+) {
+    private data class Entry(val at: Long, val streams: List<DebridStream>)
+    private val cache = ConcurrentHashMap<DebridQuery, Entry>()
+
+    /** Real-Debrid utilisable : clé (ou association) et extension de sources renseignées. */
+    suspend fun enabled(): Boolean = settings.current().debridAddon.isNotEmpty() && rd.configured()
+
+    suspend fun find(q: DebridQuery): List<DebridStream> {
+        cache[q]?.takeIf { System.currentTimeMillis() - it.at < TTL_MS }?.let { return it.streams }
+        val s = settings.current()
+        if (s.debridAddon.isEmpty() || !rd.configured()) return emptyList()
+        val imdb = tmdb.imdbId(s.tmdbApiKey, if (q.series) "tv" else "movie", q.tmdbId) ?: return emptyList()
+        val path = if (q.series) "stream/series/$imdb:${q.season}:${q.episode}.json" else "stream/movie/$imdb.json"
+        val url = "${s.debridAddon}/$path".toHttpUrlOrNull() ?: return emptyList()
+        val text = try {
+            withTimeoutOrNull(TIMEOUT_MS) {
+                http.newCall(Request.Builder().url(url).header("User-Agent", "SokoulTV/2.0").build()).await().use { r ->
+                    if (r.isSuccessful) r.body?.string() else { Timber.w("Extension de sources : HTTP ${r.code}"); null }
+                }
+            }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { Timber.w("Extension de sources injoignable"); null }
+            ?: return emptyList()
+        val streams = parse(text, json)
+        cache[q] = Entry(System.currentTimeMillis(), streams)
+        return streams
+    }
+
+    /** Une version déjà trouvée (lecteur relancé avec la même clé). */
+    fun cached(q: DebridQuery, key: String): DebridStream? = cache[q]?.streams?.firstOrNull { it.key == key }
+
+    /** Préférences de classement selon les réglages et le réseau du moment. */
+    suspend fun prefs(iptvBlocked: Boolean = false): SourceRanker.Prefs {
+        val s = settings.current()
+        return SourceRanker.Prefs(
+            languages = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(s.vodLanguages),
+            maxBytes = maxBytes(s, ethernet()),
+            supports4k = com.sokoul.iptv.data.repo.DeviceCaps.supports4k,
+            iptvBlocked = iptvBlocked,
+        )
+    }
+
+    private fun ethernet(): Boolean = runCatching {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
+    }.getOrDefault(false)
+
+    companion object {
+        const val TTL_MS = 6 * 3600_000L
+        const val TIMEOUT_MS = 15_000L
+
+        /** 0 = automatique : 25 Go en Wi-Fi, sans limite en câble ; 200 = sans limite. */
+        fun maxBytes(s: AppSettings, ethernet: Boolean): Long? = when {
+            s.debridMaxGb == 200 -> null
+            s.debridMaxGb > 0 -> s.debridMaxGb * 1_000_000_000L
+            ethernet -> null
+            else -> 25_000_000_000L
+        }
+
+        /** Réponse Stremio `{"streams":[…]}` → versions lisibles (films filmés en salle écartés). */
+        fun parse(text: String, json: Json = Json): List<DebridStream> {
+            val root = runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return emptyList()
+            return (root["streams"] as? JsonArray).orEmpty().mapNotNull { e ->
+                val o = e as? JsonObject ?: return@mapNotNull null
+                val hints = o["behaviorHints"] as? JsonObject
+                val url = o.str("url")?.takeIf { it.startsWith("http") }
+                val hash = o.str("infoHash")?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{40}")) }
+                if (url == null && hash == null) return@mapNotNull null
+                val name = o.str("name").orEmpty()
+                val title = o.str("title") ?: o.str("description").orEmpty()
+                val filename = hints?.str("filename")
+                val release = ReleaseName.parse(name, title, filename).let { r ->
+                    if (r.sizeBytes == null) r.copy(sizeBytes = hints?.long("videoSize")) else r
+                }
+                if (release.cam) return@mapNotNull null
+                val fileIdx = o.long("fileIdx")?.toInt()
+                DebridStream(
+                    key = hash?.let { "$it:${fileIdx ?: -1}" } ?: ("u" + url.hashCode().toUInt().toString(16)),
+                    title = (filename ?: title.lineSequence().firstOrNull() ?: name).trim(),
+                    url = url, infoHash = hash, fileIdx = fileIdx, filename = filename, release = release,
+                )
+            }.distinctBy { it.key }
+        }
+    }
+}

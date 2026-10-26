@@ -3,7 +3,7 @@ package com.sokoul.iptv.domain
 import com.sokoul.iptv.data.repo.VodVersion
 import com.sokoul.iptv.data.repo.Work
 
-/** D'où vient le flux. DEBRID arrivera avec Real-Debrid. */
+/** D'où vient le flux : abonnement IPTV ou compte Real-Debrid. */
 enum class SourceOrigin { IPTV, DEBRID }
 
 /** Définition de l'image, de la meilleure à la moins bonne. */
@@ -39,6 +39,10 @@ data class PlaybackSource(
     /** Rubrique du fournisseur (« [FR] FILMS 4K »). */
     val group: String? = null,
     val state: SourceState = SourceState.AVAILABLE,
+    /** Taille du fichier (Real-Debrid) : « 18 Go ». */
+    val sizeBytes: Long? = null,
+    /** Origine du fichier (Real-Debrid) : « Remux », « Blu-ray », « WEB ». */
+    val rip: String? = null,
 )
 
 object PlaybackSources {
