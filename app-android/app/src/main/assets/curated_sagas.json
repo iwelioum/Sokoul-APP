@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "verified": "2026-10-25, identifiants relevés sur themoviedb.org (titre et année)",
+  "verified": "2026-10-25 et 2026-10-26, identifiants relevés sur themoviedb.org (nom de la collection et films)",
   "sagas": [
     {
       "key": "star-wars",
@@ -65,6 +65,24 @@
       "extraMovieIds": [],
       "chronologicalOrderIds": [],
       "relatedSeriesTmdbIds": [90228]
-    }
+    },
+    { "key": "marvel", "name": "Univers Marvel", "collectionIds": [86311, 131292, 131295, 131296, 284433, 531241, 422834, 529892, 618529] },
+    { "key": "x-men", "name": "X-Men", "collectionIds": [748] },
+    { "key": "mission-impossible", "name": "Mission : Impossible", "collectionIds": [87359] },
+    { "key": "james-bond", "name": "James Bond 007", "collectionIds": [645] },
+    { "key": "pirates", "name": "Pirates des Caraïbes", "collectionIds": [295] },
+    { "key": "matrix", "name": "Matrix", "collectionIds": [2344] },
+    { "key": "indiana-jones", "name": "Indiana Jones", "collectionIds": [84] },
+    { "key": "back-to-the-future", "name": "Retour vers le futur", "collectionIds": [264] },
+    { "key": "terminator", "name": "Terminator", "collectionIds": [528] },
+    { "key": "rocky-creed", "name": "Rocky & Creed", "collectionIds": [1575, 553717] },
+    { "key": "john-wick", "name": "John Wick", "collectionIds": [404609] },
+    { "key": "toy-story", "name": "Toy Story", "collectionIds": [10194] },
+    { "key": "shrek", "name": "Shrek", "collectionIds": [2150] },
+    { "key": "avatar", "name": "Avatar", "collectionIds": [87096] },
+    { "key": "planet-apes", "name": "La Planète des singes", "collectionIds": [1709, 173710] },
+    { "key": "mad-max", "name": "Mad Max", "collectionIds": [8945] },
+    { "key": "die-hard", "name": "Die Hard", "collectionIds": [1570] },
+    { "key": "bourne", "name": "Jason Bourne", "collectionIds": [31562] }
   ]
 }

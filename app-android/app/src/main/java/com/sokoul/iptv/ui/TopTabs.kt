@@ -178,16 +178,17 @@ private fun TopTabs(
             // voile de lisibilité au-dessus du héros
             .background(Brush.verticalGradient(listOf(SokoulColors.bg(0.85f), SokoulColors.bg(0.45f), Color.Transparent)))
     ) {
-        // trois zones : marque à gauche, rubriques au centre exact de l'écran, actions et heure à droite
-        Box(
+        // trois zones : marque à gauche, rubriques centrées dans l'espace libre (jamais sous les actions), actions et heure à droite
+        Row(
             Modifier.fillMaxWidth().padding(start = l.margin, end = l.margin, top = Space.l)
                 .onFocusChanged { onFocusChanged(it.hasFocus); if (!it.hasFocus) settling = null }
                 // onglets masqués (rangées) : ▲ ne doit pas y entrer
                 .focusProperties { enter = { if (open.value) selectedFocus else FocusRequester.Cancel } }
                 .focusGroup(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            SokoulMark(Modifier.align(Alignment.CenterStart), size = 30.dp)
-            Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+            SokoulMark(size = 30.dp)
+            Row(Modifier.weight(1f).padding(horizontal = Space.m), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterHorizontally)) {
                 StreamingDests.forEach { d ->
                     TextTab(
                         d, selected = d == current, visible = open,
@@ -197,7 +198,7 @@ private fun TopTabs(
                     )
                 }
             }
-            Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 IconTab(Icons.Default.Search, "Recherche", open, toContent, onFocus = { settling = null }) { onAction(Dest.SEARCH) }
                 TvSwitch(open, toContent, onFocus = { settling = null }) { onAction(Dest.LIVE) }
                 IconTab(Icons.Default.Settings, "Réglages", open, toContent, onFocus = { settling = null }) { onAction(Dest.SETTINGS) }

@@ -63,8 +63,30 @@ fun TmdbInfo.toItem() = com.sokoul.iptv.data.net.TmdbItem(
     id, title, originalTitle, year, poster, backdrop, rating, overview, genreIds, originalLanguage, voteCount,
 )
 
+/**
+ * Saga du hub. [count] = films au catalogue ; [facts] = résumé de toute la saga (sortis seulement) ;
+ * [minis] = 3 affiches (w154) qui se déploient en éventail au focus ; [logoOf] = film dont le logo sert à la saga.
+ */
 @Immutable
-data class SagaCard(val id: Int, val name: String, val backdrop: String?, val poster: String?, val count: Int, val curated: Boolean = false)
+data class SagaCard(
+    val id: Int, val name: String, val backdrop: String?, val poster: String?, val count: Int, val curated: Boolean = false,
+    val facts: SagaFacts? = null,
+    val seen: Int = 0,
+    val minis: List<String> = emptyList(),
+    val logo: String? = null,
+    val logoOf: Int? = null,
+    val overview: String? = null,
+)
+
+/** « 11 films · 1977 → 2019 · ★ 7,4 de moyenne ». */
+@Immutable
+data class SagaFacts(val films: Int, val from: Int?, val to: Int?, val rating: Double?) {
+    fun line(): String = listOfNotNull(
+        if (films > 1) "$films films" else "1 film",
+        if (from != null && to != null && to > from) "$from → $to" else from?.toString(),
+        rating?.let { "★ " + String.format(java.util.Locale.FRANCE, "%.1f", it) + " de moyenne" },
+    ).joinToString(" · ")
+}
 
 @Immutable
 data class PlatformTile(val platform: Platform, val type: ContentType?, val titles: Int)

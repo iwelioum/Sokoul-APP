@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -401,20 +402,92 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = M
     }
 }
 
-/** Saga : fond de la collection, nom et nombre de films disponibles. */
+/**
+ * Saga : fond de la collection, logo (ou nom), nombre de films et part déjà vue.
+ * Au focus : le fond zoome lentement et 3 mini-affiches se déploient en éventail depuis le coin bas-droit
+ * (translation et rotation lues dans un graphicsLayer : aucune recomposition pendant l'animation).
+ */
 @Composable
 fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null, modifier: Modifier = Modifier, width: Dp = LocalLayout.current.landscape) {
+    val l = LocalLayout.current
     // fond transparent : l'image (ou son repli) couvre toute la tuile, inutile de peindre dessous
-    FocusSurface(onClick = onClick, onFocus = onFocus, modifier = if (width.isSpecified) modifier.width(width) else modifier.fillMaxWidth(), shape = Radius.Card, color = Color.Transparent) { _ ->
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-            NetImage(tmdbSized(saga.backdrop, "w780") ?: tmdbSized(saga.poster, "w342"), saga.name, Modifier.fillMaxSize()) { PosterFallback(saga.name) }
-            // voile sur les 60 % du bas seulement (sous le texte) : la grille entière en fait une passe de moins
-            Box(Modifier.fillMaxWidth().fillMaxHeight(0.6f).align(Alignment.BottomStart).background(Brush.verticalGradient(0f to Color.Transparent, 1f to SokoulColors.black(0.94f))))
-            Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-                Text("SAGA", color = SokoulColors.Gold, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-                Text(saga.name.replace(" - Saga", "").replace(" (Collection)", ""), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(if (saga.count > 1) "${saga.count} films au catalogue" else "1 film au catalogue", style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary)
+    FocusSurface(
+        onClick = onClick, onFocus = onFocus, style = FocusStyle.Tile,
+        modifier = (if (width.isSpecified) modifier.width(width) else modifier.fillMaxWidth()).focusOnTop(),
+        shape = Radius.Card, color = Color.Transparent,
+    ) { focused ->
+        BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            val zoom = rememberBreathing(focused, to = 1.06f)
+            NetImage(
+                tmdbSized(saga.backdrop, "w780") ?: tmdbSized(saga.poster, "w342"), saga.name,
+                Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value },
+            ) { PosterFallback(saga.name) }
+            // voile du bas (sous le texte) et du coin droit (sous l'éventail)
+            Box(Modifier.fillMaxWidth().fillMaxHeight(0.7f).align(Alignment.BottomStart).background(Brush.verticalGradient(0f to Color.Transparent, 1f to SokoulColors.black(0.94f))))
+            if (!l.isTouch && saga.minis.isNotEmpty()) SagaFan(saga.minis, focused, maxHeight * 0.5f, Modifier.align(Alignment.BottomEnd))
+            Column(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 12.dp, bottom = 12.dp).fillMaxWidth(0.56f)) {
+                val films = saga.facts?.films?.takeIf { it > 0 } ?: saga.count
+                Text(
+                    if (films > 1) "SAGA · $films FILMS" else "SAGA",
+                    color = SokoulColors.Gold, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, maxLines = 1,
+                )
+                if (saga.logo != null) {
+                    NetImage(
+                        tmdbSized(saga.logo, "w300"), saga.name, Modifier.padding(top = 4.dp).fillMaxWidth().heightIn(max = 40.dp),
+                        ContentScale.Fit, alignment = Alignment.BottomStart,
+                    ) { SagaName(saga.name) }
+                } else SagaName(saga.name)
+                Text(
+                    if (saga.count > 1) "${saga.count} au catalogue" else "1 au catalogue",
+                    Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1,
+                )
             }
+            // part de la saga déjà vue
+            val total = saga.facts?.films ?: 0
+            if (saga.seen > 0 && total > 0) ProgressLine(saga.seen.toFloat() / total, Modifier.align(Alignment.BottomStart))
+        }
+    }
+}
+
+@Composable
+private fun SagaName(name: String) {
+    Text(
+        name.replace(" - Saga", "").replace(" (Collection)", ""), style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** 3 mini-affiches empilées dans le coin, qui s'ouvrent en éventail au focus. */
+@Composable
+private fun SagaFan(posters: List<String>, focused: Boolean, height: Dp, modifier: Modifier) {
+    val reduced = LocalReducedMotion.current
+    val p = remember { Animatable(0f) }
+    LaunchedEffect(focused, reduced) {
+        when {
+            !focused -> p.animateTo(0f, tween(Motion.FAST))
+            reduced -> p.snapTo(1f)
+            else -> { delay(140); p.animateTo(1f, Motion.focusSpring()) }
+        }
+    }
+    val w = height * (2f / 3f)
+    Box(modifier.padding(end = 12.dp, bottom = 10.dp).width(w * 2f).height(height)) {
+        val n = posters.size
+        posters.forEachIndexed { i, url ->
+            // de gauche (au fond) à droite (devant) : -14°, -4°, +6°
+            val rank = i - (n - 1)
+            NetImage(
+                url, null,
+                Modifier.align(Alignment.BottomEnd).width(w).height(height)
+                    .graphicsLayer {
+                        val v = p.value
+                        alpha = v.coerceIn(0f, 1f)
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        rotationZ = (rank * 10f + 6f) * v
+                        translationX = rank * w.toPx() * 0.42f * v
+                        translationY = (1f - v) * 18.dp.toPx()
+                    }
+                    .clip(Radius.Tiny),
+            )
         }
     }
 }

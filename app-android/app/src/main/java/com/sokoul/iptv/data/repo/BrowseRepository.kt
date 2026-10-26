@@ -702,6 +702,8 @@ class BrowseRepository @Inject constructor(
     /**
      * Toutes les sagas du catalogue : les grandes franchises éditorialisées d'abord (vérifiées sur TMDB, dès un film
      * au catalogue), puis les collections TMDB repérées par l'analyse du catalogue (au moins 2 films).
+     * Chaque saga porte ses faits (films, années, note moyenne), les films déjà vus et 3 mini-affiches.
+     * Les logos arrivent ensuite ([sagaLogos]) : le hub s'affiche sans les attendre.
      */
     suspend fun sagaHub(pid: Long, limit: Int = 60): List<SagaCard> = ScreenLoading.track { withContext(Dispatchers.Default) {
         val api = enrich.apiKey()
@@ -711,6 +713,7 @@ class BrowseRepository @Inject constructor(
         val c = ctx(pid, ContentType.MOVIE)
         val counts = db.browse().collections(pid, 200)
         val taken = curated.all.flatMap { it.collectionIds }.toSet()
+        val seen = seenMovieKeys(pid)
         val result = coroutineScope {
             // grandes franchises : collections (en cache TMDB), puis une seule recherche au catalogue pour toutes
             val cols = curated.all.flatMap { it.collectionIds }.distinct()
@@ -718,20 +721,23 @@ class BrowseRepository @Inject constructor(
             // films rattachés hors collection (Rogue One, Solo…) : comptés comme sur la page de la saga
             val extras = curated.all.flatMap { it.extraMovieIds }.distinct()
                 .map { id -> async { net.withPermit { tmdb.details(api, "movie", id, full = false) }?.toItem() } }.awaitAll().filterNotNull()
-            val parts = (cols.values.flatMap { it.parts } + extras).distinctBy { it.id }
-            val present = c.matchPairs(parts, parts.size, byName = true).mapTo(HashSet()) { it.first.id }
+                .associateBy { it.id }
+            val parts = (cols.values.flatMap { it.parts } + extras.values).distinctBy { it.id }
+            val present = c.matchPairs(parts, parts.size, byName = true).associate { it.first.id to it.second }
             val big = curated.all.mapNotNull { cs ->
                 val mine = cs.collectionIds.mapNotNull { cols[it] }
                 val first = mine.firstOrNull() ?: return@mapNotNull null
-                val n = (mine.flatMap { it.parts }.map { it.id } + cs.extraMovieIds).distinct().count { it in present }
-                if (n == 0) null else SagaCard(first.id, cs.name, first.backdrop, first.poster, n, curated = true)
+                val all = (mine.flatMap { it.parts } + cs.extraMovieIds.mapNotNull { extras[it] }).distinctBy { it.id }.sortedBy { it.year ?: 9999 }
+                val n = all.count { it.id in present }
+                if (n == 0) null else hubCard(first.id, cs.name, first.backdrop, first.poster, n, all, present, seen, first.overview, curated = true)
             }
             val others = counts.filter { it.collectionId !in taken && it.works >= 2 }.take(limit).map { col ->
                 async {
                     // sans image, une collection obscure (souvent d'une autre langue) n'a pas sa place dans le hub
                     val full = net.withPermit { tmdb.collection(api, col.collectionId) } ?: return@async null
-                    if (full.backdrop == null) null
-                    else SagaCard(col.collectionId, SagaLogic.displayName(full.name), full.backdrop, full.poster, col.works)
+                    if (full.backdrop == null) return@async null
+                    val mine = c.matchPairs(full.parts, full.parts.size).associate { it.first.id to it.second }
+                    hubCard(col.collectionId, SagaLogic.displayName(full.name), full.backdrop, full.poster, col.works, full.parts, mine, seen, full.overview)
                 }
             }
             big.sortedByDescending { it.count } + others.awaitAll().filterNotNull()
@@ -739,6 +745,47 @@ class BrowseRepository @Inject constructor(
         hubCache[key] = System.currentTimeMillis() to result
         result
     } }
+
+    private fun hubCard(
+        id: Int, name: String, backdrop: String?, poster: String?, count: Int, parts: List<TmdbItem>,
+        present: Map<Int, Work>, seen: Set<String>, overview: String?, curated: Boolean = false,
+    ): SagaCard {
+        val here = parts.filter { it.id in present }
+        // éventail : les affiches des films du catalogue d'abord, dans l'ordre de sortie
+        val minis = (here + parts.filter { it.id !in present }).mapNotNull { tmdbSized(it.poster, "w154") }.distinct().take(3)
+        return SagaCard(
+            id, name, backdrop, poster, count, curated,
+            facts = SagaLogic.facts(parts.map { it.year to it.rating }),
+            seen = here.count { present[it.id]?.key in seen },
+            minis = minis,
+            logoOf = SagaLogic.logoPart(name, parts),
+            overview = overview?.takeIf { it.isNotBlank() },
+        )
+    }
+
+    /** Logos des sagas (celui du film qui porte leur nom), chargés après le hub ; mis en cache avec lui. */
+    suspend fun sagaLogos(pid: Long, cards: List<SagaCard>): List<SagaCard> = withContext(Dispatchers.Default) {
+        val api = enrich.apiKey()
+        if (api.isBlank()) return@withContext cards
+        val logos = coroutineScope {
+            cards.filter { it.logo == null && it.logoOf != null }.map { s ->
+                async { s.id to net.withPermit { tmdb.details(api, "movie", s.logoOf!!, full = false) }?.logo }
+            }.awaitAll()
+        }.toMap()
+        if (logos.values.all { it == null }) return@withContext cards
+        val out = cards.map { s -> logos[s.id]?.let { s.copy(logo = it) } ?: s }
+        val key = pid to parental.canAccessLocked()
+        hubCache[key]?.let { (t, _) -> hubCache[key] = t to out }
+        out
+    }
+
+    /** Clés des films vus (terminés, ou regardés à plus de 90 %). */
+    private suspend fun seenMovieKeys(pid: Long): Set<String> {
+        val done = db.browse().lastWatched(pid, 300)
+            .filter { it.type == ContentType.MOVIE && (it.finished || (it.durationMs > 0 && it.positionMs > it.durationMs * 0.9)) }
+        if (done.isEmpty()) return emptySet()
+        return done.map { it.itemId }.distinct().chunked(500).flatMap { db.browse().moviesByIds(pid, it) }.mapTo(HashSet()) { it.toWork().key }
+    }
 
     private val hubCache = ConcurrentHashMap<Pair<Long, Boolean>, Pair<Long, List<SagaCard>>>()
 
@@ -770,10 +817,14 @@ class BrowseRepository @Inject constructor(
             val movies = ctx(pid, ContentType.MOVIE)
             val found = movies.matchPairs(items, items.size, byName = true).associate { it.first.id to it.second }
             val dec = enrich.decorate(pid, found.values.toList()).associateBy { it.key }
+            val sagaName = cs?.name ?: SagaLogic.displayName(main.name)
+            val logoD = async { SagaLogic.logoPart(sagaName, items)?.let { net.withPermit { tmdb.details(api, "movie", it, full = false) }?.logo } }
             val films = items.map { item -> found[item.id]?.let { dec[it.key] ?: it } ?: item.offCatalog(ContentType.MOVIE) }
+            val seenKeys = seenMovieKeys(pid)
+            val seen = films.filter { it.available && it.key in seenKeys }.mapTo(HashSet()) { it.uid }
             val base = SagaPage(
                 id = main.id,
-                name = cs?.name ?: SagaLogic.displayName(main.name),
+                name = sagaName,
                 overview = main.overview?.takeIf { it.isNotBlank() },
                 backdrop = main.backdrop,
                 films = films,
@@ -781,6 +832,8 @@ class BrowseRepository @Inject constructor(
                 series = emptyList(),
                 faces = emptyList(),
                 crew = emptyList(),
+                logo = logoD.await(),
+                seen = seen,
             )
             // première visite : le générique (une requête par film) arrive après la frise, qui s'affiche aussitôt
             if (onPartial != null && creditsD.any { !it.isCompleted }) onPartial(base.copy(series = if (seriesD.isCompleted) seriesD.await() else emptyList()))

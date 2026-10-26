@@ -109,6 +109,8 @@ private class PressState {
  */
 enum class FocusStyle(val scale: Float, val border: Dp, val accentBar: Boolean, val lift: Dp) {
     Card(1.12f, Edge.Focus, false, 4.dp),
+    // grandes tuiles 16:9 (sagas) : même dessin que Card, agrandissement plus mesuré
+    Tile(1.06f, Edge.Focus, false, 3.dp),
     Row(1f, 0.dp, true, 0.dp),
     Chip(1.05f, 0.dp, false, 0.dp),
 }
@@ -125,9 +127,9 @@ fun FocusSurface(
     style: FocusStyle = FocusStyle.Card,
     onLongClick: (() -> Unit)? = null,
     shape: Shape = if (style == FocusStyle.Chip) Radius.Pill else Radius.Card,
-    color: Color = if (style == FocusStyle.Card) SokoulColors.SurfaceHigh else Color.Transparent,
+    color: Color = if (style == FocusStyle.Card || style == FocusStyle.Tile) SokoulColors.SurfaceHigh else Color.Transparent,
     focusedColor: Color = when (style) {
-        FocusStyle.Card -> color
+        FocusStyle.Card, FocusStyle.Tile -> color
         FocusStyle.Row -> SokoulColors.SurfaceHigher
         FocusStyle.Chip -> SokoulColors.Focus
     },
@@ -143,7 +145,7 @@ fun FocusSurface(
     )
     val bg by rememberUpdatedState(color)
     val fbg by rememberUpdatedState(focusedColor)
-    val card = style == FocusStyle.Card
+    val card = style == FocusStyle.Card || style == FocusStyle.Tile
     Box(
         modifier
             .graphicsLayer {

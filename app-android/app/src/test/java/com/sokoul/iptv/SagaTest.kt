@@ -158,7 +158,7 @@ class SagaTest {
         val file = File("src/main/assets/curated_sagas.json")
         assertTrue("fichier trop lourd", file.length() < 15_000)
         val sagas = CuratedSagaParser.parse(file.readText())
-        assertTrue(sagas.size in 6..15)
+        assertTrue("sagas : ${sagas.size}", sagas.size in 20..40)
         assertEquals(sagas.size, sagas.map { it.key }.toSet().size)
         val cols = sagas.flatMap { it.collectionIds }
         assertEquals("collection dans deux sagas", cols.size, cols.toSet().size)

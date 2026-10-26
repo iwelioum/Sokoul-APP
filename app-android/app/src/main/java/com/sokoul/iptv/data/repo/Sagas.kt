@@ -67,8 +67,13 @@ data class SagaPage(
     val series: List<Work>,
     val faces: List<SagaFace>,
     val crew: List<SagaCrew>,
+    /** Logo de la saga (celui du film qui porte son nom), sinon null : nom en toutes lettres. */
+    val logo: String? = null,
+    /** Films déjà vus (uid), pour la frise et « Continuer la saga ». */
+    val seen: Set<String> = emptySet(),
 ) {
     val inCatalog get() = films.count { it.available }
+    val facts get() = SagaLogic.facts(films.map { it.year to it.rating })
 }
 
 object SagaLogic {
@@ -102,6 +107,38 @@ object SagaLogic {
         for (c in credits) for (p in c.crew) if (p.role in jobs) count.getOrPut(p.name) { HashSet() } += c.movieId
         val names = count.entries.sortedByDescending { it.value.size }.take(perJob).map { it.key }
         if (names.isEmpty()) null else SagaCrew(label, names)
+    }
+
+    private fun norm(s: String) = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "").replace("&", "and").replace(Regex("[^a-z0-9]+"), "")
+
+    /**
+     * Film dont le logo peut représenter la saga : celui qui porte exactement son nom (titre français ou original :
+     * « Alien », « Shrek », « Matrix »). Sinon null : le logo d'un épisode (« Harry Potter à l'école des sorciers »)
+     * tromperait sur le nom de la saga.
+     */
+    fun logoPart(name: String, parts: List<com.sokoul.iptv.data.net.TmdbItem>): Int? {
+        val n = norm(displayName(name))
+        if (n.isEmpty()) return null
+        return parts.firstOrNull { p -> norm(p.title) == n || p.originalTitle?.let(::norm) == n }?.id
+    }
+
+    /** Faits d'une saga (films sortis seulement) : nombre, première et dernière année, note moyenne. */
+    fun facts(films: List<Pair<Int?, Double?>>, thisYear: Int = java.time.Year.now().value): SagaFacts {
+        val out = films.filter { (y, _) -> y != null && y <= thisYear }
+        val years = out.mapNotNull { it.first }
+        val ratings = out.mapNotNull { it.second?.takeIf { r -> r >= 1.0 } }
+        return SagaFacts(out.size, years.minOrNull(), years.maxOrNull(), if (ratings.isEmpty()) null else ratings.average())
+    }
+
+    /**
+     * Prochain film à regarder, dans l'ordre affiché : le premier film du catalogue non vu qui suit le dernier vu
+     * (on reprend là où l'on s'est arrêté), sinon le premier non vu. Null si tout est vu ou rien n'est disponible.
+     */
+    fun next(films: List<Work>, seen: Set<String>): Work? {
+        val last = films.indexOfLast { it.uid in seen }
+        return films.drop(last + 1).firstOrNull { it.available && it.uid !in seen }
+            ?: films.firstOrNull { it.available && it.uid !in seen }
     }
 
     /** Ordre du récit : films listés d'abord dans l'ordre éditorial, les autres ensuite par date de sortie. */

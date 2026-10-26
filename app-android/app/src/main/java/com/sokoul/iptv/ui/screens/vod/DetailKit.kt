@@ -569,7 +569,9 @@ private fun ScrollHint(text: String, modifier: Modifier) {
 /** Apparition décalée (fondu + léger glissement vers le haut), jouée une seule fois par fiche. */
 @Composable
 fun Modifier.entrance(index: Int, entered: MutableState<Boolean>): Modifier {
-    val a = remember { Animatable(if (entered.value) 1f else 0f) }
+    // animations désactivées : tout est en place d'emblée
+    val reduced = com.sokoul.iptv.ui.theme.LocalReducedMotion.current
+    val a = remember { Animatable(if (entered.value || reduced) 1f else 0f) }
     LaunchedEffect(Unit) {
         if (a.value < 1f) { delay(index * Motion.STAGGER.toLong()); a.animateTo(1f, Motion.enter()) }
     }
