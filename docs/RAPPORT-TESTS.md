@@ -753,3 +753,59 @@ Branche `phase13-real-debrid` (créée depuis `phase12-finitions-ecrans`). Sept 
   - « Passer l'intro » et « Ça coupe ? » (couverts par les tests unitaires) ;
   - la lecture RD pendant un enregistrement IPTV : cet essai ouvrirait une connexion IPTV.
 - Pas de nouvelle mesure `gfxinfo` pour le Guide et l'accueil.
+
+## 16. Phase 14 — Design moderne et fonctions restantes (26/10/2026)
+
+Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub).
+
+### Ce qui a été fait
+1. **Bugs** : la reprise Real-Debrid depuis « Reprendre » fonctionne (avant : « Film introuvable »). Ligne obsolète « Image d'une version, son d'une autre » supprimée. Les cartes de l'équipe d'une saga ouvrent la page de la personne. Retour depuis le Guide : le focus revient sur son icône.
+2. **Système de design** : un seul bouton (`SokoulButton`), un seul en-tête de page, des squelettes de chargement par écran, une seule barre d'avancement, un vrai interrupteur dans les réglages oui/non, un cadre de dialogue unique (le menu « … » devient un panneau latéral sur TV), un champ de saisie maison. `DesignTokensTest` interdit désormais les tailles de texte brutes, les couleurs brutes et les composants Material doublons.
+3. **Écrans** : image du programme sur les cartes de chaîne, le panneau du Direct et les enregistrements ; catégories avec compteur et icône ; barre du bas du téléphone maison ; économiseur d'écran aux couleurs de l'app ; ajout d'abonnement en deux colonnes ; badge « 4K · HDR · Real-Debrid » sur la fiche quand RD est la meilleure source.
+4. **Profils et profil Enfant** (base v8) : favoris et reprise par profil, « Qui regarde ? » au lancement, avatar dans la barre du haut. Le profil Enfant ne voit que les groupes adaptés (nom du groupe, ou choix à la main par appui long). Il n'a ni Réglages, ni groupes verrouillés, ni Real-Debrid, et l'accueil écarte les titres classés 12 ans et plus, l'horreur et les thrillers. En sortir demande le code parental. La sauvegarde (version 3) inclut les profils et la reprise.
+5. **Real-Debrid** :
+   - sur la fiche série, chaque épisode propose ses versions RD (menu de l'épisode), et « Lecture » passe par RD quand RD est meilleur que l'IPTV ;
+   - nouvelle rangée « Aussi disponible via Real-Debrid » dans la recherche.
+6. **Trakt**, par profil (Réglages › Profils › Trakt) :
+   - association par code ;
+   - ce qui est regardé est envoyé pendant la lecture ;
+   - les titres marqués vus et les ajouts à Ma liste sont envoyés ;
+   - les vus et la liste « à voir » de Trakt sont importés, maintenant ou toutes les 6 h.
+
+   Il faut votre propre appli Trakt (identifiant et secret, dans Réglages ou `local.properties` : `sokoul.key.trakt`, `sokoul.key.traktsecret`).
+7. **Rangée « À suivre » de l'accueil TV** : les reprises du profil Principal sont publiées, avec image, avancement et lien direct vers la lecture. Liens `sokoul://resume/…` vérifiés.
+8. **Signature définitive** : clé RSA 4096 dans `%USERPROFILE%\.sokoul\` (`sokoul-release.jks` et `keystore.properties`). Elle est hors du dépôt et hors de OneDrive, et ses mots de passe ne sont écrits nulle part ailleurs. **Il faut sauvegarder ce dossier** (clé USB, gestionnaire de mots de passe) : sans lui, les mises à jour ne s'installeront plus par-dessus.
+
+### Vérifié sur la box (Google TV, Android 14)
+- **Migration vers la base v8** : la reprise et Ma liste sont conservées.
+- **« Qui regarde ? »** s'affiche au lancement avec 2 profils. L'accueil Enfant ne montre que des titres tous publics, sans rangée RD. Le retour au profil Principal fonctionne, et le profil de test a été supprimé ensuite.
+- **Rangée « À suivre »** : « 10 reprises publiées » (Réglages › À propos). **Google TV ne l'affiche pas** : Google réserve cette rangée à des applis partenaires. Sur un Android TV classique, elle s'afficherait.
+- **Lien de reprise invalide** : l'app s'ouvre sur l'accueil, sans lecture.
+- **Réglages** : le volet des rubriques défile désormais. Avant, « Sauvegarde » et « À propos » étaient hors écran depuis l'ajout de « Profils ».
+- **Fluidité** (`gfxinfo`, images saccadées) :
+
+  | Écran | Avant | Après |
+  |---|---|---|
+  | Accueil, 1re descente (images en chargement) | — | 6,9 % |
+  | Accueil, 2e descente | — | 2,6 % (90e centile 38 ms) |
+  | Guide, défilement des chaînes | 14 à 16 % | 8,4 % (médiane 11 ms) |
+
+- **Aucun flux IPTV ouvert pendant ces essais** (le Guide ne lance rien). L'app a été fermée à la fin.
+
+### Tests
+- `:app:testDebugUnitTest` : **326 tests, 0 échec**. `:parser:test` : 21 tests, 0 échec. `lintRelease` : 0 erreur.
+- Nouveaux tests :
+  - `ProfilesTest` : isolation des profils, filtre Enfant, code parental ;
+  - `KidsRatingTest` ;
+  - migration v7 → v8 ;
+  - `DebridSearchTest` ;
+  - `TraktTest` (faux serveur) : code, refus, scrobble, import par profil ;
+  - `DeepLinksTest`.
+- **Blocage des tests corrigé** : le suivi du profil démarrait seul et croisait la fermeture de la base dans un test. Il démarre maintenant avec l'application.
+
+### Limites connues
+- **Installation signée sur la box pas encore faite.** La nouvelle signature impose de désinstaller l'app, ce qui efface ses données. Il faut d'abord exporter la sauvegarde, puis la restaurer après l'installation. À faire avec votre accord.
+- **Trakt** n'a pas été essayé avec un vrai compte (aucune appli Trakt créée). Le comportement est couvert par les tests sur un faux serveur. Les épisodes vus sur Trakt ne sont importés que pour les séries dont la liste d'épisodes est déjà chargée (fiche déjà ouverte).
+- **Filtre d'âge du profil Enfant** : il s'applique à l'accueil et aux pages Films et Séries. Les grilles de catégories et la recherche filtrent seulement par groupe.
+- **Langues audio et « Passer l'intro »** restent communs à tous les profils.
+- **Guide** : il reste au-dessus de 5 % (une image lente par appui), sans saccade visible.
