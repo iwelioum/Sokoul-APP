@@ -736,8 +736,8 @@ Branche `phase13-real-debrid` (créée depuis `phase12-finitions-ecrans`). Sept 
 ### Tests
 - `:parser:test`, `:app:testDebugUnitTest` : **303 tests, 0 échec**, 2 ignorés (test réel du fournisseur ; test « sans clé », la clé étant présente). `lintRelease` : 0 erreur.
 - Nouveaux tests :
-  - `DebridClientTest` : client RD, plafond de requêtes, 429, choix du fichier, nettoyage, réutilisation d'un torrent prêt ;
-  - `DebridSourcesTest` : 20 noms de versions, classement, épisode dans un pack, taille maximale, adresse de l'extension ;
+  - `DebridClientTest` : compte, ajout, choix du fichier, 429, clé refusée, épisode dans un pack, version pas prête supprimée, torrent prêt réutilisé ;
+  - `DebridSourcesTest` : vrais noms de versions, films filmés en salle, réponse Stremio, classement, taille maximale, épisode dans un pack ;
   - `DebridCloudTest` : titres, fusion, routes de reprise ;
   - `HomeCinemaTest` : choix du mode, fréquence mesurée (23,976 ≠ 24), intro, décalage, version plus légère ;
   - `EveningTest` : « Finit à », « Fini avant » ;
