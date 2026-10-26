@@ -40,6 +40,12 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.offset
+import com.sokoul.iptv.ui.components.KeyHint
+import com.sokoul.iptv.ui.components.KeyHints
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.List
@@ -126,7 +132,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-private enum class Menu { MAIN, ASPECT, RECORD, INFO, VERSION }
+private enum class Menu { MAIN, ASPECT, RECORD, INFO, VERSION, DECODER }
 
 private val resizeModes = listOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT to "Adapter",
@@ -164,6 +170,10 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     var groupsVisible by remember { mutableStateOf(false) }
     var groupIndex by remember { mutableIntStateOf(0) }
     var guideVisible by remember { mutableStateOf(false) }
+    var guideIndex by remember { mutableIntStateOf(0) }
+    // OK : détails de la chaîne (bandeau enrichi + actions focalisables)
+    var detailsVisible by remember { mutableStateOf(false) }
+    val detailsFocus = remember { FocusRequester() }
     val zapPending by vm.zapPending.collectAsStateWithLifecycle()
     val groups by vm.groups.collectAsStateWithLifecycle()
     val currentGroup by vm.currentGroup.collectAsStateWithLifecycle()
@@ -189,6 +199,10 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val nextFocus = remember { FocusRequester() }
 
     fun showInfo() { infoVisible = true; infoTick++ }
+    fun applyLive(n: LiveNav) {
+        listVisible = n.panels.list; groupsVisible = n.panels.groups; guideVisible = n.panels.guide; detailsVisible = n.panels.details
+        listIndex = n.list; groupIndex = n.group; guideIndex = n.guide
+    }
     // rappel « Reprise à … » affiché une seule fois (5 s), pas à chaque fermeture de la barre
     var resumeHintDone by remember(ui.resumedFromMs) { mutableStateOf(false) }
     LaunchedEffect(ui.resumedFromMs) { if (ui.resumedFromMs > 0) { delay(5_000); resumeHintDone = true } }
@@ -198,7 +212,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val showNextCard = !ui.isLive && ui.nextEpisode != null && ui.nextEpisode?.id != nextDismissedFor &&
         (ui.endedWithNext || nextCountdown != null)
     // un panneau ou une carte a le focus : les flèches servent à s'y déplacer
-    val modal = menu != null || episodesVisible || tracksVisible || showNextCard || errorShown || ui.needsPin
+    val modal = menu != null || detailsVisible || episodesVisible || tracksVisible || showNextCard || errorShown || ui.needsPin
 
     // --- intégration système : PiP, MediaSession, plein écran, arrière-plan ---
     DisposableEffect(Unit) {
@@ -253,7 +267,12 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     LaunchedEffect(listVisible, listIndex, groupsVisible, groupIndex) {
         if (listVisible || groupsVisible) { delay(12_000); listVisible = false; groupsVisible = false }
     }
-    LaunchedEffect(guideVisible) { if (guideVisible) { delay(15_000); guideVisible = false } }
+    LaunchedEffect(guideVisible, guideIndex) { if (guideVisible) { delay(20_000); guideVisible = false } }
+    var guidePrograms by remember(ui.channel?.id) { mutableStateOf<List<com.sokoul.iptv.data.db.ProgramEntity>?>(null) }
+    LaunchedEffect(guideVisible, ui.channel?.id) { val c = ui.channel; if (guideVisible && c != null) guidePrograms = vm.upcoming(c) }
+    // détails : se referment seuls après 15 s sans toucher la télécommande ; focus sur la première action
+    LaunchedEffect(detailsVisible, infoTick) { if (detailsVisible) { delay(15_000); detailsVisible = false } }
+    LaunchedEffect(detailsVisible) { if (detailsVisible) repeat(15) { delay(40); if (runCatching { detailsFocus.requestFocus() }.isSuccess) return@LaunchedEffect } }
     LaunchedEffect(numberBuffer) {
         if (numberBuffer.isNotEmpty()) {
             delay(com.sokoul.iptv.ui.screens.tv.NUMBER_SETTLE_MS)
@@ -295,6 +314,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         // Retour ferme seulement l'écran de pause (sans montrer la barre) : un second Retour quitte le lecteur
         pauseScreen -> { pauseScreen = false; true }
         tracksVisible -> { tracksVisible = false; true }
+        detailsVisible -> { detailsVisible = false; true }
         // zapping en cours : on reste sur la chaîne regardée
         zapPending != null -> vm.cancelZap()
         groupsVisible -> { groupsVisible = false; listVisible = true; true }
@@ -309,7 +329,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         errorShown -> { nav.popBackStack(); true }
         else -> false
     }
-    BackHandler(enabled = pauseScreen || zapPending != null || groupsVisible || guideVisible || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
+    BackHandler(enabled = pauseScreen || detailsVisible || zapPending != null || groupsVisible || guideVisible || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
     // touche Retour interceptée avant Compose : sinon elle retire seulement le focus de la barre (télécommande « muette »)
     var backDownConsumed by remember { mutableStateOf(false) }
     // filet de sécurité : le lecteur ne reste jamais sans focus (hors menus, qui ont leur propre fenêtre)
@@ -360,7 +380,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 if (e.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK && menu == null) {
                     // appui long : tout fermer d'un coup et revenir à la vidéo
                     if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 1 && ui.isLive) {
-                        vm.cancelZap(); listVisible = false; groupsVisible = false; guideVisible = false; tracksVisible = false; numberBuffer = ""; infoVisible = false
+                        vm.cancelZap(); listVisible = false; groupsVisible = false; guideVisible = false; detailsVisible = false; tracksVisible = false; numberBuffer = ""; infoVisible = false
                         backDownConsumed = true
                         return@onPreviewKeyEvent true
                     }
@@ -384,7 +404,11 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
                 // touches multimédia : toujours actives
                 when (code) {
-                    KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_SETTINGS -> { if (!modal) menu = Menu.MAIN; return@onKeyEvent true }
+                    KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_SETTINGS -> {
+                        if (ui.isLive && guideVisible) { guideVisible = false; nav.navigate(com.sokoul.iptv.ui.nav.GuideRoute) }
+                        else if (!modal || detailsVisible) { detailsVisible = false; menu = Menu.MAIN }
+                        return@onKeyEvent true
+                    }
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> { playPause(); return@onKeyEvent true }
                     KeyEvent.KEYCODE_MEDIA_PLAY -> { exo?.play(); return@onKeyEvent true }
                     KeyEvent.KEYCODE_MEDIA_PAUSE -> { vm.pauseAndSave(); showInfo(); return@onKeyEvent true }
@@ -400,14 +424,26 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     if (numberBuffer.length < 5) numberBuffer += (code - KeyEvent.KEYCODE_0).toString()
                     return@onKeyEvent true
                 }
-                if (ui.isLive) liveKey(
-                    code, repeat, LivePanels(listVisible, groupsVisible, guideVisible), zapList, groups, ui,
-                    setListIndex = { listIndex = it(listIndex) }, setGroupIndex = { groupIndex = it(groupIndex) },
-                    setPanels = { p -> listVisible = p.list; groupsVisible = p.groups; guideVisible = p.guide },
-                    hideInfo = { infoVisible = false }, showInfo = ::showInfo, vm = vm,
-                    currentListIndex = { listIndex }, currentGroupIndex = { groupIndex },
-                    openGroups = { groupIndex = groups.indexOfFirst { it.id == currentGroup }.coerceAtLeast(0) },
-                ) else {
+                if (ui.isLive) {
+                    val r = LiveKeys.reduce(
+                        code, repeat,
+                        LiveNav(LivePanels(listVisible, groupsVisible, guideVisible, detailsVisible), listIndex, groupIndex, guideIndex),
+                        LiveLists(
+                            channels = zapList.size, groups = groups.size, programs = guidePrograms?.size ?: 0,
+                            currentChannel = zapList.indexOfFirst { it.id == ui.channel?.id }, currentGroup = groups.indexOfFirst { it.id == currentGroup },
+                        ),
+                        inverted = vm.zapInverted,
+                    ) ?: return@onKeyEvent false
+                    applyLive(r.nav)
+                    if (r.hideInfo) infoVisible = false
+                    when (val c = r.cmd) {
+                        is LiveCmd.Zap -> vm.zap(c.delta)
+                        is LiveCmd.Play -> zapList.getOrNull(c.index)?.let { vm.playChannel(it) }
+                        is LiveCmd.SelectGroup -> groups.getOrNull(c.index)?.let { vm.selectGroup(it.id) }
+                        null -> Unit
+                    }
+                    true
+                } else {
                     // VOD : commandes affichées → la navigation au focus prend la main
                     if (infoVisible || !isDpad(code)) return@onKeyEvent false
                     when (code) {
@@ -498,7 +534,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 controlsShown, Modifier.align(Alignment.BottomCenter),
                 enter = slideInVertically(Motion.enter()) { it / 4 } + fadeIn(Motion.enter()), exit = slideOutVertically(Motion.exit()) { it / 4 } + fadeOut(Motion.exit()),
             ) {
-                if (ui.isLive) LiveInfoBar(ui) else VodControls(
+                if (ui.isLive) LiveInfoBar(ui, health = healthOf(streamState)) else VodControls(
                     position, duration, seekPreview,
                     buffering = streamState is StreamState.Buffering,
                     playing = isPlaying,
@@ -532,23 +568,39 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             }
             // univers TV : liste des chaînes, groupes, mini-guide, bandeau de zapping
             val side = if (l.isCompact) 8.dp else 40.dp
-            AnimatedVisibility(listVisible, Modifier.align(Alignment.CenterStart).padding(start = side), enter = slideInHorizontally(Motion.enter()) { -it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { -it } + fadeOut(Motion.exit())) {
+            val clock = rememberNow(30_000)
+            AnimatedVisibility(listVisible, Modifier.align(Alignment.CenterStart).padding(start = if (groupsVisible) 320.dp else 0.dp), enter = slideInHorizontally(Motion.enter()) { -it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { -it } + fadeOut(Motion.exit())) {
                 var nowMap by remember { mutableStateOf<Map<String, com.sokoul.iptv.data.db.ProgramEntity>>(emptyMap()) }
                 LaunchedEffect(zapList) { nowMap = vm.nowFor(zapList) }
                 ChannelOverlay(
-                    groups.firstOrNull { it.id == currentGroup }?.name ?: "Chaînes", zapList, listIndex, ui.channel?.id, nowMap,
+                    groups.firstOrNull { it.id == currentGroup }?.name ?: "Chaînes", zapList, listIndex, ui.channel?.id, nowMap, clock, withGroups = groupsVisible,
                 ) { i -> zapList.getOrNull(i)?.let { vm.playChannel(it) }; listVisible = false }
             }
-            AnimatedVisibility(groupsVisible, Modifier.align(Alignment.CenterStart).padding(start = side), enter = fadeIn(Motion.enter()), exit = fadeOut(Motion.exit())) {
+            AnimatedVisibility(groupsVisible, Modifier.align(Alignment.CenterStart), enter = slideInHorizontally(Motion.enter()) { -it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { -it } + fadeOut(Motion.exit())) {
                 GroupsPanel(groups, groupIndex, currentGroup) { i -> groups.getOrNull(i)?.let { vm.selectGroup(it.id) }; groupsVisible = false; listIndex = 0; listVisible = true }
             }
-            AnimatedVisibility(guideVisible && ui.channel != null, Modifier.align(Alignment.CenterEnd).padding(end = side), enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit())) {
-                val c = ui.channel
-                if (c != null) {
-                    var programs by remember(c.id) { mutableStateOf<List<com.sokoul.iptv.data.db.ProgramEntity>?>(null) }
-                    LaunchedEffect(c.id) { programs = vm.upcoming(c) }
-                    MiniGuide(c, programs, rememberNow(30_000))
-                }
+            AnimatedVisibility(guideVisible && ui.channel != null, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit())) {
+                ui.channel?.let { c -> MiniGuide(c, guidePrograms, guideIndex, clock) }
+            }
+            // OK : détails de la chaîne (bandeau enrichi + actions)
+            AnimatedVisibility(
+                detailsVisible && ui.channel != null, Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(Motion.enter()) { it / 4 } + fadeIn(Motion.enter()), exit = slideOutVertically(Motion.exit()) { it / 4 } + fadeOut(Motion.exit()),
+            ) {
+                LiveInfoBar(
+                    ui,
+                    actions = buildList {
+                        add(PlayerAction("Programmes", Icons.Default.CalendarViewWeek) { detailsVisible = false; guideIndex = 0; guideVisible = true })
+                        add(PlayerAction("Chaînes", Icons.Default.List) { detailsVisible = false; listIndex = zapList.indexOfFirst { it.id == ui.channel?.id }.coerceAtLeast(0); listVisible = true })
+                        if (ui.canCatchup && ui.nowNext?.now != null) add(PlayerAction("Revoir depuis le début", Icons.Default.History) { detailsVisible = false; vm.restartCurrentProgram() })
+                        add(PlayerAction("Enregistrer", Icons.Default.FiberManualRecord) { detailsVisible = false; menu = Menu.RECORD })
+                        add(PlayerAction(if (ui.isFavorite) "Retirer des favoris" else "Favori", if (ui.isFavorite) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite() })
+                        if (vm.hasPrevious()) add(PlayerAction("Chaîne précédente", Icons.Default.SwapVert) { detailsVisible = false; vm.previous() })
+                        add(PlayerAction("Réglages", Icons.Default.Tune) { detailsVisible = false; menu = Menu.MAIN })
+                    },
+                    firstAction = detailsFocus,
+                    health = healthOf(streamState),
+                )
             }
             // bandeau de zapping (ou de saisie d'un numéro) : la chaîne visée, avant l'ouverture du flux
             val typed = numberBuffer.toIntOrNull()?.let { n -> zapList.firstOrNull { it.number == n } }
@@ -609,8 +661,15 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     // --- menus ---
     when (menu) {
         Menu.MAIN -> OptionsDialog(
-            ui.title,
+            if (ui.isLive) "Réglages du lecteur" else ui.title,
             buildList {
+                // direct : d'abord le lecteur (son, image, décodage, statistiques), puis ce que propose une box TV
+                if (ui.isLive) {
+                    add(MenuOption("Audio et sous-titres", Icons.Default.ClosedCaption) { tracksVisible = true })
+                    add(MenuOption("Format d'image : ${resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
+                    add(MenuOption("Décodage : ${(vm.sessionDecoder ?: vm.defaultDecoder).label}", Icons.Default.Memory) { scope.launch { delay(50); menu = Menu.DECODER } })
+                    add(MenuOption("Statistiques du flux", Icons.Default.Info) { scope.launch { delay(50); menu = Menu.INFO } })
+                }
                 if (!ui.isLive) add(MenuOption("Depuis le début", Icons.Default.Replay) { vm.restartFromBeginning() })
                 if (ui.versionLabel != null) add(MenuOption("Version : ${ui.versionLabel}", Icons.Default.Layers) { scope.launch { delay(50); menu = Menu.VERSION } })
                 // direct : d'abord ce que propose une box TV (guide, enregistrer, favori, recherche, enregistrements)
@@ -621,17 +680,16 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     add(MenuOption("Rechercher une chaîne", Icons.Default.Search) { nav.navigate(com.sokoul.iptv.ui.nav.SearchRoute(com.sokoul.iptv.data.repo.SearchOrigin.TV)) })
                     add(MenuOption("Enregistrements", Icons.Default.VideoLibrary) { nav.navigate(com.sokoul.iptv.ui.nav.RecordingsRoute) })
                     if (ui.canCatchup && ui.nowNext?.now != null) add(MenuOption("Revoir depuis le début du programme", Icons.Default.History) { vm.restartCurrentProgram() })
-                    add(MenuOption("Audio et sous-titres", Icons.Default.ClosedCaption) { tracksVisible = true })
                     // tactile : pas de touche ◀ pour revenir à la chaîne précédente
                     if (l.isTouch) add(MenuOption("Chaîne précédente", Icons.Default.SwapVert) { vm.previous() })
                 }
-                add(MenuOption("Format d'image : ${resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
+                if (!ui.isLive) add(MenuOption("Format d'image : ${resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
                 if (ui.isLive) {
                     add(MenuOption("Ajouter au multi-écran", Icons.Default.GridView) { vm.addToMultiview()?.let { toast(context, it) }; nav.navigate(MultiviewRoute) })
                 } else {
                     if (ui.channel != null) add(MenuOption("Retour au direct", Icons.Default.LiveTv) { vm.backToLive() })
                 }
-                add(MenuOption("Infos du flux", Icons.Default.Info) { scope.launch { delay(50); menu = Menu.INFO } })
+                if (!ui.isLive) add(MenuOption("Infos du flux", Icons.Default.Info) { scope.launch { delay(50); menu = Menu.INFO } })
             },
             onDismiss = { if (menu == Menu.MAIN) menu = null },
         )
@@ -658,6 +716,14 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 is StreamState.Failed -> s.message
                 else -> null
             },
+            onDismiss = { menu = null },
+        )
+        Menu.DECODER -> OptionsDialog(
+            "Décodage (cette séance)",
+            com.sokoul.iptv.data.DecoderMode.entries.map { m ->
+                MenuOption(m.label, Icons.Default.Memory, m == (vm.sessionDecoder ?: vm.defaultDecoder)) { vm.setSessionDecoder(m) }
+            },
+            subtitle = "Si l'image se fige ou saccade, essayez un autre mode. Le flux est rouvert ; le réglage par défaut reste dans Réglages › Lecture.",
             onDismiss = { menu = null },
         )
         Menu.VERSION -> OptionsDialog(
@@ -687,84 +753,15 @@ internal fun vodPills(
     add(PlayerAction("Plus", Icons.Default.MoreHoriz, onClick = onMore))
 }
 
-/** Panneaux du direct ouverts (un seul à la fois). */
-internal data class LivePanels(val list: Boolean = false, val groups: Boolean = false, val guide: Boolean = false) {
-    val any get() = list || groups || guide
-}
-
-/**
- * Touches du direct, comme une box TV :
- * - ▲▼ zappent (sens réglable), CH+ / CH− aussi ; ◀ = chaîne précédente ; ▶ = mini-guide ;
- * - OK = liste des chaînes ; dans la liste, ◀ = groupes, ▶ = mini-guide, OK = regarder.
- */
-private fun liveKey(
-    code: Int, repeat: Int, panels: LivePanels, zapList: List<ChannelEntity>, groups: List<LiveGroup>, ui: PlayerUi,
-    setListIndex: ((Int) -> Int) -> Unit, setGroupIndex: ((Int) -> Int) -> Unit, setPanels: (LivePanels) -> Unit,
-    hideInfo: () -> Unit, showInfo: () -> Unit, vm: PlayerViewModel,
-    currentListIndex: () -> Int, currentGroupIndex: () -> Int, openGroups: () -> Unit,
-): Boolean {
-    val last = (zapList.size - 1).coerceAtLeast(0)
-    val lastGroup = (groups.size - 1).coerceAtLeast(0)
-    fun openList() {
-        setListIndex { zapList.indexOfFirst { it.id == ui.channel?.id }.coerceAtLeast(0) }
-        setPanels(LivePanels(list = true)); hideInfo()
-    }
-    fun move(d: Int) {
-        when {
-            panels.groups -> setGroupIndex { (it + d).coerceIn(0, lastGroup) }
-            panels.list -> setListIndex { (it + d).coerceIn(0, last) }
-        }
-    }
-    return when (code) {
-        KeyEvent.KEYCODE_DPAD_UP -> { if (panels.list || panels.groups) move(-1) else vm.zap(com.sokoul.iptv.ui.screens.tv.zapDelta(up = true, inverted = vm.zapInverted)); true }
-        KeyEvent.KEYCODE_DPAD_DOWN -> { if (panels.list || panels.groups) move(1) else vm.zap(com.sokoul.iptv.ui.screens.tv.zapDelta(up = false, inverted = vm.zapInverted)); true }
-        KeyEvent.KEYCODE_CHANNEL_UP -> { vm.zap(1); true }
-        KeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.zap(-1); true }
-        KeyEvent.KEYCODE_PAGE_UP -> { move(-10); true }
-        KeyEvent.KEYCODE_PAGE_DOWN -> { move(10); true }
-        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-            if (repeat > 0) return true
-            when {
-                panels.groups -> groups.getOrNull(currentGroupIndex())?.let { g ->
-                    vm.selectGroup(g.id)
-                    setListIndex { 0 }
-                    setPanels(LivePanels(list = true))
-                }
-                panels.list -> {
-                    zapList.getOrNull(currentListIndex())?.let { vm.playChannel(it) }
-                    setPanels(LivePanels())
-                }
-                panels.guide -> setPanels(LivePanels())
-                else -> openList()
-            }
-            true
-        }
-        KeyEvent.KEYCODE_DPAD_LEFT -> {
-            when {
-                panels.groups -> Unit
-                panels.list -> { openGroups(); setPanels(LivePanels(groups = true)) }
-                panels.guide -> setPanels(LivePanels())
-                else -> vm.previous()
-            }
-            true
-        }
-        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-            when {
-                panels.groups -> setPanels(LivePanels(list = true))
-                panels.guide -> Unit
-                else -> { setPanels(LivePanels(guide = true)); hideInfo() }
-            }
-            true
-        }
-        else -> false
-    }
-}
-
 private fun toast(context: android.content.Context, msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
 
 
+/**
+ * Bandeau du direct. Avec [actions] (touche OK) : détails de la chaîne — résumé, santé du flux et rangée d'actions
+ * focalisables ; sinon simple bandeau d'information avec les légendes de touches.
+ */
 @Composable
-private fun LiveInfoBar(ui: PlayerUi) {
+private fun LiveInfoBar(ui: PlayerUi, actions: List<PlayerAction>? = null, firstAction: FocusRequester? = null, health: StreamHealth? = null) {
     val now = rememberNow(15_000)
     val c = ui.channel
     val compact = LocalLayout.current.isCompact
@@ -773,6 +770,7 @@ private fun LiveInfoBar(ui: PlayerUi) {
         Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, SokoulColors.black(0.9f), SokoulColors.black(0.95f))))
             .padding(start = side, end = side, top = if (compact) 40.dp else 60.dp, bottom = if (compact) 20.dp else 32.dp)
     ) {
+        Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (c != null) {
                 if (!compact) Text(c.number.toString(), Modifier.padding(end = 18.dp), fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -794,7 +792,7 @@ private fun LiveInfoBar(ui: PlayerUi) {
                         }
                         Text(formatClock(p.end), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
                     }
-                    if (!compact) p.description?.let { Text(it, Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    if (!compact) p.description?.let { Text(it, Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = if (actions != null) 4 else 2, overflow = TextOverflow.Ellipsis) }
                 } else {
                     Text(ui.subtitle ?: "Pas d'information de programme", color = SokoulColors.TextMuted)
                 }
@@ -804,10 +802,42 @@ private fun LiveInfoBar(ui: PlayerUi) {
             }
             if (!compact) Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 24.dp)) {
                 Text(formatClock(now), style = MaterialTheme.typography.headlineSmall)
+                if (health != null) HealthBadge(health, Modifier.padding(top = 4.dp))
                 if (ui.videoInfo.isNotBlank()) Text(ui.videoInfo, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                if (LocalLayout.current.isTv) Text("OK chaînes  ·  ◀ précédente  ·  ▶ programme  ·  Menu options", Modifier.padding(top = 6.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall)
             }
         }
+        // actions des détails : rangée pleine largeur qui défile au focus (jamais coupée)
+        if (actions != null) {
+            androidx.compose.foundation.lazy.LazyRow(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(actions.size) { i ->
+                    PillButton(actions[i], if (i == 0 && firstAction != null) Modifier.focusRequester(firstAction) else Modifier)
+                }
+            }
+        }
+        }
+        if (!compact) KeyHints(
+            if (actions != null) listOf(KeyHint("◀▶", "Choisir"), KeyHint("OK", "Valider"), KeyHint("Retour", "Fermer"))
+            else listOf(KeyHint("OK", "Détails"), KeyHint("◀", "Chaînes"), KeyHint("▶", "Programmes"), KeyHint("▲▼", "Zapper"), KeyHint("Menu", "Réglages")),
+            Modifier.align(Alignment.BottomEnd).padding(top = 8.dp).offset(y = 18.dp),
+        )
+    }
+}
+
+/** Santé du flux en un coup d'œil : pastille verte, orange ou rouge et un mot. */
+internal enum class StreamHealth(val label: String) { GOOD("Flux stable"), WEAK("Flux fragile"), BAD("Flux interrompu") }
+
+internal fun healthOf(s: StreamState): StreamHealth = when (s) {
+    is StreamState.Playing -> StreamHealth.GOOD
+    is StreamState.Failed, is StreamState.Waiting -> StreamHealth.BAD
+    else -> StreamHealth.WEAK
+}
+
+@Composable
+private fun HealthBadge(h: StreamHealth, modifier: Modifier = Modifier) {
+    val color = when (h) { StreamHealth.GOOD -> SokoulColors.Success; StreamHealth.WEAK -> SokoulColors.Warning; StreamHealth.BAD -> SokoulColors.Live }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(color, Radius.Round))
+        Text(h.label, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextSecondary, maxLines = 1)
     }
 }
 

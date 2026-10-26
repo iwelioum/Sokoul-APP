@@ -171,6 +171,7 @@ class PlayerViewModel @Inject constructor(
             val settings = settingsStore.current()
             autoplayNext = settings.autoplayNextEpisode
             zapInverted = settings.zapInverted
+            defaultDecoder = settings.decoderMode
             resizeMode.value = settings.resizeMode
             val sp = StreamPlayer(factory.create(settings), factory, viewModelScope, gate)
             sp.player.addListener(listener)
@@ -293,6 +294,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun play(stream: ResolvedStream, title: String, startMs: Long) {
+        lastPlay = Triple(stream, title, startMs)
         _ui.update { it.copy(error = null, endedWithNext = false) }
         // même œuvre (autre version, nouvelle tentative) : le sous-titre en ligne choisi reste affiché
         val content = when (route.kind) {
@@ -303,6 +305,36 @@ class PlayerViewModel @Inject constructor(
         if (content != subsContent) { subsContent = content; resetOnlineSubtitles() }
         _player.value?.play(stream, title, startMs)
         updateVideoInfo()
+    }
+
+    private var lastPlay: Triple<ResolvedStream, String, Long>? = null
+
+    /** Décodage des réglages (affiché quand aucun choix de séance n'est fait). */
+    var defaultDecoder = com.sokoul.iptv.data.DecoderMode.AUTO
+        private set
+
+    /** Décodage choisi pour cette séance seulement (réglages du lecteur), null = celui des réglages. */
+    var sessionDecoder: com.sokoul.iptv.data.DecoderMode? = null
+        private set
+
+    /**
+     * Change le décodage pendant la lecture : le lecteur est recréé (le moteur de décodage ne se change pas à chaud)
+     * puis le flux rouvert là où il en était. L'ancien est libéré d'abord : jamais deux connexions au fournisseur.
+     */
+    fun setSessionDecoder(mode: com.sokoul.iptv.data.DecoderMode) {
+        viewModelScope.launch {
+            val old = _player.value ?: return@launch
+            val (stream, title, _) = lastPlay ?: return@launch
+            val pos = if (_ui.value.isLive) 0L else old.player.currentPosition
+            sessionDecoder = mode
+            old.player.removeListener(listener)
+            old.release()
+            val sp = StreamPlayer(factory.create(settingsStore.current().copy(decoderMode = mode)), factory, viewModelScope, gate)
+            sp.player.addListener(listener)
+            _player.value = sp
+            watchEnd(sp)
+            sp.play(stream, title, pos)
+        }
     }
 
     // --- Films : versions et repli ------------------------------------------------------
@@ -416,6 +448,8 @@ class PlayerViewModel @Inject constructor(
     /** ◀ en plein écran : alterner entre les deux dernières chaînes. */
     fun previous() { previousChannel?.let { zapper.select(it) } }
 
+    fun hasPrevious() = previousChannel != null
+
     /** Retour pendant le zapping : on reste sur la chaîne regardée (son flux est rouvert). */
     fun cancelZap(): Boolean {
         if (!zapper.cancel()) return false
@@ -444,11 +478,11 @@ class PlayerViewModel @Inject constructor(
     suspend fun nowFor(list: List<ChannelEntity>): Map<String, com.sokoul.iptv.data.db.ProgramEntity> =
         runCatching { epg.nowFor(route.playlistId, list) }.getOrDefault(emptyMap())
 
-    /** Mini-guide : programmes de la chaîne regardée sur les prochaines heures. */
-    suspend fun upcoming(c: ChannelEntity, hours: Int = 8): List<com.sokoul.iptv.data.db.ProgramEntity> {
+    /** Programmes de la chaîne regardée : celui en cours puis la suite, sur la journée. */
+    suspend fun upcoming(c: ChannelEntity, hours: Int = 24): List<com.sokoul.iptv.data.db.ProgramEntity> {
         val now = System.currentTimeMillis()
         return runCatching { epg.range(route.playlistId, c, now - 3 * 3_600_000L, now + hours * 3_600_000L) }.getOrDefault(emptyList())
-            .filter { it.end > now }.take(8)
+            .filter { it.end > now }.take(60)
     }
 
     fun jumpToNumber(n: Int) {
