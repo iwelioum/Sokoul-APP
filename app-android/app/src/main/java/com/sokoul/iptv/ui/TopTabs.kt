@@ -88,6 +88,8 @@ val StreamingDests = listOf(Dest.HOME, Dest.MOVIES, Dest.SERIES, Dest.MY_LIST, D
 class TopBarState(val arrivedByTab: Boolean) {
     var deep by mutableStateOf(false)
     var tabsFocused by mutableStateOf(false)
+    /** L'icône d'action d'où l'on revient a le focus. */
+    var actionFocused by mutableStateOf(false)
     var backToTop: (() -> Boolean)? = null
     /**
      * Cible de ▼ depuis les onglets. Nécessaire : la page plein écran commence sous les onglets
@@ -128,7 +130,7 @@ fun StreamingShell(nav: NavHostController, current: Dest, content: @Composable (
             onFocusChanged = { bar.tabsFocused = it },
             onTab = { d -> if (d != current) { TabHandoff.pending = true; nav.goTo(d) } },
             // 📺 TV : l'univers TV s'ouvre sur la dernière chaîne, en plein écran
-            returnTo = returnTo, actionFocus = actionFocus,
+            returnTo = returnTo, actionFocus = actionFocus, onActionFocus = { bar.actionFocused = it },
             onAction = { d ->
                 TabHandoff.action = current to d
                 when (d) {
@@ -142,8 +144,17 @@ fun StreamingShell(nav: NavHostController, current: Dest, content: @Composable (
     }
     if (bar.arrivedByTab) LaunchedEffect(Unit) {
         // la page précédente (et ses onglets) vient d'être remplacée : le focus reste sur l'onglet
-        val target = if (returnTo != null) actionFocus else tabsFocus
-        repeat(20) { withFrameNanos { }; if (runCatching { target.requestFocus() }.getOrDefault(false)) return@LaunchedEffect }
+        if (returnTo == null) {
+            repeat(20) { withFrameNanos { }; if (runCatching { tabsFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect }
+        } else {
+            // retour d'une action (Guide, Réglages…) : la transition de navigation peut reprendre le focus ;
+            // on insiste jusqu'à ce que l'icône le garde 10 images d'affilée (1 s au plus)
+            var held = 0
+            repeat(60) {
+                withFrameNanos { }
+                if (bar.actionFocused) { if (++held >= 10) return@LaunchedEffect } else { held = 0; runCatching { actionFocus.requestFocus() } }
+            }
+        }
     }
     BackHandler(enabled = !bar.tabsFocused || current != Dest.HOME) {
         when {
@@ -165,6 +176,7 @@ private fun TopTabs(
     onAction: (Dest) -> Unit,
     returnTo: Dest?,
     actionFocus: FocusRequester,
+    onActionFocus: (Boolean) -> Unit,
     downTarget: () -> FocusRequester,
 ) {
     val l = LocalLayout.current
@@ -173,7 +185,7 @@ private fun TopTabs(
     val open = rememberUpdatedState(visible)
     // ▼ depuis n'importe quel onglet : la cible fournie par la page
     val toContent = Modifier.focusProperties { down = downTarget() }
-    fun act(d: Dest) = if (d == returnTo) toContent.focusRequester(actionFocus) else toContent
+    fun act(d: Dest) = if (d == returnTo) toContent.focusRequester(actionFocus).onFocusChanged { onActionFocus(it.isFocused) } else toContent
     val shown by animateFloatAsState(if (visible) 1f else 0f, if (reduced) snap() else tween(Motion.MEDIUM, easing = Motion.Emphasized), label = "tabs")
     // onglet sous le focus : la page ne s'ouvre qu'une fois le curseur posé
     var settling by remember { mutableStateOf<Dest?>(null) }
