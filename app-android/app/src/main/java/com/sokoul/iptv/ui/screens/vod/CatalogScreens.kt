@@ -251,7 +251,7 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
                             PosterTile(
                                 item.title, item.poster, { vm.lastOpened = item.id; onOpen(item) },
                                 Modifier.then(if (item.id == vm.lastOpened) Modifier.focusRequester(restore) else Modifier),
-                                width = Dp.Unspecified, corner = item.badge, meta = item.subtitle,
+                                width = Dp.Unspecified, corner = item.badge, reveal = com.sokoul.iptv.ui.components.Reveal(item.title, null, item.subtitle.orEmpty()),
                             )
                         }
                     }

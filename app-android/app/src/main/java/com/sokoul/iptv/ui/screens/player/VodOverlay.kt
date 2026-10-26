@@ -37,7 +37,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -244,7 +243,7 @@ private fun RoundButton(
         onClick = onClick,
         modifier = modifier.then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier)
             .size(size).semantics { contentDescription = label },
-        shape = CircleShape, color = if (primary) SokoulColors.GlassHeavy else SokoulColors.GlassLight,
+        shape = Radius.Round, color = if (primary) SokoulColors.GlassHeavy else SokoulColors.GlassLight,
         focusedColor = Color.White,
     ) { focused ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon(if (focused) SokoulColors.OnLight else Color.White) }
@@ -306,7 +305,7 @@ private fun Scrubber(
         Box(
             Modifier.offset(x = (maxWidth - knobSize) * fraction).size(knobSize)
                 .graphicsLayer { scaleX = knob; scaleY = knob; alpha = knob }
-                .background(Color.White, CircleShape).border(3.dp, SokoulColors.Accent, CircleShape)
+                .background(Color.White, Radius.Round).border(3.dp, SokoulColors.Accent, Radius.Round)
         )
         if (previewing) {
             val bubble = 76.dp
@@ -350,10 +349,10 @@ private fun TouchScrubber(position: Long, duration: Long, onSeekTo: (Long) -> Un
         onValueChangeFinished = { drag?.let { if (duration > 0) onSeekTo((it * duration).toLong()) }; drag = null },
         modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Position de lecture" },
         // piste fine et repère rond (le style Material par défaut — piste épaisse, repère en trait — jure avec la TV)
-        thumb = { Box(Modifier.size(if (drag != null) 22.dp else 16.dp).background(SokoulColors.Accent, CircleShape)) },
+        thumb = { Box(Modifier.size(if (drag != null) 22.dp else 16.dp).background(SokoulColors.Accent, Radius.Round)) },
         track = {
-            Box(Modifier.fillMaxWidth().height(if (drag != null) 6.dp else 4.dp).background(SokoulColors.GlassLight, CircleShape)) {
-                Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(SokoulColors.Accent, CircleShape))
+            Box(Modifier.fillMaxWidth().height(if (drag != null) 6.dp else 4.dp).background(SokoulColors.GlassLight, Radius.Round)) {
+                Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(SokoulColors.Accent, Radius.Round))
             }
         },
     )
@@ -636,7 +635,7 @@ fun EpisodesPanel(
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.width(120.dp).aspectRatio(16f / 9f).clip(Radius.Card).background(SokoulColors.SurfaceHigher)) {
                             NetImage(view.image ?: fallbackImage, null, Modifier.fillMaxSize()) { NetImage(fallbackImage, null, Modifier.fillMaxSize()) }
-                            if (isCurrent) Icon(Icons.Default.PlayArrow, null, Modifier.align(Alignment.Center).size(28.dp).background(SokoulColors.Scrim, CircleShape), tint = Color.White)
+                            if (isCurrent) Icon(Icons.Default.PlayArrow, null, Modifier.align(Alignment.Center).size(28.dp).background(SokoulColors.Scrim, Radius.Round), tint = Color.White)
                         }
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text(if (title == "Épisode ${e.episode}") title else "${e.episode}. $title", maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium)

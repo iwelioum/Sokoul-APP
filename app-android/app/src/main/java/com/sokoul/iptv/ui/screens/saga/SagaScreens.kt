@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -409,7 +408,7 @@ private fun FaceCard(f: SagaFace, modifier: Modifier = Modifier) {
     val size = 112.dp
     Column(modifier.width(size + 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         // focalisable pour faire défiler la rangée à la télécommande ; pas d'action
-        FocusSurface(onClick = {}, shape = CircleShape) { _ ->
+        FocusSurface(onClick = {}, shape = Radius.Round) { _ ->
             NetImage(tmdbSized(f.photo, "w185"), f.name, Modifier.size(size)) {
                 Box(Modifier.size(size).background(SokoulColors.SurfaceHigh), contentAlignment = Alignment.Center) {
                     Text(f.name.split(' ').mapNotNull { it.firstOrNull()?.uppercase() }.take(2).joinToString(""), style = Type.Section)

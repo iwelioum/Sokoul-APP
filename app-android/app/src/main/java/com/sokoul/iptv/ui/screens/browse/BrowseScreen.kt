@@ -413,7 +413,7 @@ private fun RowView(
         } else null
         when (row.style) {
             RowStyle.POSTER -> CardRow(row.works, { it.uid }, trailing = tvSeeAll) { _, w ->
-                WorkCard(w, { onOpen(w) }, m(w.uid), showPlatform = row.platform == null, onFocus = { onSpot(w.toSpot()) }, onLongClick = { onMenu(w) })
+                WorkCard(w, { onOpen(w) }, m(w.uid), showPlatform = row.platform == null, onFocus = { onSpot(w.toSpot()) }, onLongClick = { onMenu(w) }, reveal = false)
             }
             RowStyle.LANDSCAPE -> CardRow(row.works, { it.uid }, trailing = tvSeeAll) { _, w ->
                 LandscapeCard(w, { onOpen(w) }, m(w.uid), onFocus = { onSpot(w.toSpot()) }, onLongClick = { onMenu(w) })

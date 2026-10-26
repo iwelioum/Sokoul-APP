@@ -9,6 +9,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
@@ -80,20 +83,38 @@ private val scheme = darkColorScheme(
     error = SokoulColors.Live,
 )
 
+/**
+ * Manrope (Google Fonts, licence OFL — `assets/licenses/Manrope-OFL.txt`) : géométrique et nette, très lisible à 3 m.
+ * Une seule police variable ; chaque graisse en est une instance (de 300 à 800 : « Black » retombe sur 800).
+ */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private fun manrope(w: Int) = Font(
+    com.sokoul.iptv.R.font.manrope, FontWeight(w),
+    variationSettings = FontVariation.Settings(FontVariation.weight(w)),
+)
+
+val Manrope = FontFamily(manrope(300), manrope(400), manrope(500), manrope(600), manrope(700), manrope(800))
+
+private fun style(size: Int, weight: FontWeight = FontWeight.Normal, spacing: Float = 0f, line: Int? = null) = TextStyle(
+    fontFamily = Manrope, fontSize = size.sp, fontWeight = weight, letterSpacing = spacing.sp,
+    lineHeight = line?.sp ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+)
+
 private val typography = Typography(
-    displayMedium = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp, lineHeight = 44.sp),
-    displaySmall = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-    headlineMedium = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 23.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
-    labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-    labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+    // grands titres resserrés (Manrope est large) ; étiquettes légèrement aérées
+    displayMedium = style(40, FontWeight.ExtraBold, -1.2f, 44),
+    displaySmall = style(34, FontWeight.ExtraBold, -0.9f),
+    headlineMedium = style(26, FontWeight.Bold, -0.6f),
+    headlineSmall = style(22, FontWeight.Bold, -0.4f),
+    titleLarge = style(19, FontWeight.Bold, -0.2f),
+    titleMedium = style(16, FontWeight.SemiBold),
+    titleSmall = style(14, FontWeight.SemiBold),
+    bodyLarge = style(16, line = 24),
+    bodyMedium = style(14, line = 21),
+    bodySmall = style(12, line = 17),
+    labelLarge = style(14, FontWeight.SemiBold, 0.2f),
+    labelMedium = style(12, FontWeight.SemiBold, 0.2f),
+    labelSmall = style(11, FontWeight.SemiBold, 0.3f),
 )
 
 /** Vrai sur Android TV / Fire TV (télécommande, pas d'écran tactile). */

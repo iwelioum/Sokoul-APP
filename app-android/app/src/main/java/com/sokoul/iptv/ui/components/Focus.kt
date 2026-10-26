@@ -35,7 +35,12 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.sokoul.iptv.ui.theme.Edge
 import com.sokoul.iptv.ui.theme.Radius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.translate
 import com.sokoul.iptv.ui.theme.SokoulColors
 
 private fun isSelectKey(code: Int) = code == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
@@ -98,14 +103,14 @@ private class PressState {
 
 /**
  * Les trois seuls effets de focus de l'app (un même geste = un même retour visuel partout) :
- * - [Card] : affiches, vignettes, tuiles — agrandissement léger + liseré blanc ;
+ * - [Card] : affiches, vignettes, tuiles — agrandissement net, soulèvement, contour blanc franc, halo et liseré d'accent ;
  * - [Row] : lignes de liste (chaînes, réglages, épisodes, guide) — fond éclairci + barre d'accent à gauche ;
  * - [Chip] : onglets, pastilles, boutons — fond blanc, texte sombre (le contenu lit `focused`).
  */
-enum class FocusStyle(val scale: Float, val border: Dp, val accentBar: Boolean) {
-    Card(1.06f, 2.dp, false),
-    Row(1f, 0.dp, true),
-    Chip(1.05f, 0.dp, false),
+enum class FocusStyle(val scale: Float, val border: Dp, val accentBar: Boolean, val lift: Dp) {
+    Card(1.12f, Edge.Focus, false, 4.dp),
+    Row(1f, 0.dp, true, 0.dp),
+    Chip(1.05f, 0.dp, false, 0.dp),
 }
 
 /**
@@ -138,13 +143,16 @@ fun FocusSurface(
     )
     val bg by rememberUpdatedState(color)
     val fbg by rememberUpdatedState(focusedColor)
+    val card = style == FocusStyle.Card
     Box(
         modifier
             .graphicsLayer {
+                val p = progress.value
                 if (style.scale != 1f) {
-                    val s = 1f + (style.scale - 1f) * progress.value
+                    val s = 1f + (style.scale - 1f) * p
                     scaleX = s; scaleY = s
                 }
+                if (style.lift.value > 0f) translationY = -style.lift.toPx() * p
             }
             .onFocusChanged {
                 if (it.isFocused && !focused) onFocus?.invoke()
@@ -153,21 +161,36 @@ fun FocusSurface(
             .drawWithCache {
                 val outline = shape.createOutline(size, layoutDirection, this)
                 val bar = FocusBarWidth.toPx()
+                // halo et ombre (cartes) : contours élargis autour de la forme, hors du découpage
+                val glow1 = 3.dp.toPx(); val glow2 = 7.dp.toPx()
+                val halo1 = if (card) expanded(shape, glow1) else null
+                val halo2 = if (card) expanded(shape, glow2) else null
+                val shadowH = 18.dp.toPx()
+                val shadow = Brush.verticalGradient(
+                    0f to SokoulColors.black(0.55f), 1f to Color.Transparent,
+                    startY = size.height - 2f, endY = size.height + shadowH,
+                )
+                val accentGap = 7.dp.toPx(); val accentH = Edge.Accent.toPx()
                 onDrawBehind {
                     val p = progress.value.coerceIn(0f, 1f)
+                    if (card && p > 0.01f) {
+                        drawRect(shadow, topLeft = Offset(size.width * 0.06f, size.height - 2f), size = Size(size.width * 0.88f, shadowH + 2f), alpha = p)
+                        halo2?.let { o -> translate(-glow2, -glow2) { drawOutline(o, SokoulColors.Accent, alpha = 0.10f * p) } }
+                        halo1?.let { o -> translate(-glow1, -glow1) { drawOutline(o, SokoulColors.AccentEnd, alpha = 0.22f * p) } }
+                        // liseré d'accent sous la carte : même signe que le soulignement de l'onglet actif
+                        drawRect(SokoulColors.Accent, topLeft = Offset(size.width * 0.3f, size.height + accentGap), size = Size(size.width * 0.4f * p.coerceAtLeast(0.2f), accentH), alpha = p)
+                    }
                     val fill = androidx.compose.ui.graphics.lerp(bg, fbg, p)
                     if (fill.alpha > 0f) drawOutline(outline, fill)
-                    if (p > 0.01f) {
-                        if (style.accentBar) drawRect(
-                            SokoulColors.Accent.copy(alpha = p),
-                            topLeft = androidx.compose.ui.geometry.Offset(0f, size.height * 0.2f),
-                            size = androidx.compose.ui.geometry.Size(bar, size.height * 0.6f),
-                        )
-                    }
+                    if (p > 0.01f && style.accentBar) drawRect(
+                        SokoulColors.Accent.copy(alpha = p),
+                        topLeft = Offset(0f, size.height * 0.2f),
+                        size = Size(bar, size.height * 0.6f),
+                    )
                 }
             }
             .clip(shape)
-            .then(if (style.border.value > 0f) Modifier.focusRing(shape, style.border) { progress.value } else Modifier)
+            .then(if (card) Modifier.focusRing(shape, style.border) { progress.value } else Modifier)
             .dpadClickable(onClick, onLongClick)
     ) {
         content(focused)
@@ -176,27 +199,28 @@ fun FocusSurface(
 
 private val FocusBarWidth = 3.dp
 
+/** Contour de [shape] agrandi de [by] px de chaque côté (halo), à dessiner décalé de (-by, -by). */
+private fun androidx.compose.ui.draw.CacheDrawScope.expanded(shape: Shape, by: Float) =
+    shape.createOutline(Size(size.width + by * 2, size.height + by * 2), layoutDirection, this)
+
 /**
- * Anneau de focus des cartes, dessiné PAR-DESSUS le contenu (l'image ne le recouvre pas) :
- * contour en dégradé blanc → violet à 135° et filet sombre intérieur de 1 dp, pour rester
- * visible même sur une affiche à bord blanc.
+ * Contours des cartes, dessinés PAR-DESSUS le contenu (l'image ne les recouvre pas) :
+ * - au repos, un filet clair de 1 dp qui donne un bord net aux affiches sombres ;
+ * - au focus, un contour blanc franc et un filet sombre intérieur (visible même sur une affiche à bord blanc).
  */
 private fun Modifier.focusRing(shape: Shape, width: Dp, progress: () -> Float): Modifier = drawWithCache {
     val w = width.toPx()
     val inner = 1.dp.toPx()
+    val hair = Edge.Hairline.toPx()
     val outline = shape.createOutline(size, layoutDirection, this)
-    val brush = androidx.compose.ui.graphics.Brush.linearGradient(
-        listOf(SokoulColors.Focus, SokoulColors.AccentEnd.copy(alpha = 0.85f)),
-        start = androidx.compose.ui.geometry.Offset.Zero,
-        end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-    )
     onDrawWithContent {
         drawContent()
         val p = progress().coerceIn(0f, 1f)
+        // les traits sont centrés sur le bord : seule leur moitié intérieure est visible (découpage)
+        if (p < 0.99f) drawOutline(outline, SokoulColors.white(0.08f), alpha = 1f - p, style = Stroke(hair * 2))
         if (p > 0.01f) {
-            // le contour est centré sur le bord : moitié intérieure visible sur l'image
-            drawOutline(outline, SokoulColors.black(0.6f), alpha = p, style = Stroke(w + inner * 2))
-            drawOutline(outline, brush, alpha = p, style = Stroke(w))
+            drawOutline(outline, SokoulColors.black(0.65f), alpha = p, style = Stroke(w * 2 + inner * 2))
+            drawOutline(outline, SokoulColors.Focus, alpha = p, style = Stroke(w * 2))
         }
     }
 }

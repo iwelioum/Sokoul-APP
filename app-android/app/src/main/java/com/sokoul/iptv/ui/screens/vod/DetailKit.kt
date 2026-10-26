@@ -55,7 +55,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -409,7 +408,7 @@ private fun AvailabilityLine(services: List<Pair<String, Long?>>, modifier: Modi
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // contour clair : une couleur de marque sombre (Disney+) reste visible sur le fond
-                Box(Modifier.size(9.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, CircleShape).border(1.dp, Color.White.copy(alpha = 0.55f), CircleShape))
+                Box(Modifier.size(9.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, Radius.Round).border(1.dp, Color.White.copy(alpha = 0.55f), Radius.Round))
                 Text(name, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextPrimary, maxLines = 1)
             }
         }
@@ -615,7 +614,7 @@ private fun PhoneDetail(
             sections()
         }
         Box(
-            Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(CircleShape).background(SokoulColors.Scrim).dpadClickable({ nav.popBackStack() })
+            Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(Radius.Round).background(SokoulColors.Scrim).dpadClickable({ nav.popBackStack() })
                 .semantics { contentDescription = "Retour" },
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }
@@ -782,7 +781,7 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
                     }
                 }
                 androidx.compose.animation.AnimatedVisibility(visible = focused, enter = fadeIn(Motion.enter()) + scaleIn(Motion.enter(), initialScale = 0.7f), exit = fadeOut(Motion.exit()), modifier = Modifier.align(Alignment.Center)) {
-                    Box(Modifier.size(46.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(46.dp).background(Color.White, Radius.Round), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.OnLight)
                     }
                 }

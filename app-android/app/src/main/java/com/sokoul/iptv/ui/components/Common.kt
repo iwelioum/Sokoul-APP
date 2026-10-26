@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -328,7 +327,7 @@ fun PinDialog(title: String, onResult: (String) -> Unit, onDismiss: () -> Unit, 
             Text(title, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleLarge)
             Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 repeat(4) { i ->
-                    Box(Modifier.size(16.dp).clip(CircleShape).background(if (i < pin.length) SokoulColors.Accent else SokoulColors.SurfaceHigher))
+                    Box(Modifier.size(16.dp).clip(Radius.Round).background(if (i < pin.length) SokoulColors.Accent else SokoulColors.SurfaceHigher))
                 }
             }
             if (error != null) Text(error, color = SokoulColors.Live, style = MaterialTheme.typography.bodyMedium)

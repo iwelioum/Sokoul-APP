@@ -36,7 +36,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -796,7 +795,7 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>) {
         LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             items(cast) { person ->
                 Column(Modifier.width(92.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    NetImage(person.photo, person.name, Modifier.size(78.dp).clip(CircleShape).background(SokoulColors.SurfaceHigher)) {
+                    NetImage(person.photo, person.name, Modifier.size(78.dp).clip(Radius.Round).background(SokoulColors.SurfaceHigher)) {
                         Text(com.sokoul.iptv.ui.components.initials(person.name), color = SokoulColors.TextSecondary, fontWeight = FontWeight.Bold)
                     }
                     Text(person.name, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -857,7 +856,7 @@ private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boo
                         }
                         if (focused) {
                             Box(Modifier.fillMaxSize().background(SokoulColors.black(0.33f)), contentAlignment = Alignment.Center) {
-                                Box(Modifier.size(40.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                Box(Modifier.size(40.dp).background(Color.White, Radius.Round), contentAlignment = Alignment.Center) {
                                     Icon(Icons.Default.PlayArrow, null, tint = Color.Black)
                                 }
                             }

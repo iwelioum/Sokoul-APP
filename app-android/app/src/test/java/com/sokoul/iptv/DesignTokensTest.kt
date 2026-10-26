@@ -17,6 +17,8 @@ class DesignTokensTest {
     private val forbidden = listOf(
         Regex("""Color\(0x""") to "couleur en dur → SokoulColors",
         Regex("""RoundedCornerShape\(""") to "arrondi en dur → Radius",
+        Regex("""\bCircleShape\b""") to "cercle en dur → Radius.Round",
+        Regex("""FontFamily\(|FontFamily\.(Serif|SansSerif|Monospace|Cursive)""") to "police en dur → Manrope (thème)",
         Regex("""\bfocusScale\s*=""") to "agrandissement de focus en dur → FocusStyle",
         Regex("""\bborderWidth\s*=""") to "liseré de focus en dur → FocusStyle",
     )

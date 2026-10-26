@@ -3,7 +3,12 @@ package com.sokoul.iptv.ui.components
 import androidx.compose.ui.unit.isSpecified
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Radius
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.runtime.LaunchedEffect
+import com.sokoul.iptv.ui.theme.LocalReducedMotion
+import kotlinx.coroutines.delay
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -140,7 +145,8 @@ fun <T> CardRow(items: List<T>, key: (T) -> Any, modifier: Modifier = Modifier, 
     val l = LocalLayout.current
     LazyRow(
         modifier,
-        contentPadding = PaddingValues(horizontal = l.margin, vertical = 10.dp),
+        // marges verticales : place pour la carte agrandie, soulevée, son ombre et son liseré
+        contentPadding = PaddingValues(start = l.margin, end = l.margin, top = 16.dp, bottom = 26.dp),
         horizontalArrangement = Arrangement.spacedBy(l.gutter),
     ) {
         items.forEachIndexed { i, t -> item(key(t)) { Box(Modifier.focusOnTop()) { content(i, t) } } }
@@ -194,8 +200,8 @@ private fun PosterFallback(title: String) {
 // --- cartes -----------------------------------------------------------------------------------------
 
 /**
- * Affiche d'une œuvre. TV : le titre apparaît sous l'affiche au focus (sans décaler la rangée) ;
- * tactile : titre toujours visible.
+ * Affiche d'une œuvre, sans légende : l'image parle d'elle-même. Au focus, [reveal] fait monter dans l'affiche
+ * le logo (ou le titre) et « ★ note · année · durée » — à couper sur les pages qui ont déjà un panneau d'aperçu.
  */
 @Composable
 fun WorkCard(
@@ -206,6 +212,7 @@ fun WorkCard(
     showPlatform: Boolean = true,
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    reveal: Boolean = true,
 ) {
     // coin de l'affiche : état (hors catalogue), sinon 4K, sinon le nombre de versions
     val src = com.sokoul.iptv.domain.PlaybackSources.summary(work)
@@ -213,15 +220,28 @@ fun WorkCard(
         ?: if (work.versions > 1) "${work.versions} VERSIONS" else null
     PosterTile(
         title = work.title, image = tmdbSized(work.poster, "w342"), onClick = onClick, modifier = modifier, width = width,
-        meta = work.subtitle ?: work.metaLine(), corner = corner, progress = work.progress,
+        corner = corner, progress = work.progress,
         platform = work.platform.takeIf { showPlatform }, onFocus = onFocus, onLongClick = onLongClick,
         dimmed = !work.available,
+        reveal = if (reveal) Reveal(work.title, tmdbSized(work.logo, "w300"), work.revealLine()) else null,
     )
 }
 
+/** Ce qui monte dans l'affiche au focus. */
+data class Reveal(val title: String, val logo: String?, val line: String)
+
+/** « ★ 7,8 · 2021 · 2 h 10 » (film) ou « ★ 8,1 · 2019 · 3 saisons » (série). */
+fun Work.revealLine(): String = listOfNotNull(
+    rating?.takeIf { it >= 1.0 }?.let { "★ " + String.format(java.util.Locale.FRANCE, "%.1f", it) },
+    year?.toString(),
+    if (type == ContentType.SERIES) seasons?.let { if (it > 1) "$it saisons" else "1 saison" }
+    else runtimeMin?.takeIf { it > 0 }?.let { if (it >= 60) "${it / 60} h ${"%02d".format(it % 60)}" else "$it min" },
+).joinToString(" · ")
+
 /**
- * La seule affiche 2:3 de l'app (rangées, grilles, catalogue, recherche) : image, repli titré,
- * badges, progression, titre et ligne d'infos. Sur TV, le titre n'apparaît qu'au focus.
+ * La seule affiche 2:3 de l'app (rangées, grilles, catalogue, recherche) : image, repli titré, badges, progression.
+ * Au focus, l'image « respire » (zoom lent) et le [reveal] éventuel monte du bas. Sur téléphone (pas de focus),
+ * seul le titre reste sous l'affiche.
  */
 @Composable
 fun PosterTile(
@@ -230,7 +250,6 @@ fun PosterTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     width: Dp = LocalLayout.current.poster,
-    meta: String? = null,
     corner: String? = null,
     progress: Float? = null,
     platform: Platform? = null,
@@ -238,28 +257,71 @@ fun PosterTile(
     onLongClick: (() -> Unit)? = null,
     /** Œuvre hors catalogue : image en niveaux de gris, atténuée. */
     dimmed: Boolean = false,
+    reveal: Reveal? = null,
 ) {
     val l = LocalLayout.current
-    var focusedState by remember { mutableStateOf(false) }
     // focusOnTop : la carte agrandie passe devant ses voisines (rangée comme grille)
     Column(modifier.focusOnTop().then(if (width.isSpecified) Modifier.width(width) else Modifier.fillMaxWidth())) {
-        FocusSurface(
-            onClick = onClick, onLongClick = onLongClick, onFocus = onFocus,
-            modifier = Modifier.onFocusChanged { focusedState = it.isFocused },
-        ) { _ ->
+        FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus) { focused ->
             Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
-                NetImage(image, title, if (dimmed) Modifier.fillMaxSize().offCatalogLook() else Modifier.fillMaxSize()) { PosterFallback(title) }
+                val zoom = rememberBreathing(focused)
+                val img = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }
+                NetImage(image, title, if (dimmed) img.offCatalogLook() else img) { PosterFallback(title) }
                 if (platform != null) PlatformBadge(platform, Modifier.align(Alignment.TopStart).padding(6.dp))
                 if (corner != null) CornerBadge(corner, Modifier.align(Alignment.TopEnd).padding(6.dp))
+                if (reveal != null && focused && !l.isTouch) RevealOverlay(reveal, Modifier.align(Alignment.BottomStart))
                 if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomStart))
             }
         }
-        val alpha by animateFloatAsState(if (l.isTouch || focusedState) 1f else 0f, tween(Motion.FAST), label = "title")
-        Column(Modifier.graphicsLayer { this.alpha = alpha }.padding(top = 7.dp, start = 2.dp, end = 2.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (!meta.isNullOrEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (l.isTouch) {
+            Text(title, Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
+}
+
+/**
+ * Zoom lent de l'image de la carte focalisée (1 → [to] en 2,4 s, après 350 ms) : la carte « respire ».
+ * Valeur lue dans un graphicsLayer : aucune recomposition. Coupé si les animations sont désactivées.
+ */
+@Composable
+fun rememberBreathing(focused: Boolean, to: Float = 1.05f): Animatable<Float, AnimationVector1D> {
+    val reduced = LocalReducedMotion.current
+    val zoom = remember { Animatable(1f) }
+    LaunchedEffect(focused, reduced) {
+        if (focused && !reduced) {
+            delay(350)
+            zoom.animateTo(to, tween(2400, easing = Motion.Decelerate))
+        } else zoom.animateTo(1f, tween(Motion.FAST))
+    }
+    return zoom
+}
+
+/** Voile du bas de l'affiche focalisée : logo (ou titre) et ligne d'infos, qui montent en fondu. */
+@Composable
+private fun RevealOverlay(r: Reveal, modifier: Modifier) {
+    val reduced = LocalReducedMotion.current
+    val p = remember { Animatable(if (reduced) 1f else 0f) }
+    LaunchedEffect(Unit) { if (!reduced) { delay(120); p.animateTo(1f, tween(Motion.MEDIUM, easing = Motion.Decelerate)) } }
+    Column(
+        modifier.fillMaxWidth()
+            .graphicsLayer { alpha = p.value; translationY = (1f - p.value) * 14.dp.toPx() }
+            .background(Brush.verticalGradient(0f to Color.Transparent, 0.35f to SokoulColors.black(0.55f), 1f to SokoulColors.black(0.92f)))
+            .padding(start = 8.dp, end = 8.dp, top = 28.dp, bottom = 9.dp),
+    ) {
+        if (r.logo != null) {
+            NetImage(r.logo, r.title, Modifier.fillMaxWidth(0.9f).heightIn(max = 38.dp), ContentScale.Fit, alignment = Alignment.BottomStart) {
+                RevealTitle(r.title)
+            }
+        } else RevealTitle(r.title)
+        if (r.line.isNotEmpty()) {
+            Text(r.line, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.white(0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun RevealTitle(title: String) {
+    Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
 }
 
 @Composable
@@ -269,7 +331,10 @@ fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
     }
 }
 
-/** Carte paysage 16:9 : fond TMDB + logo (ou titre), progression éventuelle. */
+/**
+ * Carte paysage 16:9 : fond TMDB + logo (ou titre) dans l'image, sans légende dessous.
+ * [Work.subtitle] (reprise : « S02E05 · reste 20 min ») s'affiche dans l'image, sous le logo.
+ */
 @Composable
 fun LandscapeCard(
     work: Work,
@@ -277,31 +342,36 @@ fun LandscapeCard(
     modifier: Modifier = Modifier,
     width: Dp = LocalLayout.current.landscape,
     image: String? = null,
-    caption: String? = null,
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
-    Column(modifier.width(width)) {
+    Box(modifier.width(width)) {
         FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card) { focused ->
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                val zoom = rememberBreathing(focused, 1.04f)
+                val imgMod = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }
                 val img = image ?: tmdbSized(work.backdrop, "w780")
-                if (img != null) NetImage(img, work.title, Modifier.fillMaxSize()) { PosterFallback(work.title) }
-                else NetImage(tmdbSized(work.poster, "w342"), work.title, Modifier.fillMaxSize(), alignment = Alignment.TopCenter) { PosterFallback(work.title) }
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to SokoulColors.black(0.9f))))
+                if (img != null) NetImage(img, work.title, imgMod) { PosterFallback(work.title) }
+                else NetImage(tmdbSized(work.poster, "w342"), work.title, imgMod, alignment = Alignment.TopCenter) { PosterFallback(work.title) }
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to SokoulColors.black(0.92f))))
                 Row(Modifier.align(Alignment.BottomStart).padding(10.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                    if (work.logo != null) {
-                        NetImage(
-                            tmdbSized(work.logo, "w300"), work.title,
-                            Modifier.weight(1f, fill = false).heightIn(max = 42.dp).widthIn(max = width * 0.6f), ContentScale.Fit,
-                            alignment = Alignment.BottomStart,
-                        )
-                    } else {
-                        Text(work.title, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Column(Modifier.weight(1f)) {
+                        if (work.logo != null) {
+                            NetImage(
+                                tmdbSized(work.logo, "w300"), work.title,
+                                Modifier.heightIn(max = 40.dp).widthIn(max = width * 0.6f), ContentScale.Fit,
+                                alignment = Alignment.BottomStart,
+                            )
+                        } else {
+                            Text(work.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                        work.subtitle?.let {
+                            Text(it, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.white(0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
-                    Spacer(Modifier.weight(1f))
                     if (work.resume != null) {
                         Box(
-                            Modifier.size(30.dp).background(if (focused) Color.White else SokoulColors.black(0.6f), Radius.Pill),
+                            Modifier.size(30.dp).background(if (focused) Color.White else SokoulColors.black(0.6f), Radius.Round),
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp), tint = if (focused) Color.Black else Color.White) }
                     }
@@ -309,10 +379,6 @@ fun LandscapeCard(
                 if (work.platform != null) PlatformBadge(work.platform, Modifier.align(Alignment.TopStart).padding(8.dp))
                 if (work.progress != null && work.progress > 0f) ProgressLine(work.progress, Modifier.align(Alignment.BottomStart))
             }
-        }
-        val sub = caption ?: work.subtitle ?: work.metaLine()
-        if (sub.isNotEmpty()) {
-            Text(sub, Modifier.padding(top = 7.dp, start = 2.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -327,11 +393,11 @@ fun Top10Card(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = M
             val size = (posterH.value * 0.78f).sp
             Text(
                 rank.toString(), Modifier.offset(x = 14.dp, y = 10.dp), maxLines = 1, softWrap = false,
-                style = TextStyle(fontSize = size, fontWeight = FontWeight.Black, letterSpacing = (-6).sp, drawStyle = Stroke(width = 5f)),
+                style = TextStyle(fontFamily = com.sokoul.iptv.ui.theme.Manrope, fontSize = size, fontWeight = FontWeight.Black, letterSpacing = (-6).sp, drawStyle = Stroke(width = 5f)),
                 color = SokoulColors.TextSecondary,
             )
         }
-        WorkCard(work, onClick, width = l.poster, onFocus = onFocus, onLongClick = onLongClick)
+        WorkCard(work, onClick, width = l.poster, onFocus = onFocus, onLongClick = onLongClick, reveal = false)
     }
 }
 

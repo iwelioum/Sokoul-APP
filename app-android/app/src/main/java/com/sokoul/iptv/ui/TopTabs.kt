@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Search
@@ -57,6 +56,7 @@ import com.sokoul.iptv.ui.components.onChip
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.LocalReducedMotion
 import com.sokoul.iptv.ui.theme.Motion
+import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Space
 import kotlinx.coroutines.delay
@@ -218,7 +218,7 @@ private fun TextTab(d: Dest, selected: Boolean, visible: State<Boolean>, modifie
             )
             Box(
                 Modifier.padding(top = 3.dp).size(4.dp)
-                    .background(if (selected && !focused) SokoulColors.Accent else Color.Transparent, CircleShape)
+                    .background(if (selected && !focused) SokoulColors.Accent else Color.Transparent, Radius.Round)
             )
         }
     }

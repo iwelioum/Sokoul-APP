@@ -280,7 +280,7 @@ private fun HeroTitle(title: String, compact: Boolean) {
     val l = LocalLayout.current
     Text(
         title, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = if (compact) TextAlign.Center else TextAlign.Start,
-        style = TextStyle(
+        style = TextStyle(fontFamily = com.sokoul.iptv.ui.theme.Manrope,
             fontSize = l.heroTitle, lineHeight = l.heroTitle * 1.08f, fontWeight = FontWeight.Black, letterSpacing = (-0.8).sp,
             color = Color.White, shadow = Shadow(SokoulColors.black(0.6f), blurRadius = 12f),
         ),
