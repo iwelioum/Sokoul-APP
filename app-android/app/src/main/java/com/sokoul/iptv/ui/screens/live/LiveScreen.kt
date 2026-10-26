@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -351,8 +352,8 @@ private fun ChannelRow(
     ) { focused ->
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                c.number.toString(), Modifier.width(44.dp), style = MaterialTheme.typography.titleSmall,
-                color = if (focused) SokoulColors.TextPrimary else SokoulColors.TextMuted,
+                c.number.toString(), Modifier.width(44.dp), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                color = if (focused) SokoulColors.Accent else SokoulColors.TextMuted,
             )
             ChannelLogo(c.logo, c.name, Modifier.size(64.dp, 40.dp))
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -362,7 +363,7 @@ private fun ChannelRow(
                     if (c.catchupType != null) Icon(Icons.Default.History, "Replay", Modifier.padding(start = 6.dp).size(14.dp), tint = SokoulColors.TextMuted)
                 }
                 if (now != null) {
-                    Text(now.title, style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(now.title, style = com.sokoul.iptv.ui.theme.Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val f = ((time - now.start).toFloat() / (now.end - now.start).coerceAtLeast(1)).coerceIn(0f, 1f)
                     Box(Modifier.padding(top = 4.dp).fillMaxWidth(0.6f).height(3.dp).background(SokoulColors.white(0.13f), Radius.Tiny)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(SokoulColors.Accent, Radius.Tiny))
@@ -377,13 +378,13 @@ private fun ChannelRow(
 @Composable
 private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modifier, supportsCatchup: (ChannelEntity) -> Boolean) {
     val time = rememberNow()
-    Column(modifier.background(SokoulColors.Surface).padding(22.dp)) {
+    Column(modifier.background(Brush.horizontalGradient(listOf(SokoulColors.Surface.copy(alpha = 0.55f), SokoulColors.Surface))).padding(start = 26.dp, end = 30.dp, top = 30.dp, bottom = 20.dp)) {
         val (c, nn) = details ?: run {
             Text("Choisissez une chaîne", color = SokoulColors.TextMuted)
             return@Column
         }
         ChannelLogo(c.logo, c.name, Modifier.size(150.dp, 84.dp))
-        Text(c.name, Modifier.padding(top = 14.dp), style = MaterialTheme.typography.headlineSmall, maxLines = 2)
+        Text(c.name, Modifier.padding(top = 14.dp), style = com.sokoul.iptv.ui.theme.Type.Section, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Tag("N° ${c.number}")
             if (supportsCatchup(c)) Tag("Replay ${if (c.catchupDays > 0) "${c.catchupDays} j" else ""}".trim(), SokoulColors.AccentSoft, SokoulColors.Accent)
@@ -391,9 +392,9 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modif
         Spacer(Modifier.height(20.dp))
         val now = nn.now
         if (now != null) {
-            Text("EN CE MOMENT", color = SokoulColors.Live, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Text("EN CE MOMENT", style = com.sokoul.iptv.ui.theme.Type.Kicker.copy(color = SokoulColors.Live))
             Text(now.title, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(formatRange(now.start, now.end) + (now.episode?.let { "  ·  $it" } ?: ""), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Text(formatRange(now.start, now.end) + (now.episode?.let { "  ·  $it" } ?: ""), style = com.sokoul.iptv.ui.theme.Type.Meta)
             Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(4.dp).background(SokoulColors.white(0.13f), Radius.Tiny)) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(nn.progress(time)).background(SokoulColors.Accent, Radius.Tiny))
             }
@@ -403,10 +404,10 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modif
         }
         nn.next?.let { next ->
             Spacer(Modifier.height(18.dp))
-            Text("ENSUITE · ${formatClock(next.start)}", color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelMedium)
+            Text("ENSUITE · ${formatClock(next.start)}", style = com.sokoul.iptv.ui.theme.Type.Overline)
             Text(next.title, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.weight(1f))
-        Text("OK : regarder   ·   Appui long / Menu : options", color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+        com.sokoul.iptv.ui.components.KeyHints(listOf(com.sokoul.iptv.ui.components.KeyHint("OK", "Regarder"), com.sokoul.iptv.ui.components.KeyHint("Menu", "Options")))
     }
 }

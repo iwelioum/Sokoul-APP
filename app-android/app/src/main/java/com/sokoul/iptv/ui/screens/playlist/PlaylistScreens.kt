@@ -174,13 +174,16 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (firstRun) {
-                Text("Bienvenue sur Sokoul TV", style = MaterialTheme.typography.displaySmall)
+                SetupSteps(1)
+                Text("BIENVENUE", style = com.sokoul.iptv.ui.theme.Type.Kicker)
+                Text("Sokoul TV", style = com.sokoul.iptv.ui.theme.Type.Display)
                 Text(
                     "Ajoutez votre abonnement IPTV pour commencer. Les comptes Xtream Codes donnent accès au guide TV complet, au replay et aux fiches détaillées des films et séries.",
                     color = SokoulColors.TextSecondary,
                 )
             } else {
-                Text(if (existing != null) "Modifier la playlist" else "Nouvelle playlist", style = MaterialTheme.typography.headlineMedium)
+                if (existing == null) SetupSteps(1)
+                Text(if (existing != null) "Modifier la playlist" else "Nouvelle playlist", style = com.sokoul.iptv.ui.theme.Type.ScreenTitle)
             }
 
             if (existing == null) {
@@ -300,7 +303,7 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
             when {
                 s?.error != null -> {
                     Icon(Icons.Default.ErrorOutline, null, Modifier.size(56.dp), tint = SokoulColors.Live)
-                    Text("La synchronisation a échoué", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.headlineSmall)
+                    Text("La synchronisation a échoué", Modifier.padding(top = 16.dp), style = com.sokoul.iptv.ui.theme.Type.Section)
                     Text(s.error, Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center)
                     Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         AppButton("Réessayer", { vm.retry(playlistId) }, icon = Icons.Default.Refresh, primary = true, focusRequester = focus)
@@ -309,8 +312,9 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
                     }
                 }
                 done -> {
-                    Icon(Icons.Default.CheckCircle, null, Modifier.size(56.dp), tint = SokoulColors.Success)
-                    Text("Playlist prête", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.headlineSmall)
+                    SetupSteps(3)
+                    Icon(Icons.Default.CheckCircle, null, Modifier.padding(top = 28.dp).size(56.dp), tint = SokoulColors.Success)
+                    Text("Playlist prête", Modifier.padding(top = 16.dp), style = com.sokoul.iptv.ui.theme.Type.ScreenTitle)
                     Text("${s?.count ?: 0} éléments importés", Modifier.padding(top = 6.dp), color = SokoulColors.TextSecondary)
                     s?.warnings?.forEach { Text("⚠ $it", Modifier.padding(top = 6.dp), color = SokoulColors.Warning, textAlign = TextAlign.Center) }
                     val e = epg
@@ -328,8 +332,9 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
                     )
                 }
                 else -> {
-                    CircularProgressIndicator(color = SokoulColors.Accent)
-                    Text("Synchronisation en cours", Modifier.padding(top = 20.dp), style = MaterialTheme.typography.headlineSmall)
+                    SetupSteps(2)
+                    CircularProgressIndicator(Modifier.padding(top = 28.dp), color = SokoulColors.Accent)
+                    Text("Synchronisation en cours", Modifier.padding(top = 20.dp), style = com.sokoul.iptv.ui.theme.Type.Section)
                     Text(s?.step ?: "En attente du réseau…", Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary)
                     if ((s?.count ?: 0) > 0) Text("${s?.count} éléments", color = SokoulColors.TextMuted)
                     LinearProgressIndicator(Modifier.padding(top = 20.dp).fillMaxWidth(), color = SokoulColors.Accent, trackColor = SokoulColors.SurfaceHigher)
@@ -342,4 +347,28 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
         }
     }
     LaunchedEffect(done, status?.error) { runCatching { focus.requestFocus() } }
+}
+
+/** Avancement de l'ajout d'un abonnement : 1 Abonnement, 2 Synchronisation, 3 C'est prêt. */
+@Composable
+internal fun SetupSteps(current: Int, modifier: Modifier = Modifier) {
+    val steps = listOf("Abonnement", "Synchronisation", "C'est prêt")
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        steps.forEachIndexed { i, label ->
+            val n = i + 1
+            val done = n < current
+            val active = n == current
+            if (i > 0) Box(Modifier.padding(horizontal = 10.dp).size(28.dp, 1.dp).background(if (n <= current) SokoulColors.Accent else SokoulColors.Divider))
+            Box(
+                Modifier.size(22.dp).background(if (done || active) SokoulColors.Accent else SokoulColors.SurfaceHigher, Radius.Round),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (done) "✓" else "$n", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = if (done || active) androidx.compose.ui.graphics.Color.White else SokoulColors.TextMuted)
+            }
+            Text(
+                label, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge,
+                color = if (active) SokoulColors.TextPrimary else SokoulColors.TextMuted, maxLines = 1,
+            )
+        }
+    }
 }

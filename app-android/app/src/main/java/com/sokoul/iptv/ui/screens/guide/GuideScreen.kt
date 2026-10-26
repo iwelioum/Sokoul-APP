@@ -289,7 +289,7 @@ fun GuideScreen(nav: NavHostController) {
         val today = GuideTime.dayStart(now)
         val focusDay = GuideTime.dayStart(focusTime)
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = side, vertical = if (isTv) 8.dp else 4.dp),
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = side, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isTv) CategoryPickerButton(categories, selected, pickCategory)
@@ -322,7 +322,7 @@ fun GuideScreen(nav: NavHostController) {
                 val gridStart = if (layout.isCompact) 8.dp else side - 8.dp
                 val visibleMin = ((maxWidth - channelCol - gridStart) / dpPerMin).toInt().coerceAtLeast(60)
                 val windowEnd = windowStart + visibleMin * 60_000L
-                val rowHeight = if (layout.isCompact) 58.dp else 66.dp
+                val rowHeight = if (layout.isCompact) 56.dp else 60.dp
                 val density = LocalDensity.current
 
                 fun act(c: ChannelEntity, p: ProgramEntity?) {
@@ -433,10 +433,9 @@ fun GuideScreen(nav: NavHostController) {
                             KeyHint("OK", "Regarder"),
                             KeyHint("Menu", "Rappel, enregistrement…"),
                             KeyHint("⏪ ⏩", "−2 h / +2 h"),
-                            KeyHint("CH ±", "Page"),
                             KeyHint("▲", "Jours et groupes"),
                         ),
-                        Modifier.padding(start = channelCol, top = 8.dp, bottom = 14.dp),
+                        Modifier.padding(start = channelCol, top = 6.dp, bottom = 10.dp),
                     )
                 }
 
@@ -509,12 +508,12 @@ private fun GuidePreview(
             AmbientBake.bake(context, url, tint, SokoulColors.Background, aspect = 4.5f)
         }
     }
-    Box(Modifier.fillMaxWidth().height(if (compact) 128.dp else 228.dp)) {
+    Box(Modifier.fillMaxWidth().height(if (compact) 116.dp else 176.dp)) {
         bg?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
         // fondu vers la grille en bas
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(48.dp).background(Brush.verticalGradient(listOf(Color.Transparent, SokoulColors.Background))))
         Row(
-            Modifier.fillMaxSize().padding(start = side, end = side, top = if (compact) 10.dp else 26.dp, bottom = 8.dp),
+            Modifier.fillMaxSize().padding(start = side, end = side, top = if (compact) 10.dp else 22.dp, bottom = 4.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Column(Modifier.weight(1f)) {
@@ -550,7 +549,7 @@ private fun GuidePreview(
                     if (!compact) p.description?.takeIf { it.isNotBlank() }?.let {
                         Text(
                             it, Modifier.padding(top = 8.dp).widthIn(max = 760.dp), color = SokoulColors.TextSecondary,
-                            style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -559,7 +558,7 @@ private fun GuidePreview(
                 Text(formatClock(now), style = Type.Section)
                 Text(dayLabel(windowStart, now).uppercase(), style = Type.Overline, maxLines = 1)
                 if (!compact) {
-                    Box(Modifier.padding(top = 12.dp).size(208.dp, 117.dp).clip(Radius.Card).background(SokoulColors.SurfaceHigh)) {
+                    Box(Modifier.padding(top = 8.dp).size(160.dp, 90.dp).clip(Radius.Card).background(SokoulColors.SurfaceHigh)) {
                         if (icon != null) NetImage(icon, p?.title, Modifier.fillMaxSize()) { c?.let { ChannelLogo(it.logo, it.name, Modifier.fillMaxSize()) } }
                         else c?.let { ChannelLogo(it.logo, it.name, Modifier.fillMaxSize().padding(18.dp)) }
                     }

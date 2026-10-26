@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -171,6 +172,13 @@ fun MultiviewScreen(nav: NavHostController) {
     var audio by remember { mutableStateOf(0) }
     val firstFocus = remember { FocusRequester() }
 
+    // Une seule connexion : le multi-écran ne peut rien montrer de plus que le plein écran. On l'explique au lieu
+    // d'afficher quatre cases dont trois resteraient noires.
+    if (maxConn == 1 && slots.all { it.channel == null }) {
+        SingleConnectionNotice(onBack = { nav.popBackStack() })
+        return
+    }
+
     Column(Modifier.fillMaxSize().background(Color.Black).padding(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val banner = notice ?: maxConn?.takeIf { it == 1 }?.let { "Votre abonnement n'autorise qu'une connexion : une seule case peut être lue à la fois." }
         if (banner != null) {
@@ -281,4 +289,35 @@ private fun SlotView(slot: SlotState, hasAudio: Boolean) {
             Text(c.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
         }
     }
+}
+
+/** Écran d'explication quand l'abonnement n'autorise qu'une connexion (le multi-écran en demande une par case). */
+@Composable
+private fun SingleConnectionNotice(onBack: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    Box(Modifier.fillMaxSize().background(SokoulColors.Background), contentAlignment = Alignment.Center) {
+        Column(Modifier.padding(32.dp).widthIn(max = 720.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            // quatre cases dessinées, une seule allumée
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (r in 0..1) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (c in 0..1) Box(
+                        Modifier.size(96.dp, 54.dp).background(if (r == 0 && c == 0) SokoulColors.Accent else SokoulColors.SurfaceHigh, Radius.Card),
+                    )
+                }
+            }
+            Text("MULTI-ÉCRAN", Modifier.padding(top = 28.dp), style = com.sokoul.iptv.ui.theme.Type.Kicker)
+            Text(
+                "Votre abonnement autorise 1 connexion", Modifier.padding(top = 4.dp),
+                style = com.sokoul.iptv.ui.theme.Type.ScreenTitle, textAlign = TextAlign.Center,
+            )
+            Text(
+                "Chaque case du multi-écran ouvre sa propre connexion au fournisseur. Avec une seule connexion, " +
+                    "une deuxième chaîne serait refusée, voire bloquerait l'abonnement quelques minutes. " +
+                    "Le multi-écran s'activera tout seul avec un abonnement à plusieurs connexions.",
+                Modifier.padding(top = 14.dp), style = MaterialTheme.typography.bodyLarge, color = SokoulColors.TextSecondary, textAlign = TextAlign.Center,
+            )
+            com.sokoul.iptv.ui.components.AppButton("Retour", onBack, Modifier.padding(top = 28.dp).focusRequester(focus), primary = true)
+        }
+    }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 }

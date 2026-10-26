@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.FiberSmartRecord
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -202,7 +203,7 @@ private fun TopTabs(
                 IconTab(Icons.Default.Search, "Recherche", open, toContent, onFocus = { settling = null }) { onAction(Dest.SEARCH) }
                 // guide et enregistrements : accessibles sans ouvrir de flux (une seule connexion chez le fournisseur)
                 IconTab(Dest.GUIDE.icon, "Guide TV", open, toContent, onFocus = { settling = null }) { onAction(Dest.GUIDE) }
-                IconTab(Dest.RECORDINGS.icon, "Enregistrements", open, toContent, onFocus = { settling = null }) { onAction(Dest.RECORDINGS) }
+                IconTab(Icons.Default.FiberSmartRecord, "Enregistrements", open, toContent, onFocus = { settling = null }) { onAction(Dest.RECORDINGS) }
                 TvSwitch(open, toContent, onFocus = { settling = null }) { onAction(Dest.LIVE) }
                 IconTab(Icons.Default.Settings, "Réglages", open, toContent, onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
                 Text(

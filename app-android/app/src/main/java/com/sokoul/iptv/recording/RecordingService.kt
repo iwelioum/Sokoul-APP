@@ -150,8 +150,7 @@ class RecordingService : Service() {
 
     private fun outputFile(r: RecordingEntity): File {
         val dir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "Enregistrements").apply { mkdirs() }
-        val stamp = SimpleDateFormat("yyyy-MM-dd_HH'h'mm", Locale.FRANCE).format(Date(r.startAt))
-        val base = "${stamp}_${RecordingRules.safeFileName(r.channelName, r.title)}"
+        val base = RecordingRules.fileBase(r.channelName, r.title, r.startAt)
         var f = File(dir, "$base.ts")
         var n = 2
         while (f.exists()) f = File(dir, "${base}_${n++}.ts")
