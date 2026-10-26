@@ -45,6 +45,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -106,6 +109,8 @@ data class PlayerUi(
     val seriesBackdrop: String? = null,
     /** Résumé de l'épisode en cours (écran de pause). */
     val overview: String? = null,
+    /** « Ça coupe ? » : version plus légère proposée (identifiant, libellé). */
+    val lighter: Pair<String, String>? = null,
 )
 
 @HiltViewModel
@@ -172,6 +177,9 @@ class PlayerViewModel @Inject constructor(
     private val listener = object : Player.Listener {
         override fun onTracksChanged(tracks: Tracks) { _tracks.value = tracks }
         override fun onVideoSizeChanged(videoSize: VideoSize) = updateVideoInfo()
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) onSeek(oldPosition.positionMs, newPosition.positionMs)
+        }
     }
 
     init {
@@ -186,6 +194,7 @@ class PlayerViewModel @Inject constructor(
             sp.player.addListener(listener)
             _player.value = sp
             watchEnd(sp)
+            watchStutter(sp)
             playlist = playlists.get(route.playlistId) ?: if (route.kind == PlayKind.CLOUD) playlists.activeNow() else null
             startSafely()
         }
@@ -353,7 +362,10 @@ class PlayerViewModel @Inject constructor(
             PlayKind.EPISODE -> currentEpisode?.let { "${it.season}:${it.episode}" }
             else -> title
         }
-        if (content != subsContent) { subsContent = content; resetOnlineSubtitles() }
+        if (content != subsContent) { subsContent = content; resetOnlineSubtitles(); loadIntro() }
+        stutters = 0
+        lighterOffered = false
+        if (_ui.value.lighter != null) _ui.update { it.copy(lighter = null) }
         _player.value?.play(stream, title, startMs)
         updateVideoInfo()
     }
@@ -478,6 +490,7 @@ class PlayerViewModel @Inject constructor(
             sp.player.addListener(listener)
             _player.value = sp
             watchEnd(sp)
+            watchStutter(sp)
             sp.play(stream, title, pos)
         }
     }
@@ -1145,6 +1158,7 @@ class PlayerViewModel @Inject constructor(
         }
         _cues.value = emptyList()
         _onlineSubs.value = OnlineSubs()
+        _subOffset.value = 0
     }
 
     private fun onlineOptions(): List<TrackOption> {
@@ -1159,6 +1173,108 @@ class PlayerViewModel @Inject constructor(
             } + listOfNotNull(if (s.failed) TrackOption("Téléchargement impossible, essayez un autre", null, -2, false, info = true) else null)
         }
     }
+
+    // --- Home cinéma : décalage des sous-titres, « Passer l'intro », « Ça coupe ? » ----------
+
+    private val _subOffset = MutableStateFlow(0L)
+    /** Décalage des sous-titres (positif = plus tard). Remis à zéro à chaque nouvelle œuvre. */
+    val subOffsetMs: StateFlow<Long> = _subOffset.asStateFlow()
+
+    /** Sous-titre en ligne : avance ou retard ; sous-titres du flux : retard seulement. */
+    fun shiftSubtitles(deltaMs: Long) {
+        _subOffset.value = if (deltaMs == 0L) 0 else SubtitleOffset.shift(_subOffset.value, deltaMs, delayOnly = _onlineSubs.value.activeRef == null)
+    }
+
+    val frameRateMatch: StateFlow<Boolean> = settingsStore.settings.map { it.frameRateMatch }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, false)
+
+    private val _intro = MutableStateFlow<IntroSkip.Window?>(null)
+    /** Moment de l'intro appris pour cette série (null = rien d'appris). */
+    val intro: StateFlow<IntroSkip.Window?> = _intro.asStateFlow()
+    private var introKey: String? = null
+    private var skippingIntro = false
+
+    private fun introSeries(): String? = when {
+        route.kind == PlayKind.EPISODE -> currentEpisode?.seriesId?.let { "${route.playlistId}:$it" }
+        debridQuery?.series == true -> "tmdb:${debridQuery?.tmdbId}"
+        else -> null
+    }
+
+    private fun loadIntro() {
+        val k = introSeries()
+        introKey = k
+        _intro.value = null
+        if (k != null) viewModelScope.launch {
+            settingsStore.introSkip(k)?.let { (a, b) -> if (introKey == k) _intro.value = IntroSkip.Window(a, b) }
+        }
+    }
+
+    fun skipIntro() {
+        val w = _intro.value ?: return
+        val exo = _player.value?.player ?: return
+        skippingIntro = true
+        exo.seekTo(w.endMs)
+    }
+
+    private var lastSeekAt = 0L
+
+    /** Saut manuel de 45 s à 3 min au début d'un épisode : retenu comme intro de la série. */
+    private fun onSeek(fromMs: Long, toMs: Long) {
+        lastSeekAt = System.currentTimeMillis()
+        if (skippingIntro) { skippingIntro = false; return }
+        val k = introSeries() ?: return
+        val w = IntroSkip.learn(fromMs, toMs) ?: return
+        _intro.value = w
+        viewModelScope.launch { settingsStore.setIntroSkip(k, w.startMs, w.endMs) }
+    }
+
+    private var stutters = 0
+    private var lighterOffered = false
+
+    /**
+     * « Ça coupe ? » : après 2 coupures (chargement de plus de 1,5 s en cours de lecture, hors saut),
+     * une version plus légère est proposée.
+     */
+    private fun watchStutter(sp: StreamPlayer) {
+        viewModelScope.launch {
+            var playedOnce = false
+            sp.state.collectLatest { s ->
+                when (s) {
+                    StreamState.Playing -> playedOnce = true
+                    StreamState.Loading, StreamState.Idle -> playedOnce = false
+                    StreamState.Buffering, is StreamState.Reconnecting -> {
+                        if (!playedOnce || _ui.value.isLive || System.currentTimeMillis() - lastSeekAt < 3_000) return@collectLatest
+                        delay(1_500)
+                        if (++stutters >= 2) offerLighter()
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    private fun iptvSource(m: com.sokoul.iptv.data.db.MovieEntity) =
+        com.sokoul.iptv.domain.PlaybackSources.fromIptv(com.sokoul.iptv.data.repo.VodVersion(m.id, m.name, m.language, m.quality, m.categoryId))
+
+    private fun offerLighter() {
+        if (lighterOffered) return
+        val current = currentDebrid?.let { RD_PREFIX + it.key to it.toSource() }
+            ?: movieVersions.getOrNull(movieIndex)?.takeIf { route.kind == PlayKind.MOVIE }?.let { it.id to iptvSource(it) }
+            ?: return
+        val options = (if (route.kind == PlayKind.MOVIE) movieVersions.map { it.id to iptvSource(it) } else emptyList()) +
+            rankedDebrid().map { RD_PREFIX + it.key to it.toSource() }
+        val pick = LighterVersion.pick(current.first, current.second, options) ?: return
+        lighterOffered = true
+        _ui.update { it.copy(lighter = pick.first to com.sokoul.iptv.ui.components.SourceLabels.text(pick.second)) }
+    }
+
+    fun acceptLighter() {
+        val id = _ui.value.lighter?.first ?: return
+        _ui.update { it.copy(lighter = null) }
+        switchVersion(id)
+    }
+
+    fun dismissLighter() { _ui.update { it.copy(lighter = null) } }
 
     // --- Pistes ------------------------------------------------------------------------
 

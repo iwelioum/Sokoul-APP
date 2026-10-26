@@ -5,6 +5,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Speaker
+import androidx.compose.material.icons.filled.Tv
 import com.sokoul.iptv.data.AppSettings
 import com.sokoul.iptv.data.BufferProfile
 import com.sokoul.iptv.data.DecoderMode
@@ -35,6 +37,16 @@ internal fun LazyListScope.playbackSection(c: SettingsCtx) {
     item("pb-next") {
         SettingRow("Épisode suivant automatique", if (s.autoplayNextEpisode) "Activé" else "Désactivé", "Enchaîne l'épisode suivant à la fin du générique", icon = Icons.Default.SkipNext) {
             c.vm.update { it.copy(autoplayNextEpisode = !s.autoplayNextEpisode) }
+        }
+    }
+    item("pb-rate") {
+        SettingRow("Adapter la fréquence de l'écran", if (s.frameRateMatch) "Activé" else "Désactivé", "Films et séries : la TV passe en 24 ou 25 Hz pour des mouvements sans saccade", icon = Icons.Default.Tv) {
+            c.vm.update { it.copy(frameRateMatch = !s.frameRateMatch) }
+        }
+    }
+    item("pb-passthrough") {
+        SettingRow("Son vers l'ampli (passthrough)", if (s.audioPassthrough) "Activé" else "Désactivé", "Dolby et DTS envoyés tels quels à l'ampli ou à la barre de son. Désactivez si le son est absent.", icon = Icons.Default.Speaker) {
+            c.vm.update { it.copy(audioPassthrough = !s.audioPassthrough) }
         }
     }
     item("pb-advanced") { AdvancedRow(c.advanced.value, 4) { c.advanced.value = !c.advanced.value } }

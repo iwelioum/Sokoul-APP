@@ -18,6 +18,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -196,6 +198,13 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     // position au début d'un saut sans barre (pour afficher le cumul « +1 min 30 »)
     var seekOrigin by remember { mutableLongStateOf(0L) }
     val tracks by vm.tracks.collectAsStateWithLifecycle()
+    val subOffset by vm.subOffsetMs.collectAsStateWithLifecycle()
+    val onlineActive = vm.onlineSubs.collectAsStateWithLifecycle().value.activeRef != null
+    // sous-titres du flux retardés : dessinés par DelayedStreamCues, celui du lecteur est masqué
+    val streamDelay = if (onlineActive) 0L else subOffset.coerceAtLeast(0)
+    val intro by vm.intro.collectAsStateWithLifecycle()
+    val frameMatch by vm.frameRateMatch.collectAsStateWithLifecycle()
+    var introDoneFor by remember { mutableStateOf<String?>(null) }
     val focus = remember { FocusRequester() }
     val scrubberFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -219,6 +228,27 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         (ui.endedWithNext || nextCountdown != null)
     // un panneau ou une carte a le focus : les flèches servent à s'y déplacer
     val modal = menu != null || detailsVisible || episodesVisible || tracksVisible || showNextCard || errorShown || ui.needsPin
+    // « Passer l'intro » : une fois par épisode, dans la fenêtre apprise pour la série
+    val introFor = "${ui.title}|${ui.subtitle}|${ui.currentSe}"
+    val introShown = !ui.isLive && !modal && !pauseScreen && introDoneFor != introFor && intro?.let { IntroSkip.visible(position, it) } == true
+    LaunchedEffect(ui.lighter) { if (ui.lighter != null) { delay(15_000); vm.dismissLighter() } }
+
+    // fréquence de l'écran calée sur celle du film (VOD seulement : en direct, chaque zapping ferait clignoter la TV)
+    val rateSwitch = remember { (context as? android.app.Activity)?.window?.let { com.sokoul.iptv.player.FrameRateMatcher.Switcher(it) } }
+    DisposableEffect(Unit) { onDispose { rateSwitch?.restore() } }
+    DisposableEffect(exo, ui.isLive, frameMatch) {
+        val sw = rateSwitch
+        if (exo == null || sw == null) return@DisposableEffect onDispose {}
+        if (ui.isLive || !frameMatch) { sw.restore(); return@DisposableEffect onDispose {} }
+        fun check() { exo.videoFormat?.frameRate?.takeIf { it > 0 }?.let(sw::match) }
+        val lis = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) = check()
+            override fun onRenderedFirstFrame() = check()
+        }
+        exo.addListener(lis)
+        check()
+        onDispose { exo.removeListener(lis) }
+    }
 
     // --- intégration système : PiP, MediaSession, plein écran, arrière-plan ---
     DisposableEffect(Unit) {
@@ -470,7 +500,14 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                         KeyEvent.KEYCODE_DPAD_LEFT -> { seekBy(-seekStep(repeat, back = true), reveal = false); true }
                         KeyEvent.KEYCODE_DPAD_RIGHT -> { seekBy(seekStep(repeat, back = false), reveal = false); true }
                         KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { showInfo(); true }
-                        else -> { if (repeat == 0) playPause(); true }
+                        else -> {
+                            if (repeat == 0) when {
+                                ui.lighter != null -> vm.acceptLighter()
+                                introShown -> { introDoneFor = introFor; vm.skipIntro() }
+                                else -> playPause()
+                            }
+                            true
+                        }
                     }
                 }
             }
@@ -499,13 +536,23 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 },
                 update = { view ->
                     view.player = exo
+                    view.subtitleView?.visibility = if (streamDelay > 0) android.view.View.INVISIBLE else android.view.View.VISIBLE
                     view.resizeMode = resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].first
                 },
                 modifier = Modifier.fillMaxSize(),
             )
         }
 
-        OnlineCues(vm, exo, Modifier.align(Alignment.BottomCenter).padding(bottom = if (infoVisible && !inPip) 190.dp else if (inPip) 8.dp else 56.dp))
+        OnlineCues(vm, exo, subOffset, Modifier.align(Alignment.BottomCenter).padding(bottom = if (infoVisible && !inPip) 190.dp else if (inPip) 8.dp else 56.dp))
+        DelayedStreamCues(exo, streamDelay, Modifier.fillMaxSize())
+        if (!inPip) {
+            val lighter = ui.lighter
+            val bottom = if (infoVisible) 190.dp else 56.dp
+            when {
+                lighter != null -> OkPrompt("Ça coupe ? Passer à une version plus légère", lighter.second, Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = bottom)) { vm.acceptLighter() }
+                introShown -> OkPrompt("Passer l'intro", null, Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = bottom)) { introDoneFor = introFor; vm.skipIntro() }
+            }
+        }
 
         if (!inPip) {
             if (!ui.needsPin) StatusOverlay(streamState, ui.error, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() }, onStopRecording = vm::stopRecordings)
@@ -649,7 +696,10 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 val online by vm.onlineSubs.collectAsStateWithLifecycle()
                 LaunchedEffect(Unit) { vm.searchOnlineSubtitles() }
                 val textOpts = remember(tracks, online) { vm.textOptions() }
-                TracksPanel(audioOpts, textOpts) { type, o -> vm.selectTrack(type, o) }
+                val shown = textOpts.firstOrNull()?.selected == false
+                TracksPanel(
+                    audioOpts, textOpts, offsetMs = if (shown) subOffset else null, delayOnly = online.activeRef == null, onShift = vm::shiftSubtitles,
+                ) { type, o -> vm.selectTrack(type, o) }
             }
             AnimatedVisibility(pauseScreen, enter = fadeIn(tween(Motion.SLOW)), exit = fadeOut(Motion.exit())) {
                 PauseScreen(ui, position, duration)
@@ -878,13 +928,13 @@ private fun HealthBadge(h: StreamHealth, modifier: Modifier = Modifier) {
  * recomposition de tout l'écran).
  */
 @Composable
-private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?, modifier: Modifier) {
+private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?, offsetMs: Long, modifier: Modifier) {
     val cues by vm.cues.collectAsStateWithLifecycle()
     if (cues.isEmpty() || exo == null) return
     var text by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(cues, exo) {
+    LaunchedEffect(cues, exo, offsetMs) {
         while (true) {
-            text = com.sokoul.iptv.data.net.providers.SubtitleFile.at(cues, exo.currentPosition)?.text
+            text = com.sokoul.iptv.data.net.providers.SubtitleFile.at(cues, exo.currentPosition - offsetMs)?.text
             delay(200)
         }
     }
@@ -895,4 +945,61 @@ private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?,
         color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         style = if (l.isTv) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
     )
+}
+
+/**
+ * Sous-titres du flux retardés de [delayMs] : chaque changement de sous-titre est noté avec la position
+ * du lecteur puis affiché [delayMs] plus tard. Un saut vide la file (pas d'ancien texte qui ressurgit).
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+private fun DelayedStreamCues(exo: androidx.media3.common.Player?, delayMs: Long, modifier: Modifier) {
+    if (exo == null || delayMs <= 0) return
+    val queue = remember(exo) { ArrayDeque<Pair<Long, List<androidx.media3.common.text.Cue>>>() }
+    var shown by remember(exo) { mutableStateOf<List<androidx.media3.common.text.Cue>>(emptyList()) }
+    DisposableEffect(exo) {
+        val lis = object : Player.Listener {
+            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                queue.addLast(exo.currentPosition to cueGroup.cues)
+                while (queue.size > 200) queue.removeFirst()
+            }
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) { queue.clear(); shown = emptyList() }
+            }
+        }
+        exo.addListener(lis)
+        onDispose { exo.removeListener(lis) }
+    }
+    LaunchedEffect(exo, delayMs) {
+        while (true) {
+            val due = exo.currentPosition - delayMs
+            var next: List<androidx.media3.common.text.Cue>? = null
+            while (queue.isNotEmpty() && queue.first().first <= due) next = queue.removeFirst().second
+            if (next != null) shown = next
+            delay(100)
+        }
+    }
+    AndroidView(
+        factory = { ctx -> androidx.media3.ui.SubtitleView(ctx).apply { setUserDefaultStyle(); setUserDefaultTextSize() } },
+        update = { it.setCues(shown) },
+        modifier = modifier,
+    )
+}
+
+/** Pastille « OK : … » en bas à droite (Passer l'intro, version plus légère). Touche OK ou appui. */
+@Composable
+private fun OkPrompt(title: String, detail: String?, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.background(SokoulColors.black(0.78f), Radius.Card)
+            .border(com.sokoul.iptv.ui.theme.Edge.Hairline, SokoulColors.white(0.25f), Radius.Card)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("OK", Modifier.background(Color.White, Radius.Tiny).padding(horizontal = 8.dp, vertical = 2.dp), color = Color.Black, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(start = 12.dp)) {
+            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (detail != null) Text(detail, color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }

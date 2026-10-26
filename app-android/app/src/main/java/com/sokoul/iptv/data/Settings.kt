@@ -226,6 +226,17 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         }
     }
 
+    /** « Passer l'intro » appris pour une série : début et fin du dernier saut. */
+    suspend fun introSkip(series: String): Pair<Long, Long>? =
+        context.dataStore.data.first()[stringPreferencesKey("intro_$series")]?.split(':')?.let { p ->
+            val a = p.getOrNull(0)?.toLongOrNull(); val b = p.getOrNull(1)?.toLongOrNull()
+            if (a != null && b != null) a to b else null
+        }
+
+    suspend fun setIntroSkip(series: String, startMs: Long, endMs: Long) {
+        context.dataStore.edit { it[stringPreferencesKey("intro_$series")] = "$startMs:$endMs" }
+    }
+
     private val recentKey = stringPreferencesKey("recent_searches")
     private val sagaStoryKey = stringPreferencesKey("saga_story_order")
     private val pinFailures = intPreferencesKey("pin_failures")

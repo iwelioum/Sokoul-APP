@@ -44,7 +44,7 @@ class PlayerFactory @Inject constructor(
             "hw" in diag -> DecoderMode.HARDWARE
             else -> settings.decoderMode
         }
-        val renderers = DefaultRenderersFactory(context)
+        val renderers = (if (settings.audioPassthrough || forMultiview) DefaultRenderersFactory(context) else PcmOnlyRenderers(context))
             .apply { if ("sync" in diag) forceDisableMediaCodecAsynchronousQueueing() }
             .setExtensionRendererMode(
                 when (mode) {
@@ -156,4 +156,19 @@ class PlayerFactory @Inject constructor(
         }
         return builder.build()
     }
+}
+
+/**
+ * « Son vers l'ampli » désactivé : le son est toujours décodé en PCM par l'appareil (FFmpeg pour
+ * AC3/DTS/TrueHD), jamais envoyé tel quel à l'ampli. Utile quand l'ampli ou la TV gèrent mal le passthrough.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private class PcmOnlyRenderers(context: Context) : DefaultRenderersFactory(context) {
+    @Suppress("DEPRECATION")
+    override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean) =
+        androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+            .setAudioCapabilities(androidx.media3.exoplayer.audio.AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+            .setEnableFloatOutput(enableFloatOutput)
+            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+            .build()
 }

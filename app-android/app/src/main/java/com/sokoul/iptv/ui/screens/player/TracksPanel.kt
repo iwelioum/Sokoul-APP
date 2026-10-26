@@ -59,7 +59,12 @@ internal fun showAudioColumn(audio: List<TrackOption>) = audio.size > 1
  * (Retour pour fermer), pour régler audio puis sous-titres d'un seul geste.
  */
 @Composable
-fun TracksPanel(audio: List<TrackOption>, text: List<TrackOption>, modifier: Modifier = Modifier, onPick: (type: Int, TrackOption) -> Unit) {
+fun TracksPanel(
+    audio: List<TrackOption>, text: List<TrackOption>, modifier: Modifier = Modifier,
+    /** Décalage des sous-titres (null = aucun sous-titre affiché, pas de réglage). */
+    offsetMs: Long? = null, delayOnly: Boolean = false, onShift: (Long) -> Unit = {},
+    onPick: (type: Int, TrackOption) -> Unit,
+) {
     val l = LocalLayout.current
     val audioEnter = remember { FocusRequester() }
     val textEnter = remember { FocusRequester() }
@@ -87,6 +92,7 @@ fun TracksPanel(audio: List<TrackOption>, text: List<TrackOption>, modifier: Mod
             }
             TrackColumn("Sous-titres", Icons.Default.ClosedCaption, text, textEnter, maxList, Modifier.width(colWidth)) { onPick(C.TRACK_TYPE_TEXT, it) }
         }
+        if (offsetMs != null) OffsetRow(offsetMs, delayOnly, onShift)
         KeyHints(
             listOfNotNull(if (withAudio) KeyHint("◀ ▶", "Colonne") else null, KeyHint("OK", "Choisir"), KeyHint("Retour", "Fermer")),
             Modifier.padding(top = 12.dp),
@@ -133,5 +139,33 @@ private fun TrackColumn(title: String, icon: ImageVector, options: List<TrackOpt
                 }
             }
         }
+    }
+}
+
+/** « Décalage » : − 0,25 s · valeur (OK = remise à zéro) · + 0,25 s, parcouru avec ◀ ▶. */
+@Composable
+private fun OffsetRow(offsetMs: Long, delayOnly: Boolean, onShift: (Long) -> Unit) {
+    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("DÉCALAGE", style = Type.Kicker)
+        Spacer(Modifier.width(12.dp))
+        OffsetButton("− 0,25 s", "Sous-titres plus tôt", enabled = !(delayOnly && offsetMs <= 0)) { onShift(-SubtitleOffset.STEP_MS) }
+        OffsetButton(SubtitleOffset.label(offsetMs), "Remettre à zéro le décalage", enabled = true, strong = true) { onShift(0) }
+        OffsetButton("+ 0,25 s", "Sous-titres plus tard", enabled = true) { onShift(SubtitleOffset.STEP_MS) }
+        if (delayOnly) Text("retard seulement", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextMuted, maxLines = 1)
+    }
+}
+
+@Composable
+private fun OffsetButton(label: String, description: String, enabled: Boolean, strong: Boolean = false, onClick: () -> Unit) {
+    FocusSurface(style = FocusStyle.Row,
+        onClick = { if (enabled) onClick() },
+        modifier = Modifier.padding(horizontal = 2.dp).semantics { contentDescription = description },
+        shape = Radius.Card, color = Color.Transparent,
+    ) { focused ->
+        Text(
+            label, Modifier.padding(horizontal = 10.dp, vertical = 7.dp), maxLines = 1,
+            color = when { !enabled -> SokoulColors.TextMuted; focused || strong -> SokoulColors.TextPrimary; else -> SokoulColors.TextSecondary },
+            style = MaterialTheme.typography.bodyMedium, fontWeight = if (strong) FontWeight.Bold else FontWeight.Medium,
+        )
     }
 }
