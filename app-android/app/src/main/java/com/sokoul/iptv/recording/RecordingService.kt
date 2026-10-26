@@ -48,9 +48,6 @@ import kotlin.coroutines.coroutineContext
  * Flux MPEG-TS : copie directe des octets. Flux HLS : suivi de la playlist et
  * concaténation des segments. Reconnexion automatique jusqu'à l'heure de fin.
  */
-/** Le serveur a répondu 4xx : inutile d'insister rapidement. */
-private class RefusedException(val code: Int) : IOException("HTTP $code")
-
 /** Stockage presque plein : l'enregistrement s'arrête proprement. */
 private class NoSpaceException : IOException("Espace de stockage insuffisant : enregistrement arrêté")
 
@@ -99,13 +96,18 @@ class RecordingService : Service() {
                     var refusals = 0
                     while (coroutineContext.isActive && System.currentTimeMillis() < rec.endAt) {
                         try {
-                            if (url.substringBefore('?').endsWith(".m3u8", true)) recordHls(url, stream.userAgent, stream.referrer, out, rec.endAt, file)
-                            else recordRaw(url, stream.userAgent, stream.referrer, out, rec.endAt, file)
+                            val ctx = coroutineContext
+                            var reads = 0
+                            checkSpace(file)
+                            StreamPump(http).pump(url, stream.userAgent, stream.referrer, keepGoing = { ctx.isActive && System.currentTimeMillis() < rec.endAt }) { b, n ->
+                                out.write(b, 0, n)
+                                if (++reads % 1024 == 0) checkSpace(file) // ~ tous les 64 Mo
+                            }
                             failures = 0
                             refusals = 0
                         } catch (e: NoSpaceException) {
                             throw e
-                        } catch (e: RefusedException) {
+                        } catch (e: StreamRefusedException) {
                             // Connexion refusée (souvent : la seule connexion autorisée est déjà utilisée).
                             // On réessaie lentement pour ne pas se faire bannir par le fournisseur.
                             refusals++
@@ -140,86 +142,11 @@ class RecordingService : Service() {
         }
     }
 
-    private fun request(url: String, ua: String, referrer: String?) =
-        Request.Builder().url(url).header("User-Agent", ua).apply { referrer?.let { header("Referer", it) } }.build()
-
     /** Arrêt propre quand le stockage est presque plein (sinon fichier corrompu et système instable). */
     private fun checkSpace(file: File) {
         val dir = file.parentFile ?: return
         if (dir.usableSpace in 1 until RecordingRules.MIN_FREE_BYTES) throw NoSpaceException()
     }
-
-    private suspend fun recordRaw(url: String, ua: String, referrer: String?, out: OutputStream, endAt: Long, file: File) {
-        http.newCall(request(url, ua, referrer)).execute().use { resp ->
-            if (resp.code in 400..499) throw RefusedException(resp.code)
-            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
-            val type = resp.header("Content-Type").orEmpty()
-            if (type.contains("mpegurl", true)) throw IOException("Flux HLS inattendu")
-            val input = resp.body?.byteStream() ?: throw IOException("Flux vide")
-            val buf = ByteArray(64 * 1024)
-            var reads = 0
-            while (coroutineContext.isActive && System.currentTimeMillis() < endAt) {
-                val n = input.read(buf)
-                if (n < 0) throw IOException("Fin de flux inattendue")
-                out.write(buf, 0, n)
-                if (++reads % 1024 == 0) checkSpace(file) // ~ tous les 64 Mo
-            }
-        }
-    }
-
-    private suspend fun recordHls(playlistUrl: String, ua: String, referrer: String?, out: OutputStream, endAt: Long, file: File) {
-        var mediaUrl = playlistUrl
-        val seen = LinkedHashSet<String>()
-        while (coroutineContext.isActive && System.currentTimeMillis() < endAt) {
-            checkSpace(file)
-            val text = fetchText(mediaUrl, ua, referrer)
-            if (text.contains("#EXT-X-STREAM-INF")) {
-                mediaUrl = bestVariant(mediaUrl, text) ?: throw IOException("Aucune variante HLS")
-                continue
-            }
-            if (text.contains("#EXT-X-KEY") && !text.contains("METHOD=NONE")) throw IOException("Flux HLS chiffré : enregistrement impossible")
-            val target = Regex("#EXT-X-TARGETDURATION:(\\d+)").find(text)?.groupValues?.get(1)?.toLongOrNull() ?: 6
-            for (line in text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }) {
-                val seg = resolve(mediaUrl, line)
-                if (!seen.add(seg)) continue
-                if (seen.size > 500) seen.remove(seen.first())
-                http.newCall(request(seg, ua, referrer)).execute().use { r ->
-                    when {
-                        r.isSuccessful -> r.body?.byteStream()?.copyTo(out, 64 * 1024)
-                        r.code in 400..499 && r.code != 404 -> throw RefusedException(r.code)
-                        // segment expiré (404) ou erreur serveur ponctuelle : on passe au suivant
-                        else -> Timber.w("Segment HLS ignoré (HTTP ${r.code})")
-                    }
-                }
-                if (System.currentTimeMillis() >= endAt) return
-            }
-            if (text.contains("#EXT-X-ENDLIST")) return
-            delay((target * 1000 / 2).coerceIn(1000, 5000))
-        }
-    }
-
-    private fun fetchText(url: String, ua: String, referrer: String?): String =
-        http.newCall(request(url, ua, referrer)).execute().use { r ->
-            if (r.code in 400..499) throw RefusedException(r.code)
-            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-            r.body?.string() ?: ""
-        }
-
-    private fun bestVariant(base: String, master: String): String? {
-        val lines = master.lines()
-        var best: Pair<Long, String>? = null
-        lines.forEachIndexed { i, l ->
-            if (l.startsWith("#EXT-X-STREAM-INF")) {
-                val bw = Regex("BANDWIDTH=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-                val uri = lines.drop(i + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") }?.trim() ?: return@forEachIndexed
-                if (best == null || bw > best!!.first) best = bw to uri
-            }
-        }
-        return best?.second?.let { resolve(base, it) }
-    }
-
-    private fun resolve(base: String, ref: String): String =
-        if (ref.startsWith("http")) ref else java.net.URI(base).resolve(ref).toString()
 
     private fun outputFile(r: RecordingEntity): File {
         val dir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "Enregistrements").apply { mkdirs() }

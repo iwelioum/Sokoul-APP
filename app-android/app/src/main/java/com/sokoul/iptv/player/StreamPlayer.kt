@@ -60,6 +60,8 @@ class StreamPlayer(
     private var videoGuard: Job? = null
     private val stall = VideoStallDetector()
     private var startPositionMs = 0L
+    /** Lecture du tampon local (pause du direct) : pas de reconnexion réseau, erreurs et fin remontées telles quelles. */
+    private var local = false
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
@@ -72,10 +74,12 @@ class StreamPlayer(
                     if (stream?.isLive == true) guardVideo()
                 }
                 Player.STATE_BUFFERING -> {
+                    if (local) { _state.value = StreamState.Buffering; return }
                     if (stream?.isLive == true) armWatchdog()
                     else if (_state.value == StreamState.Playing) _state.value = StreamState.Buffering
                 }
                 Player.STATE_ENDED -> {
+                    if (local) { _state.value = StreamState.Ended; return }
                     if (stream?.isLive == true) network("Flux terminé") else _state.value = StreamState.Ended
                 }
                 Player.STATE_IDLE -> Unit
@@ -84,6 +88,7 @@ class StreamPlayer(
 
         override fun onPlayerError(error: PlaybackException) {
             Timber.w(error, "Erreur de lecture ${error.errorCodeName}")
+            if (local) { _state.value = StreamState.Failed("Lecture différée interrompue"); return }
             val s = stream ?: return
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
                 player.seekToDefaultPosition()
@@ -112,6 +117,7 @@ class StreamPlayer(
     }
 
     fun play(stream: ResolvedStream, title: String, startPositionMs: Long = 0) {
+        local = false
         if (exclusive) gate.acquire(this)
         this.stream = stream
         this.title = title
@@ -129,6 +135,20 @@ class StreamPlayer(
         refusalRetries = 0
         loadWhenAllowed(keepPosition = false)
     }
+
+    /**
+     * Pause du direct : lit le tampon local (aucune connexion ouverte ici, l'écrivain tient la seule autorisée).
+     */
+    fun playLocal(source: androidx.media3.exoplayer.source.MediaSource) {
+        retryJob?.cancel(); watchdog?.cancel()
+        local = true
+        _state.value = StreamState.Loading
+        player.setMediaSource(source)
+        player.prepare()
+        player.playWhenReady = true
+    }
+
+    val isLocal get() = local
 
     /** « Réessayer » : respecte toujours la pause imposée par le fournisseur. */
     fun retryNow() {

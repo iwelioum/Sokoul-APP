@@ -1,5 +1,7 @@
 package com.sokoul.iptv.ui.screens.player
 
+import com.sokoul.iptv.player.timeshift.LiveTimeshift
+import com.sokoul.iptv.player.timeshift.TimeshiftPolicy
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -171,6 +173,7 @@ class PlayerViewModel @Inject constructor(
             val settings = settingsStore.current()
             autoplayNext = settings.autoplayNextEpisode
             zapInverted = settings.zapInverted
+            timeshiftAllowed = settings.timeshift
             defaultDecoder = settings.decoderMode
             resizeMode.value = settings.resizeMode
             val sp = StreamPlayer(factory.create(settings), factory, viewModelScope, gate)
@@ -294,6 +297,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun play(stream: ResolvedStream, title: String, startMs: Long) {
+        if (timeshift.active) stopTimeshift(backToNetwork = false)
         lastPlay = Triple(stream, title, startMs)
         _ui.update { it.copy(error = null, endedWithNext = false) }
         // même œuvre (autre version, nouvelle tentative) : le sous-titre en ligne choisi reste affiché
@@ -308,6 +312,91 @@ class PlayerViewModel @Inject constructor(
     }
 
     private var lastPlay: Triple<ResolvedStream, String, Long>? = null
+
+    // --- Pause du direct (timeshift) ---------------------------------------------------
+
+    private var timeshiftAllowed = true
+    val timeshift = LiveTimeshift(viewModelScope, newBuffer = {
+        val dir = factory.timeshiftDir()
+        com.sokoul.iptv.player.timeshift.TimeshiftBuffer(dir, maxBytes = TimeshiftPolicy.capBytes(freeBytes(dir)))
+    })
+    val timeshiftState get() = timeshift.state
+    private var tickJob: Job? = null
+
+    private fun freeBytes(dir: File): Long = dir.apply { mkdirs() }.usableSpace
+
+    /**
+     * ⏯ en direct. Première pause : la connexion du lecteur est fermée et l'écrivain prend la seule connexion
+     * autorisée pour remplir le tampon ; reprise = lecture du tampon. Ensuite ⏯ met en pause / reprend la lecture
+     * locale (l'écriture continue). Pause du direct coupée ou disque trop plein : simple pause du lecteur.
+     */
+    fun liveTogglePause() {
+        val sp = _player.value ?: return
+        if (!timeshift.active) {
+            val stream = lastPlay?.first
+            val url = stream?.urls?.firstOrNull()
+            if (!timeshiftAllowed || stream == null || url == null) { sp.player.playWhenReady = !sp.player.playWhenReady; return }
+            if (!TimeshiftPolicy.canStart(freeBytes(factory.timeshiftDir()))) {
+                _ui.update { it.copy(notice = "Pause du direct indisponible : moins de 3 Go libres sur la box") }
+                sp.player.playWhenReady = !sp.player.playWhenReady
+                return
+            }
+            sp.stop()
+            val pump = com.sokoul.iptv.recording.StreamPump(factory.http)
+            timeshift.start(onRefused = { gate.noteRefusal() }) { keepGoing, sink -> pump.pump(url, stream.userAgent, stream.referrer, keepGoing, sink) }
+            startTicker()
+            return
+        }
+        if (sp.isLocal) sp.player.playWhenReady = !sp.player.playWhenReady
+        else playLocalAt(timeshift.state.value.position)
+    }
+
+    /** −10 s / +30 s dans la fenêtre enregistrée (sans réseau). */
+    fun timeshiftSeek(deltaMs: Long) {
+        if (!timeshift.active) return
+        playLocalAt(timeshift.seekTarget(deltaMs))
+    }
+
+    /** « Retour au direct » : au bout du tampon (l'écriture continue, la pause reste possible). */
+    fun timeshiftToLive() {
+        if (!timeshift.active) return
+        playLocalAt(Long.MAX_VALUE)
+    }
+
+    private fun playLocalAt(time: Long) {
+        val sp = _player.value ?: return
+        val buf = timeshift.buffer ?: return
+        val offset = timeshift.sourceAt(time) ?: return
+        sp.playLocal(factory.localSource(com.sokoul.iptv.player.timeshift.TimeshiftDataSource.Factory(buf, offset)))
+    }
+
+    /** Fin de la pause du direct : tampon effacé ; [backToNetwork] = reprendre le flux réseau de la chaîne. */
+    private fun stopTimeshift(backToNetwork: Boolean) {
+        tickJob?.cancel()
+        timeshift.stop()
+        if (backToNetwork) lastPlay?.let { (s, t, _) -> _player.value?.play(s, t, 0) }
+    }
+
+    private fun startTicker() {
+        tickJob?.cancel()
+        tickJob = viewModelScope.launch {
+            while (timeshift.active) {
+                val sp = _player.value
+                val local = sp?.isLocal == true
+                timeshift.tick(if (local) sp?.player?.currentPosition else null, paused = !local || sp?.player?.playWhenReady != true)
+                val st = sp?.state?.value
+                val err = timeshift.state.value.error
+                // écriture arrêtée (refus, coupures) ou lecture locale finie : retour au flux réseau, sans écran noir
+                if ((err != null && (!local || st is StreamState.Ended)) || (local && st is StreamState.Failed)) {
+                    _ui.update { it.copy(notice = err ?: "Pause du direct interrompue : retour au direct") }
+                    stopTimeshift(backToNetwork = true)
+                    break
+                }
+                delay(500)
+            }
+        }
+    }
+
 
     /** Décodage des réglages (affiché quand aucun choix de séance n'est fait). */
     var defaultDecoder = com.sokoul.iptv.data.DecoderMode.AUTO
@@ -324,6 +413,7 @@ class PlayerViewModel @Inject constructor(
     fun setSessionDecoder(mode: com.sokoul.iptv.data.DecoderMode) {
         viewModelScope.launch {
             val old = _player.value ?: return@launch
+            if (timeshift.active) stopTimeshift(backToNetwork = false)
             val (stream, title, _) = lastPlay ?: return@launch
             val pos = if (_ui.value.isLive) 0L else old.player.currentPosition
             sessionDecoder = mode
@@ -692,6 +782,8 @@ class PlayerViewModel @Inject constructor(
     /** Application en arrière-plan sans image dans l'image : pause et sauvegarde (direct : connexion fermée). */
     fun onBackground() {
         val sp = _player.value ?: return
+        // écran quitté : la pause du direct s'arrête (la seule connexion est libérée)
+        if (timeshift.active) stopTimeshift(backToNetwork = false)
         if (_ui.value.isLive) { sp.stop(); return }
         sp.player.pause()
         viewModelScope.launch { saveNow() }
@@ -902,6 +994,8 @@ class PlayerViewModel @Inject constructor(
     fun state(): StateFlow<StreamState>? = _player.value?.state
 
     override fun onCleared() {
+        tickJob?.cancel()
+        timeshift.stop()
         val sp = _player.value
         val save = saver
         val p = sp?.player

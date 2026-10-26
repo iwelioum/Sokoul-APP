@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Update
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.screens.settings.SettingRow
+import com.sokoul.iptv.ui.screens.settings.ToggleRow
 import com.sokoul.iptv.ui.screens.settings.SettingsCtx
 import com.sokoul.iptv.ui.screens.settings.offsetLabel
 import com.sokoul.iptv.ui.screens.settings.subsection
@@ -27,6 +28,12 @@ internal fun LazyListScope.televisionSection(c: SettingsCtx) {
         SettingRow("Sens du zapping", zapLabel(s.zapInverted), icon = Icons.Default.SwapVert) {
             c.choose("Sens du zapping", listOf(false, true).map { v -> MenuOption(zapLabel(v), selected = v == s.zapInverted) { c.vm.update { it.copy(zapInverted = v) } } })
         }
+    }
+    item("tv-timeshift") {
+        ToggleRow(
+            "Pause du direct", s.timeshift,
+            "⏯ met la chaîne en pause : elle s'enregistre sur la box (30 min, 2,5 Go au plus, effacé en changeant de chaîne)",
+        ) { v -> c.vm.update { it.copy(timeshift = v) } }
     }
     subsection("Guide des programmes")
     item("tv-offset") {

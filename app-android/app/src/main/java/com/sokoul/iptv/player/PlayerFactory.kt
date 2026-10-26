@@ -93,17 +93,30 @@ class PlayerFactory @Inject constructor(
             .setUserAgent(userAgent)
             .apply { if (!referrer.isNullOrBlank()) setDefaultRequestProperties(mapOf("Referer" to referrer)) }
         val upstream = DefaultDataSource.Factory(context, http)
-        val extractors = DefaultExtractorsFactory()
-            .setTsExtractorFlags(diagFlags().let { f ->
-                // Pas de FLAG_DETECT_ACCESS_UNITS : sur les flux entrelacés (TF1, TL7…) il coupait chaque image en
-                // morceaux et bloquait le décodeur MediaTek après 0,4 s (image figée, son qui continue).
-                (if ("idr" in f) 0 else DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES) or
-                    (if ("au" in f) DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS else 0)
-            })
-            .setConstantBitrateSeekingEnabled(true)
-        return DefaultMediaSourceFactory(upstream, extractors)
+        return DefaultMediaSourceFactory(upstream, extractors())
             .setLoadErrorHandlingPolicy(IptvLoadErrorPolicy())
     }
+
+    /** Extracteurs, réglage TS commun au réseau et à la pause du direct. */
+    private fun extractors() = DefaultExtractorsFactory()
+        .setTsExtractorFlags(diagFlags().let { f ->
+            // Pas de FLAG_DETECT_ACCESS_UNITS : sur les flux entrelacés (TF1, TL7…) il coupait chaque image en
+            // morceaux et bloquait le décodeur MediaTek après 0,4 s (image figée, son qui continue).
+            (if ("idr" in f) 0 else DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES) or
+                (if ("au" in f) DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS else 0)
+        })
+        .setConstantBitrateSeekingEnabled(true)
+
+    /** Client HTTP partagé (écriture de la pause du direct). */
+    val http: OkHttpClient get() = okHttp
+
+    /** Dossier de la pause du direct (cache : vidé par Android si besoin, effacé à chaque changement de chaîne). */
+    fun timeshiftDir() = java.io.File(context.cacheDir, "timeshift")
+
+    /** Source locale (MPEG-TS) lue depuis le tampon de la pause du direct. */
+    fun localSource(ds: androidx.media3.datasource.DataSource.Factory): MediaSource =
+        androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(ds, extractors())
+            .createMediaSource(MediaItem.Builder().setUri(com.sokoul.iptv.player.timeshift.TimeshiftDataSource.URI).setMimeType(MimeTypes.VIDEO_MP2T).build())
 
     /**
      * Ne réessaie pas en boucle un flux refusé par le serveur (401/403/404/406/429…) :

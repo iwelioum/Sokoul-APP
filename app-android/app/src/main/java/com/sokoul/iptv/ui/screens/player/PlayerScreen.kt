@@ -175,6 +175,10 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     var detailsVisible by remember { mutableStateOf(false) }
     val detailsFocus = remember { FocusRequester() }
     val zapPending by vm.zapPending.collectAsStateWithLifecycle()
+    // pause du direct : barre visible pendant la pause et 5 s après une action
+    val ts by vm.timeshiftState.collectAsStateWithLifecycle()
+    var tsBar by remember { mutableStateOf(false) }
+    var tsTick by remember { mutableIntStateOf(0) }
     val groups by vm.groups.collectAsStateWithLifecycle()
     val currentGroup by vm.currentGroup.collectAsStateWithLifecycle()
     var numberBuffer by remember { mutableStateOf("") }
@@ -199,6 +203,8 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val nextFocus = remember { FocusRequester() }
 
     fun showInfo() { infoVisible = true; infoTick++ }
+    fun tsShow() { tsBar = true; tsTick++ }
+    LaunchedEffect(tsTick, ts.paused, ts.active) { if (!ts.active) tsBar = false else if (!ts.paused) { delay(5_000); tsBar = false } }
     fun applyLive(n: LiveNav) {
         listVisible = n.panels.list; groupsVisible = n.panels.groups; guideVisible = n.panels.guide; detailsVisible = n.panels.details
         listIndex = n.list; groupIndex = n.group; guideIndex = n.guide
@@ -315,6 +321,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         pauseScreen -> { pauseScreen = false; true }
         tracksVisible -> { tracksVisible = false; true }
         detailsVisible -> { detailsVisible = false; true }
+        tsBar -> { tsBar = false; true }
         // zapping en cours : on reste sur la chaîne regardée
         zapPending != null -> vm.cancelZap()
         groupsVisible -> { groupsVisible = false; listVisible = true; true }
@@ -329,7 +336,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         errorShown -> { nav.popBackStack(); true }
         else -> false
     }
-    BackHandler(enabled = pauseScreen || detailsVisible || zapPending != null || groupsVisible || guideVisible || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
+    BackHandler(enabled = pauseScreen || detailsVisible || tsBar || zapPending != null || groupsVisible || guideVisible || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
     // touche Retour interceptée avant Compose : sinon elle retire seulement le focus de la barre (télécommande « muette »)
     var backDownConsumed by remember { mutableStateOf(false) }
     // filet de sécurité : le lecteur ne reste jamais sans focus (hors menus, qui ont leur propre fenêtre)
@@ -353,6 +360,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     }
 
     fun playPause() {
+        if (ui.isLive) { vm.liveTogglePause(); infoVisible = false; tsShow(); return }
         exo?.let { if (it.isPlaying) vm.pauseAndSave() else it.play() }
         showInfo()
     }
@@ -415,14 +423,26 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     KeyEvent.KEYCODE_PROG_RED -> { if (ui.isLive) vm.record(0) { toast(context, it) }; return@onKeyEvent true }
                     KeyEvent.KEYCODE_LAST_CHANNEL -> { vm.previous(); return@onKeyEvent true }
                     KeyEvent.KEYCODE_MEDIA_NEXT -> { if (!ui.isLive) vm.playNextEpisode(); return@onKeyEvent true }
-                    KeyEvent.KEYCODE_MEDIA_REWIND -> { if (!ui.isLive) seekBy(-seekStep(repeat, back = true)); return@onKeyEvent true }
-                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (!ui.isLive) seekBy(seekStep(repeat, back = false)); return@onKeyEvent true }
+                    KeyEvent.KEYCODE_MEDIA_REWIND -> { if (!ui.isLive) seekBy(-seekStep(repeat, back = true)) else if (ts.active) { vm.timeshiftSeek(-10_000); tsShow() }; return@onKeyEvent true }
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (!ui.isLive) seekBy(seekStep(repeat, back = false)) else if (ts.active) { vm.timeshiftSeek(30_000); tsShow() }; return@onKeyEvent true }
                 }
                 // direct : chaîne en erreur, ▲▼ zappent toujours ; le reste va aux boutons
                 if (modal && !(ui.isLive && errorShown && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN))) return@onKeyEvent false
                 if (ui.isLive && code in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
                     if (numberBuffer.length < 5) numberBuffer += (code - KeyEvent.KEYCODE_0).toString()
                     return@onKeyEvent true
+                }
+                // barre de la pause du direct : ◀ −10 s, ▶ +30 s, OK pause/reprise, ▲ retour au direct, ▼ masquer
+                if (ui.isLive && ts.active && tsBar && !listVisible && !groupsVisible && !guideVisible) {
+                    val handled = when (code) {
+                        KeyEvent.KEYCODE_DPAD_LEFT -> { vm.timeshiftSeek(-10_000); tsShow(); true }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> { vm.timeshiftSeek(30_000); tsShow(); true }
+                        KeyEvent.KEYCODE_DPAD_UP -> { vm.timeshiftToLive(); tsShow(); true }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> { tsBar = false; true }
+                        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> { if (repeat == 0) vm.liveTogglePause(); tsShow(); true }
+                        else -> false
+                    }
+                    if (handled) return@onKeyEvent true
                 }
                 if (ui.isLive) {
                     val r = LiveKeys.reduce(
@@ -515,7 +535,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 SeekFeedback(last - seekOrigin, last)
             }
 
-            val controlsShown = infoVisible && !listVisible && !groupsVisible && !guideVisible && zapPending == null && !episodesVisible && !tracksVisible && !errorShown && !pauseScreen && !showNextCard
+            val controlsShown = !tsBar && infoVisible && !listVisible && !groupsVisible && !guideVisible && zapPending == null && !episodesVisible && !tracksVisible && !errorShown && !pauseScreen && !showNextCard
             if (!ui.isLive) {
                 AnimatedVisibility(
                     controlsShown, Modifier.align(Alignment.TopCenter),
@@ -581,6 +601,13 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             }
             AnimatedVisibility(guideVisible && ui.channel != null, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit())) {
                 ui.channel?.let { c -> MiniGuide(c, guidePrograms, guideIndex, clock) }
+            }
+            AnimatedVisibility(
+                ui.isLive && ts.active && tsBar && !listVisible && !guideVisible, Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(Motion.enter()) { it / 4 } + fadeIn(Motion.enter()), exit = slideOutVertically(Motion.exit()) { it / 4 } + fadeOut(Motion.exit()),
+            ) { TimeshiftBar(ts, ui.channel?.name ?: ui.title) }
+            if (ui.isLive && ts.active && !tsBar && !ts.atLive && !listVisible && !guideVisible) {
+                DelayBadge(ts.behindMs, Modifier.align(Alignment.TopEnd).padding(24.dp))
             }
             // OK : détails de la chaîne (bandeau enrichi + actions)
             AnimatedVisibility(

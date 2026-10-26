@@ -47,6 +47,8 @@ data class AppSettings(
     val resumeLastChannel: Boolean = false,
     /** Zapping : ▲ = chaîne suivante (numéro plus grand) au lieu de la précédente. */
     val zapInverted: Boolean = false,
+    /** Pause du direct : le flux est écrit sur la box (jusqu'à 30 min) quand on met en pause. */
+    val timeshift: Boolean = true,
     val lastChannelId: String = "",
     val showClock: Boolean = true,
     val channelNumbers: Boolean = true,
@@ -109,6 +111,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val resize = intPreferencesKey("resize_mode")
         val resumeLast = booleanPreferencesKey("resume_last_channel")
         val zapInvert = booleanPreferencesKey("zap_inverted")
+        val timeshift = booleanPreferencesKey("timeshift")
         val lastChannel = stringPreferencesKey("last_channel")
         val clock = booleanPreferencesKey("show_clock")
         val numbers = booleanPreferencesKey("channel_numbers")
@@ -140,6 +143,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         resizeMode = this[K.resize] ?: 0,
         resumeLastChannel = this[K.resumeLast] ?: false,
         zapInverted = this[K.zapInvert] ?: false,
+        timeshift = this[K.timeshift] ?: true,
         lastChannelId = this[K.lastChannel] ?: "",
         showClock = this[K.clock] ?: true,
         channelNumbers = this[K.numbers] ?: true,
@@ -227,6 +231,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.resize] = s.resizeMode
             prefs[K.resumeLast] = s.resumeLastChannel
             prefs[K.zapInvert] = s.zapInverted
+            prefs[K.timeshift] = s.timeshift
             prefs[K.lastChannel] = s.lastChannelId
             prefs[K.clock] = s.showClock
             prefs[K.numbers] = s.channelNumbers
