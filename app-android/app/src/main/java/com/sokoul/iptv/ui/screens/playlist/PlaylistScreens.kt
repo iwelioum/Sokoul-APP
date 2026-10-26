@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LiveTv
@@ -103,6 +104,9 @@ class PlaylistEditViewModel @Inject constructor(
 
     suspend fun load(id: Long): PlaylistEntity? = repo.get(id)
 
+    /** Une playlist existe (restaurée depuis une sauvegarde pendant le premier lancement). */
+    val hasAny = repo.playlists.map { it.isNotEmpty() }
+
     fun addXtream(name: String, server: String, user: String, pass: String, epg: String, ua: String, onDone: (Long) -> Unit) = run {
         require(server.isNotBlank() && user.isNotBlank() && pass.isNotBlank()) { "Serveur, identifiant et mot de passe sont obligatoires" }
         repo.addXtream(name, server, user, pass, epg, ua).also(onDone)
@@ -157,6 +161,12 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
     var confirmDelete by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
     val context = LocalContext.current
+    // premier lancement : « Restaurer une sauvegarde » ouvre Réglages ; au retour, la playlist restaurée mène à l'accueil
+    var restoring by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val restored by vm.hasAny.collectAsStateWithLifecycle(false)
+    LaunchedEffect(restoring, restored) {
+        if (firstRun && restoring && restored) nav.navigate(HomeRoute) { popUpTo(nav.graph.id) { inclusive = true } }
+    }
 
     LaunchedEffect(id) {
         if (id > 0) vm.load(id)?.let { p ->
@@ -265,6 +275,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                     SokoulButton("Supprimer", { confirmDelete = true }, icon = Icons.Default.Delete)
                 }
                 if (!firstRun && p == null) SokoulButton("Annuler", { nav.popBackStack() })
+                if (firstRun && p == null) SokoulButton("Restaurer", { restoring = true; nav.navigate(com.sokoul.iptv.ui.nav.SettingsRoute) }, icon = Icons.Default.Restore)
             }
             Text(
                 "Vos identifiants restent sur cet appareil. Une seule connexion est utilisée à la fois.",

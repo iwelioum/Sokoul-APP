@@ -804,7 +804,8 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
 - **Blocage des tests corrigé** : le suivi du profil démarrait seul et croisait la fermeture de la base dans un test. Il démarre maintenant avec l'application.
 
 ### Limites connues
-- **Installation signée sur la box pas encore faite.** La nouvelle signature impose de désinstaller l'app, ce qui efface ses données. Il faut d'abord exporter la sauvegarde, puis la restaurer après l'installation. À faire avec votre accord.
+- **Installation signée faite sur la box (26/10, 21 h).** Étapes : sauvegarde chiffrée exportée, app désinstallée, version signée installée, sauvegarde restaurée. Résultat : abonnement revenu (valable jusqu'au 2 juin 2027), catalogue resynchronisé (28 251 chaînes, 159 368 films, 64 386 séries) et « Reprendre la lecture » intact. Ma liste était déjà vide avant. Les mises à jour suivantes s'installent par-dessus, sans rien perdre.
+- **Nouveau : bouton « Restaurer » au premier lancement.** Avant, après une réinstallation, il fallait saisir un abonnement pour atteindre Réglages › Sauvegarde. Désormais, le bouton ouvre directement la restauration et revient à l'accueil une fois l'import fait.
 - **Trakt** n'a pas été essayé avec un vrai compte (aucune appli Trakt créée). Le comportement est couvert par les tests sur un faux serveur. Les épisodes vus sur Trakt ne sont importés que pour les séries dont la liste d'épisodes est déjà chargée (fiche déjà ouverte).
 - **Filtre d'âge du profil Enfant** : il s'applique à l'accueil et aux pages Films et Séries. Les grilles de catégories et la recherche filtrent seulement par groupe.
 - **Langues audio et « Passer l'intro »** restent communs à tous les profils.
