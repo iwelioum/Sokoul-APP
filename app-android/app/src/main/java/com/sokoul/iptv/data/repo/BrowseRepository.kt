@@ -94,23 +94,45 @@ class BrowseRepository @Inject constructor(
     private val curated: CuratedSagaStore,
 ) {
     private data class CacheKey(val pid: Long, val kind: BrowseKind, val sync: Long, val open: Boolean, val grouping: Boolean)
-    private val cache = ConcurrentHashMap<CacheKey, Pair<Long, BrowsePage>>()
+    private val cache = ConcurrentHashMap<CacheKey, Pair<PageStamp, BrowsePage>>()
     private val net = Semaphore(EnrichmentRepository.PARALLEL)
     // délais d'affichage progressif (réduits dans les tests)
     internal var quickMs = QUICK_MS
     internal var tmdbBudgetMs = TMDB_BUDGET_MS
 
-    /** Page construite (cache mémoire 20 min, invalidé par une synchronisation ou le contrôle parental). */
+    /**
+     * Page construite, gardée en mémoire tant qu'elle reste juste ([HomeFreshness] : 30 min, changement de jour,
+     * nouvelle lecture, Ma liste modifiée) ; invalidée aussi par une synchronisation ou le contrôle parental.
+     */
     suspend fun page(p: PlaylistEntity, kind: BrowseKind, force: Boolean = false, onPartial: (suspend (BrowsePage) -> Unit)? = null): BrowsePage {
         val key = CacheKey(p.id, kind, p.lastSync, parental.canAccessLocked(), settings.current().groupDuplicates)
-        val now = System.currentTimeMillis()
-        if (!force) cache[key]?.let { (t, page) -> if (now - t < CACHE_MS) return page }
+        val stamp = stampNow(p.id)
+        if (!force) cache[key]?.let { (st, page) -> if (st.reasonAgainst(stamp) == null) return page }
         val page = ScreenLoading.track { build(p.id, kind, onPartial) }
         // page dégradée (TMDB en panne) : pas de cache, la prochaine visite retentera
         if (page.partial) return page
         cache.keys.removeAll { it.pid == p.id && it.kind == kind }
-        cache[key] = now to page
+        cache[key] = stamp to page
         return page
+    }
+
+    /**
+     * Raison de recalculer la page affichée (retour sur l'écran), ou null : rien n'a changé, ou aucune page en mémoire
+     * (le prochain [page] la construira de toute façon).
+     */
+    suspend fun staleReason(p: PlaylistEntity, kind: BrowseKind): HomeFreshness.Reason? {
+        val key = CacheKey(p.id, kind, p.lastSync, parental.canAccessLocked(), settings.current().groupDuplicates)
+        val (st, _) = cache[key] ?: return null
+        return st.reasonAgainst(stampNow(p.id))
+    }
+
+    private fun PageStamp.reasonAgainst(now: PageStamp) = HomeFreshness.reason(this, now.builtAt, now.day, now.lastPlay, now.favorites)
+
+    /** État courant : heure, jour, dernière lecture (films et épisodes), taille de Ma liste. */
+    private suspend fun stampNow(pid: Long): PageStamp {
+        val lastPlay = db.browse().lastWatched(pid, 1).firstOrNull()?.updatedAt ?: 0L
+        val favorites = db.library().allFavorites(pid).count { it.type != ContentType.LIVE }
+        return PageStamp(System.currentTimeMillis(), today(), lastPlay, favorites)
     }
 
     fun invalidate() { cache.clear(); hubCache.clear() }
@@ -381,6 +403,40 @@ class BrowseRepository @Inject constructor(
         return matchItems(net.withPermit { tmdb.trending(api, kind) })
     }
 
+    /** Tendances du jour présentes dans le catalogue. */
+    private suspend fun Ctx.trendingDay(): List<Work> {
+        val api = enrich.apiKey()
+        if (api.isBlank()) return emptyList()
+        return matchItems(net.withPermit { tmdb.trendingDay(api, kind) }, 20)
+    }
+
+    /** Films ajoutés par le fournisseur ces 7 derniers jours (date d'ajout réelle seulement). */
+    private suspend fun Ctx.addedThisWeek(limit: Int): List<Work> {
+        val now = System.currentTimeMillis()
+        val fresh = db.browse().recentMovies(pid, excluded, limit * 3).filter { HomeFreshness.addedThisWeek(it.added, now) }
+        return distinctTitles(movieWorks(fresh)).take(limit)
+    }
+
+    /** Séries regardées qui ont reçu du nouveau (mise à jour du fournisseur) depuis le dernier visionnage. */
+    private suspend fun Ctx.followedWithNews(limit: Int): List<Work> {
+        val watched = db.browse().lastWatched(pid, 300)
+            .filter { it.type == ContentType.SERIES && it.parentId != null }
+            .groupBy { it.parentId!! }.mapValues { (_, e) -> e.maxOf { it.updatedAt } }
+        if (watched.isEmpty()) return emptyList()
+        val series = watched.keys.toList().chunked(500).flatMap { db.browse().seriesByIds(pid, it) }.filter { it.categoryId in visibleIds }
+        val fresh = HomeFreshness.newEpisodes(series, { it.id }, { it.lastModified }, watched)
+        val order = fresh.withIndex().associate { (i, s) -> s.id to i }
+        return seriesWorks(fresh).sortedBy { order[it.id] ?: Int.MAX_VALUE }.take(limit)
+    }
+
+    /** Affinité (0..1) d'une œuvre avec les goûts : poids du genre le plus aimé parmi les siens. */
+    private fun TasteProfile.affinityOf(w: Work): Double {
+        val weights = genres[w.type].orEmpty()
+        if (weights.isEmpty() || w.genres.isEmpty()) return 0.0
+        val idByName = TmdbGenres.of(w.type).entries.associate { (id, name) -> name.lowercase() to id }
+        return w.genres.mapNotNull { idByName[it.lowercase()]?.let(weights::get) }.maxOrNull() ?: 0.0
+    }
+
     private suspend fun Ctx.topRated(): List<Work> {
         val api = enrich.apiKey()
         if (api.isBlank()) return emptyList()
@@ -592,20 +648,34 @@ class BrowseRepository @Inject constructor(
             if (cats.isNotEmpty()) m.fromCats(cats, 24, false) else m.recent(24)
         }
         val newSeriesD = async { s.recent(24) }
+        // ce qui bouge aujourd'hui : tendances du jour, ajouts de la semaine, séries suivies qui ont du nouveau
+        val dmD = async { runCatching { m.trendingDay() }.getOrDefault(emptyList()) }
+        val dsD = async { runCatching { s.trendingDay() }.getOrDefault(emptyList()) }
+        val weekD = async { runCatching { m.addedThisWeek(24) }.getOrDefault(emptyList()) }
+        val followedD = async { runCatching { s.followedWithNews(20) }.getOrDefault(emptyList()) }
         val platforms = Platform.entries.filter { p -> m.visible.any { p.matches(it.name) } || s.visible.any { p.matches(it.name) } }
 
-        progressive(listOf(tmD, tsD, sagasD, specD, finishD) + bywD, onPartial) {
+        progressive(listOf(tmD, tsD, dmD, dsD, sagasD, specD, finishD) + bywD, onPartial) {
         val tm = tmD.v(emptyList())
         val ts = tsD.v(emptyList())
+        val buzz = interleave(dmD.v(emptyList()), dsD.v(emptyList()))
         val byws = ArrayDeque(bywD.mapNotNull { it.v(null) })
         val specs = ArrayDeque(specD.v(emptyList()))
         val rows = ArrayList<BrowseRow>()
+        followedD.await().takeIf { it.isNotEmpty() }?.let {
+            rows += BrowseRow("followed-new", "Nouveaux épisodes de vos séries", "Du nouveau depuis votre dernier visionnage.", works = it)
+        }
+        if (buzz.size >= 4) rows += BrowseRow("buzz-day", "Ce qui buzze aujourd'hui", "Les titres dont on parle depuis ce matin.", RowStyle.LANDSCAPE, buzz)
         rows += BrowseRow(
             "top10-m", "Top 10 des films cette semaine", "Les films que tout le monde regarde.", RowStyle.TOP10, tm.take(10),
             seeAll = GridSpec.Ids(ContentType.MOVIE, tm.map { it.id }).encode(),
         )
         byws.removeFirstOrNull()?.let { rows += it }
-        rows += BrowseRow(
+        val week = weekD.await()
+        rows += if (week.size >= 6) BrowseRow(
+            "new-week", "Arrivés cette semaine", "Ajoutés à votre catalogue ces 7 derniers jours.", works = week,
+            seeAll = GridSpec.Recent(ContentType.MOVIE).encode(),
+        ) else BrowseRow(
             "new-m", "Nouveaux films", "Fraîchement débarqués dans votre catalogue.", works = newMoviesD.await(),
             seeAll = GridSpec.Recent(ContentType.MOVIE).encode(),
         )
@@ -616,7 +686,7 @@ class BrowseRepository @Inject constructor(
         )
         specs.removeFirstOrNull()?.let { rows += it }
         rows += BrowseRow(
-            "new-s", "Nouveaux épisodes", "Vos séries continuent : les derniers épisodes sont là.", works = newSeriesD.await(),
+            "new-s", "Séries mises à jour", "Nouvelles saisons et nouveaux épisodes au catalogue.", works = newSeriesD.await(),
             seeAll = GridSpec.Recent(ContentType.SERIES).encode(),
         )
         finishD.v(null)?.let { rows += it }
@@ -633,12 +703,10 @@ class BrowseRepository @Inject constructor(
         rows += BrowseRow("popular-s", "Séries populaires", "Le prochain marathon commence ici.", RowStyle.LANDSCAPE, ts.drop(10))
         while (specs.isNotEmpty()) rows += specs.removeFirst()
 
-        // héros : films et séries du moment en alternance
-        val mixed = buildList {
-            val a = tm.iterator(); val b = ts.iterator()
-            while (a.hasNext() || b.hasNext()) { if (a.hasNext()) add(a.next()); if (b.hasNext()) add(b.next()) }
-        }
-        BrowsePage(heroFrom(mixed, rows), rows, more = ranked.drop(first.size).map(::encodeRanked))
+        // héros : les titres du jour (sinon de la semaine), réordonnés selon les goûts sans perdre l'actualité
+        val mixed = interleave(tm, ts)
+        val pool = (buzz.ifEmpty { mixed }).take(12)
+        BrowsePage(heroFrom(HomeFreshness.heroPick(pool, { profile.affinityOf(it) }, HERO_SIZE), rows), rows, more = ranked.drop(first.size).map(::encodeRanked))
         }
     }
 
@@ -659,6 +727,12 @@ class BrowseRepository @Inject constructor(
     /** Valeur d'un calcul terminé, sinon [default] (rangée TMDB pas encore arrivée ou en échec). */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun <T> Deferred<T>.v(default: T): T = if (isCompleted && !isCancelled) runCatching { getCompleted() }.getOrDefault(default) else default
+
+    /** Films et séries en alternance, chaque liste dans son ordre ; une œuvre n'apparaît qu'une fois. */
+    private fun interleave(a: List<Work>, b: List<Work>): List<Work> = buildList {
+        val x = a.iterator(); val y = b.iterator()
+        while (x.hasNext() || y.hasNext()) { if (x.hasNext()) add(x.next()); if (y.hasNext()) add(y.next()) }
+    }.distinctBy { it.uid }
 
     /** Héros : œuvres du moment, sinon premières œuvres des rangées (6 au plus). */
     private fun heroFrom(preferred: List<Work>, rows: List<BrowseRow>): List<Work> {

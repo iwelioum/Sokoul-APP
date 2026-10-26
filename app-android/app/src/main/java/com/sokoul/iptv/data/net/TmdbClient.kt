@@ -180,6 +180,12 @@ class TmdbClient @Inject constructor(
         } ?: emptyList()
     }
 
+    /** Tendances du jour (une page, cache 3 h) : « Ce qui buzze aujourd'hui » et le héros de l'accueil. */
+    suspend fun trendingDay(apiKey: String, kind: String): List<TmdbItem> {
+        if (apiKey.isBlank()) return emptyList()
+        return safe { items(get(apiKey, "/3/trending/$kind/day", emptyMap(), ttlMs = 3 * HOUR), kind) } ?: emptyList()
+    }
+
     /** Listes TMDB : « top_rated », « popular »… (2 pages, cache 1 jour). */
     suspend fun list(apiKey: String, kind: String, name: String): List<TmdbItem> {
         if (apiKey.isBlank()) return emptyList()

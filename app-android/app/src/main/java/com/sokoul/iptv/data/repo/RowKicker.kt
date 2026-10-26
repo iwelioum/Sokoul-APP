@@ -17,7 +17,7 @@ object RowKicker {
         id.startsWith("top10") -> "TENDANCE"
         id.startsWith("popular") || id.startsWith("buzz") -> "TENDANCE"
         id == "new" || id.startsWith("new-") || id.startsWith("arrivals") -> "NOUVEAUTÉS"
-        id.startsWith("byw-") || id == "finish-saga" -> "POUR VOUS"
+        id.startsWith("byw-") || id == "finish-saga" || id.startsWith("followed") -> "POUR VOUS"
         id == "sagas" -> "SAGAS"
         id == "platforms" || id.startsWith("plat-") -> "PLATEFORMES"
         id.startsWith("year-") -> "ÉPOQUE"

@@ -181,6 +181,8 @@ private const val SPOT_DETAILS_MS = 700L
 @Composable
 fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // retour sur l'écran (fiche, lecteur, appli rouverte) : page recalculée si elle n'est plus à jour
+    androidx.lifecycle.compose.LifecycleResumeEffect(vm) { vm.refreshIfStale(); onPauseOrDispose { } }
     val l = LocalLayout.current
     val p = ui.playlist
     val retryFocus = remember { FocusRequester() }

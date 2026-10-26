@@ -109,6 +109,34 @@ abstract class BrowseViewModel(
 
     fun retry() { reload.value++ }
 
+    /** Page affichée (avant décoration) : base des redécorations TMDB et du recalcul au retour. */
+    @Volatile private var current: BrowsePage? = null
+    private var refreshing: kotlinx.coroutines.Job? = null
+
+    /**
+     * Retour sur l'écran : si la page n'est plus juste (30 min, nouveau jour, une lecture, Ma liste modifiée), elle est
+     * recalculée en arrière-plan et remplacée sans écran vide (rangées gardées par leur clé : le focus reste).
+     */
+    fun refreshIfStale() {
+        val p = playlist.value ?: return
+        if (current == null || refreshing?.isActive == true) return
+        refreshing = viewModelScope.launch {
+            val why = runCatching { repo.staleReason(p, kind) }.getOrNull() ?: return@launch
+            Timber.i("Page $kind recalculée : $why")
+            val built = try {
+                repo.page(p, kind, force = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Recalcul $kind"); return@launch
+            }
+            if (playlist.value?.id != p.id || built.partial) return@launch
+            current = built
+            page.value = decorate(p.id, built)
+            enrich.request(p.id, priority(built))
+        }
+    }
+
     init {
         viewModelScope.launch {
             var shownFor: Long? = null
@@ -123,7 +151,7 @@ abstract class BrowseViewModel(
                     if (p?.id != shownFor) page.value = null
                     shownFor = p?.id
                     if (p == null) return@collectLatest
-                    var base = try {
+                    val built = try {
                         repo.page(p, kind, force = r > 0, onPartial = { partial -> page.value = decorate(p.id, partial) })
                     } catch (e: CancellationException) {
                         throw e
@@ -133,18 +161,20 @@ abstract class BrowseViewModel(
                         if (page.value == null) failed.value = true
                         return@collectLatest
                     }
-                    page.value = decorate(p.id, base)
+                    current = built
+                    page.value = decorate(p.id, built)
                     // nouvelle page : les rangées chargées au défilement repartent de zéro
                     extra.value = emptyList()
-                    more = base.more
-                    enrich.request(p.id, priority(base))
+                    more = built.more
+                    enrich.request(p.id, priority(built))
                     var lastSagas = System.currentTimeMillis()
                     // nouvelles métadonnées TMDB → cartes redécorées (fonds, logos, titres français)
                     enrich.updates.drop(1).debounce(4_000).collect {
+                        var base = current ?: return@collect
                         if (kind != BrowseKind.SERIES && System.currentTimeMillis() - lastSagas > 300_000) {
                             lastSagas = System.currentTimeMillis()
                             val sagas = runCatching { repo.sagas(p.id) }.getOrDefault(emptyList())
-                            if (sagas.isNotEmpty()) base = base.copy(rows = base.rows.map { if (it.style == RowStyle.SAGAS) it.copy(sagas = sagas) else it })
+                            if (sagas.isNotEmpty()) { base = base.copy(rows = base.rows.map { if (it.style == RowStyle.SAGAS) it.copy(sagas = sagas) else it }); current = base }
                         }
                         page.value = decorate(p.id, base)
                         if (extra.value.isNotEmpty()) extra.value = decorateRows(p.id, extra.value)

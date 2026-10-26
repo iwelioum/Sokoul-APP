@@ -35,6 +35,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -224,6 +226,21 @@ class ParcoursDataTest {
         assertTrue(page.rows.any { it.id == "new" && it.works.size == 12 })
         // rangées TMDB vides : masquées par l'écran (isEmpty)
         assertTrue(page.rows.filter { it.id == "top10" || it.id == "toprated" }.all { it.isEmpty })
+    }
+
+    @Test fun `accueil vivant - recalcule apres une lecture, sinon garde en memoire`() = runBlocking {
+        catalog()
+        settings.update { it.copy(tmdbApiKey = "") }
+        val repo = browse()
+        val p = db.playlists().getAll().first()
+        val first = repo.page(p, BrowseKind.HOME)
+        assertNull("rien n'a changé", repo.staleReason(p, BrowseKind.HOME))
+        assertSame("page gardée en mémoire", first, repo.page(p, BrowseKind.HOME))
+        // une lecture : la page n'est plus juste, et la suivante est reconstruite
+        db.library().saveProgress(progress(ContentType.MOVIE, "1", null, 10 * 60_000L, 100 * 60_000L, at = System.currentTimeMillis()))
+        assertEquals(com.sokoul.iptv.data.repo.HomeFreshness.Reason.PLAYED, repo.staleReason(p, BrowseKind.HOME))
+        assertNotSame(first, repo.page(p, BrowseKind.HOME))
+        assertNull(repo.staleReason(p, BrowseKind.HOME))
     }
 
     @Test fun `accueil sans cle TMDB`() = runBlocking {
