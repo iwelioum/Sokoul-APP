@@ -75,6 +75,8 @@ data class SagaCard(
     val minis: List<String> = emptyList(),
     val logo: String? = null,
     val logoOf: Int? = null,
+    /** Le logo du film [logoOf] est pris en anglais (voir SagaLogic.englishLogo). */
+    val logoEn: Boolean = false,
     val overview: String? = null,
 )
 

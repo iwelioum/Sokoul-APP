@@ -31,6 +31,8 @@ data class TmdbInfo(
     val poster: String?,
     val backdrop: String?,
     val logo: String?,
+    /** Logo anglais (sagas : celui du film en VO porte le nom de la franchise sans sous-titre français). */
+    val logoEn: String? = null,
     val rating: Double?,
     val year: Int?,
     val runtimeMin: Int?,
@@ -315,6 +317,7 @@ class TmdbClient @Inject constructor(
             poster = o.str("poster_path")?.let { "$IMG/w500$it" },
             backdrop = backdrop,
             logo = logo,
+            logoEn = logos.firstOrNull { it.str("iso_639_1") == "en" }?.str("file_path")?.let { "$IMG/w500$it" },
             rating = o.double("vote_average")?.takeIf { it > 0 },
             year = date?.take(4)?.toIntOrNull(),
             runtimeMin = runtime,

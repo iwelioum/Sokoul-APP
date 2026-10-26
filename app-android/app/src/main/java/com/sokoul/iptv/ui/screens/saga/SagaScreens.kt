@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -301,8 +302,17 @@ private fun SagaTitle(name: String, logo: String?, modifier: Modifier = Modifier
     if (logo != null) {
         NetImage(
             tmdbSized(logo, "w500"), name, modifier.widthIn(max = 440.dp).heightIn(max = maxLogo), ContentScale.Fit, alignment = Alignment.BottomStart,
-        ) { Text(name, style = Type.ScreenTitle, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-    } else Text(name, modifier, style = Type.ScreenTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        ) { SagaArt(name) }
+    } else SagaArt(name, modifier)
+}
+
+/** Nom de saga en titre doré (sans logo). */
+@Composable
+private fun SagaArt(name: String, modifier: Modifier = Modifier) {
+    com.sokoul.iptv.ui.components.TitleArt(
+        com.sokoul.iptv.ui.components.sagaLabel(name), emptyList(), 44.sp, modifier.widthIn(max = 560.dp), maxLines = 2,
+        style = com.sokoul.iptv.ui.theme.TitleStyle.GOLD,
+    )
 }
 
 // --- page « musée » --------------------------------------------------------------------------------

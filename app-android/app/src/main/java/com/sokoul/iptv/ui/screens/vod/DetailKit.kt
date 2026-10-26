@@ -101,6 +101,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
@@ -341,8 +342,8 @@ private fun HeroBlock(
                 tmdbSized(hero.logo, "w500"), hero.title,
                 Modifier.heightIn(max = if (l.isCompact) 84.dp else 120.dp).widthIn(max = if (l.isCompact) 280.dp else 440.dp),
                 ContentScale.Fit, alignment = Alignment.BottomStart,
-            ) { DetailTitle(hero.title) }
-        } else DetailTitle(hero.title)
+            ) { DetailTitle(hero.title, hero.genres) }
+        } else DetailTitle(hero.title, hero.genres)
     }
     hero.tagline?.let {
         Text(
@@ -433,11 +434,12 @@ private fun ExternalRating(source: String, value: String) {
 }
 
 @Composable
-private fun DetailTitle(title: String) {
+private fun DetailTitle(title: String, genres: String?) {
     val l = LocalLayout.current
-    Text(
-        title, style = if (l.isCompact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.displayMedium,
-        fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis,
+    val list = remember(genres) { genres?.split(",", "·")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty() }
+    com.sokoul.iptv.ui.components.TitleArt(
+        title, list, if (l.isCompact) 30.sp else 50.sp,
+        Modifier.widthIn(max = if (l.isCompact) 320.dp else (l.widthDp * 0.5f).dp), maxLines = 2,
     )
 }
 

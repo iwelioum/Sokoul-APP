@@ -7,6 +7,7 @@ import com.sokoul.iptv.data.repo.SagaFacts
 import com.sokoul.iptv.data.repo.SagaLogic
 import com.sokoul.iptv.data.repo.Work
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +26,24 @@ class SagaLogicTest {
         assertEquals(10, SagaLogic.logoPart("Mission : Impossible", listOf(item(10, "Mission: Impossible", 1996))))
         // aucun épisode ne s'appelle comme la saga : pas de logo trompeur
         assertNull(SagaLogic.logoPart("Le monde des sorciers", listOf(item(3, "Harry Potter à l'école des sorciers", 2001))))
+        assertNull(SagaLogic.logoPart("Harry Potter - Saga", listOf(item(3, "Harry Potter à l'école des sorciers", 2001))))
+    }
+
+    @Test fun `logo - sinon le premier film « Nom - sous-titre »`() {
+        val pirates = listOf(
+            item(22, "Pirates des Caraïbes : La Malédiction du Black Pearl", 2003),
+            item(58, "Pirates des Caraïbes : Le Secret du coffre maudit", 2006),
+        )
+        assertEquals(22, SagaLogic.logoPart("Pirates des Caraïbes - Saga", pirates))
+        // titre original seulement, tiret long
+        assertEquals(120, SagaLogic.logoPart("The Lord of the Rings", listOf(item(120, "La Communauté de l'anneau", 2001, original = "The Lord of the Rings – The Fellowship"))))
+        // nom contenant déjà « : »
+        // logo anglais seulement quand le titre français ne porte pas le nom de la saga
+        val sw = listOf(item(11, "La Guerre des étoiles", 1977, original = "Star Wars"))
+        assertEquals(11, SagaLogic.logoPart("Star Wars - Saga", sw))
+        assertTrue(SagaLogic.englishLogo("Star Wars - Saga", sw, 11))
+        assertFalse(SagaLogic.englishLogo("Pirates des Caraïbes - Saga", pirates, 22))
+        assertEquals(7, SagaLogic.logoPart("Mission : Impossible", listOf(item(7, "Mission: Impossible - Fallout", 2018))))
     }
 
     @Test fun `faits - films sortis seulement, annees et note moyenne`() {

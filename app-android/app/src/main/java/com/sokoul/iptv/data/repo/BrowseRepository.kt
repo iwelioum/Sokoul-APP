@@ -760,6 +760,7 @@ class BrowseRepository @Inject constructor(
             seen = here.count { present[it.id]?.key in seen },
             minis = minis,
             logoOf = SagaLogic.logoPart(name, parts),
+            logoEn = SagaLogic.logoPart(name, parts)?.let { SagaLogic.englishLogo(name, parts, it) } ?: false,
             overview = overview?.takeIf { it.isNotBlank() },
         )
     }
@@ -770,7 +771,7 @@ class BrowseRepository @Inject constructor(
         if (api.isBlank()) return@withContext cards
         val logos = coroutineScope {
             cards.filter { it.logo == null && it.logoOf != null }.map { s ->
-                async { s.id to net.withPermit { tmdb.details(api, "movie", s.logoOf!!, full = false) }?.logo }
+                async { s.id to net.withPermit { tmdb.details(api, "movie", s.logoOf!!, full = false) }?.let { if (s.logoEn) it.logoEn ?: it.logo else it.logo } }
             }.awaitAll()
         }.toMap()
         if (logos.values.all { it == null }) return@withContext cards
@@ -819,7 +820,12 @@ class BrowseRepository @Inject constructor(
             val found = movies.matchPairs(items, items.size, byName = true).associate { it.first.id to it.second }
             val dec = enrich.decorate(pid, found.values.toList()).associateBy { it.key }
             val sagaName = cs?.name ?: SagaLogic.displayName(main.name)
-            val logoD = async { SagaLogic.logoPart(sagaName, items)?.let { net.withPermit { tmdb.details(api, "movie", it, full = false) }?.logo } }
+            val logoD = async {
+                SagaLogic.logoPart(sagaName, items)?.let { id ->
+                    val en = SagaLogic.englishLogo(sagaName, items, id)
+                    net.withPermit { tmdb.details(api, "movie", id, full = false) }?.let { if (en) it.logoEn ?: it.logo else it.logo }
+                }
+            }
             val films = items.map { item -> found[item.id]?.let { dec[it.key] ?: it } ?: item.offCatalog(ContentType.MOVIE) }
             val seenKeys = seenMovieKeys(pid)
             val seen = films.filter { it.available && it.key in seenKeys }.mapTo(HashSet()) { it.uid }

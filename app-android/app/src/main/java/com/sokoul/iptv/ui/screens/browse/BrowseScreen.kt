@@ -160,6 +160,7 @@ private data class Spot(
     val tagline: String? = null,
     /** Détails affichés une fois le curseur posé (genres, qualité, versions). */
     val details: String? = null,
+    val genres: List<String> = emptyList(),
 )
 
 private fun Work.toSpot(): Spot {
@@ -169,6 +170,7 @@ private fun Work.toSpot(): Spot {
     return Spot(
         title, logo, meta.ifEmpty { null }, overviewFr, backdrop ?: poster, platform, rating, tagline,
         details = extra.joinToString(" · ").ifEmpty { null },
+        genres = genres,
     )
 }
 
@@ -569,9 +571,9 @@ private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier
                         if (s.platform != null && s.platform.label != s.title) PlatformBadge(s.platform, Modifier.padding(bottom = 8.dp), large = true)
                         if (s.logo != null) {
                             NetImage(tmdbSized(s.logo, "w500"), s.title, Modifier.heightIn(max = 70.dp).widthIn(max = 300.dp), ContentScale.Fit, alignment = Alignment.BottomStart) {
-                                SpotTitle(s.title)
+                                SpotTitle(s.title, s.genres)
                             }
-                        } else SpotTitle(s.title)
+                        } else SpotTitle(s.title, s.genres)
                         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             if (s.rating != null && s.rating >= com.sokoul.iptv.ui.components.MIN_RATING) RatingChip(s.rating)
                             if (s.meta != null) Text(s.meta, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary, maxLines = 1)
@@ -589,8 +591,8 @@ private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier
 }
 
 @Composable
-private fun SpotTitle(t: String) {
-    Text(t, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun SpotTitle(t: String, genres: List<String>) {
+    com.sokoul.iptv.ui.components.TitleArt(t, genres, 34.sp, Modifier.widthIn(max = 520.dp), maxLines = 2)
 }
 
 /** Barre du haut (téléphone/tablette) : transparente sur le héros, opaque en défilant. */

@@ -199,15 +199,13 @@ fun Work.metaLine(withVersions: Boolean = true): String = listOfNotNull(
 
 /** Repli d'une affiche absente : dégradé + titre. */
 @Composable
-private fun PosterFallback(title: String) {
+private fun PosterFallback(title: String, genres: List<String> = emptyList(), style: com.sokoul.iptv.ui.theme.TitleStyle? = null) {
     Box(
         Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SokoulColors.PlaceholderTop, SokoulColors.PlaceholderBottom))),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            title, Modifier.padding(10.dp), textAlign = TextAlign.Center, color = SokoulColors.TextPrimary,
-            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 5, overflow = TextOverflow.Ellipsis,
-        )
+        if (style != null) TitleArt(title, genres, 24.sp, Modifier.padding(12.dp), maxLines = 4, align = TextAlign.Center, style = style)
+        else TitleArt(title, genres, 24.sp, Modifier.padding(12.dp), maxLines = 4, align = TextAlign.Center)
     }
 }
 
@@ -236,12 +234,12 @@ fun WorkCard(
         corner = corner, progress = work.progress,
         platform = work.platform.takeIf { showPlatform }, onFocus = onFocus, onLongClick = onLongClick,
         dimmed = !work.available,
-        reveal = if (reveal) Reveal(work.title, tmdbSized(work.logo, "w300"), work.revealLine()) else null,
+        reveal = if (reveal) Reveal(work.title, tmdbSized(work.logo, "w300"), work.revealLine(), work.genres) else null,
     )
 }
 
 /** Ce qui monte dans l'affiche au focus. */
-data class Reveal(val title: String, val logo: String?, val line: String)
+data class Reveal(val title: String, val logo: String?, val line: String, val genres: List<String> = emptyList())
 
 /** « ★ 7,8 · 2021 · 2 h 10 » (film) ou « ★ 8,1 · 2019 · 3 saisons » (série). */
 fun Work.revealLine(): String = listOfNotNull(
@@ -323,9 +321,9 @@ private fun RevealOverlay(r: Reveal, modifier: Modifier) {
     ) {
         if (r.logo != null) {
             NetImage(r.logo, r.title, Modifier.fillMaxWidth(0.9f).heightIn(max = 38.dp), ContentScale.Fit, alignment = Alignment.BottomStart) {
-                RevealTitle(r.title)
+                RevealTitle(r.title, r.genres)
             }
-        } else RevealTitle(r.title)
+        } else RevealTitle(r.title, r.genres)
         if (r.line.isNotEmpty()) {
             Text(r.line, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.white(0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -333,8 +331,8 @@ private fun RevealOverlay(r: Reveal, modifier: Modifier) {
 }
 
 @Composable
-private fun RevealTitle(title: String) {
-    Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
+private fun RevealTitle(title: String, genres: List<String>) {
+    TitleArt(title, genres, 20.sp, maxLines = 2)
 }
 
 @Composable
@@ -364,8 +362,8 @@ fun LandscapeCard(
                 val zoom = rememberBreathing(focused, 1.04f)
                 val imgMod = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }
                 val img = image ?: tmdbSized(work.backdrop, "w780")
-                if (img != null) NetImage(img, work.title, imgMod) { PosterFallback(work.title) }
-                else NetImage(tmdbSized(work.poster, "w342"), work.title, imgMod, alignment = Alignment.TopCenter) { PosterFallback(work.title) }
+                if (img != null) NetImage(img, work.title, imgMod) { PosterFallback(work.title, work.genres) }
+                else NetImage(tmdbSized(work.poster, "w342"), work.title, imgMod, alignment = Alignment.TopCenter) { PosterFallback(work.title, work.genres) }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to SokoulColors.black(0.92f))))
                 Row(Modifier.align(Alignment.BottomStart).padding(10.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
@@ -376,7 +374,7 @@ fun LandscapeCard(
                                 alignment = Alignment.BottomStart,
                             )
                         } else {
-                            Text(work.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            TitleArt(work.title, work.genres, 22.sp, Modifier.widthIn(max = width * 0.75f), maxLines = 2)
                         }
                         work.subtitle?.let {
                             Text(it, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.white(0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -433,7 +431,7 @@ fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null,
             NetImage(
                 tmdbSized(saga.backdrop, "w780") ?: tmdbSized(saga.poster, "w342"), saga.name,
                 Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value },
-            ) { PosterFallback(saga.name) }
+            ) { PosterFallback(sagaLabel(saga.name), style = com.sokoul.iptv.ui.theme.TitleStyle.GOLD) }
             // voile du bas (sous le texte) et du coin droit (sous l'éventail)
             Box(Modifier.fillMaxWidth().fillMaxHeight(0.7f).align(Alignment.BottomStart).background(Brush.verticalGradient(0f to Color.Transparent, 1f to SokoulColors.black(0.94f))))
             if (!l.isTouch && saga.minis.isNotEmpty()) SagaFan(saga.minis, focused, maxHeight * 0.5f, Modifier.align(Alignment.BottomEnd))
@@ -463,11 +461,11 @@ fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null,
 
 @Composable
 private fun SagaName(name: String) {
-    Text(
-        name.replace(" - Saga", "").replace(" (Collection)", ""), style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
-    )
+    TitleArt(sagaLabel(name), emptyList(), 22.sp, maxLines = 2, style = com.sokoul.iptv.ui.theme.TitleStyle.GOLD)
 }
+
+/** Nom de saga sans les suffixes du catalogue (« - Saga », « (Collection) »). */
+fun sagaLabel(name: String) = name.replace(" - Saga", "").replace(" (Collection)", "")
 
 /** 3 mini-affiches empilées dans le coin, qui s'ouvrent en éventail au focus. */
 @Composable

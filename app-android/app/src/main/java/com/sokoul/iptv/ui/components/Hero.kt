@@ -220,9 +220,9 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
                     tmdbSized(w.logo, "w500"), w.title,
                     Modifier.heightIn(max = if (compact) 96.dp else (l.heroHeight * 0.26f).coerceAtMost(if (l.isTv) 110.dp else 130.dp)).widthIn(max = if (compact) 260.dp else l.heroTextWidth * 0.8f),
                     ContentScale.Fit, alignment = if (compact) Alignment.BottomCenter else Alignment.BottomStart,
-                ) { HeroTitle(w.title, compact) }
+                ) { HeroTitle(w.title, w.genres, compact) }
             } else {
-                HeroTitle(w.title, compact)
+                HeroTitle(w.title, w.genres, compact)
             }
             // TV : accroche seulement sans résumé (sinon le texte remonte jusqu'aux onglets)
             if (!compact && w.tagline != null && !(l.isTv && w.overviewFr != null)) {
@@ -275,14 +275,11 @@ fun certificationLabel(c: String): String = when {
 }
 
 @Composable
-private fun HeroTitle(title: String, compact: Boolean) {
+private fun HeroTitle(title: String, genres: List<String>, compact: Boolean) {
     val l = LocalLayout.current
-    Text(
-        title, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = if (compact) TextAlign.Center else TextAlign.Start,
-        style = TextStyle(fontFamily = com.sokoul.iptv.ui.theme.Manrope,
-            fontSize = l.heroTitle, lineHeight = l.heroTitle * 1.08f, fontWeight = FontWeight.Black, letterSpacing = (-0.8).sp,
-            color = Color.White, shadow = Shadow(SokoulColors.black(0.6f), blurRadius = 12f),
-        ),
+    com.sokoul.iptv.ui.components.TitleArt(
+        title, genres, l.heroTitle, Modifier.widthIn(max = if (compact) 320.dp else l.heroTextWidth),
+        maxLines = 2, align = if (compact) TextAlign.Center else TextAlign.Start,
     )
 }
 
