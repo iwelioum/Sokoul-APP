@@ -172,8 +172,15 @@ fun EmptyState(icon: ImageVector, title: String, message: String? = null, modifi
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, null, Modifier.size(56.dp), tint = SokoulColors.TextMuted)
-        Text(title, Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        // icône dans un halo teinté : même rendu pour les écrans vides et les erreurs, partout
+        Box(
+            Modifier.size(96.dp).background(
+                androidx.compose.ui.graphics.Brush.radialGradient(listOf(SokoulColors.AccentSoft, androidx.compose.ui.graphics.Color.Transparent)),
+                Radius.Round,
+            ),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, null, Modifier.size(44.dp), tint = SokoulColors.TextSecondary) }
+        Text(title, Modifier.padding(top = 12.dp), style = com.sokoul.iptv.ui.theme.Type.Section, textAlign = TextAlign.Center)
         if (message != null) {
             Text(message, Modifier.padding(top = 8.dp).widthIn(max = 520.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center)
         }

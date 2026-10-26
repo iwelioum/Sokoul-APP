@@ -987,7 +987,10 @@ class BrowseRepository @Inject constructor(
         val b = db.browse()
         val movies = b.moviesByIds(pid, list.filter { it.type == ContentType.MOVIE }.map { it.itemId }.distinct()).associateBy { it.id }
         val series = b.seriesByIds(pid, list.filter { it.type == ContentType.SERIES }.mapNotNull { it.parentId }.distinct()).associateBy { it.id }
-        val works = list.mapNotNull { p ->
+        // pas de reprise depuis un groupe verrouillé (code parental fermé), masqué ou adulte : même règle que les rangées
+        val hidden = hiddenResumes(list, movies.mapValues { it.value.categoryId }, series.mapValues { it.value.categoryId },
+            ctx(pid, ContentType.MOVIE).visibleIds, ctx(pid, ContentType.SERIES).visibleIds)
+        val works = list.filterNot { it in hidden }.mapNotNull { p ->
             val fraction = if (p.durationMs > 0) (p.positionMs.toFloat() / p.durationMs).coerceIn(0f, 1f) else null
             val left = if (p.durationMs > 0) ((p.durationMs - p.positionMs) / 60_000).coerceAtLeast(1) else null
             val remaining = left?.let { if (it >= 60) "Reste ${it / 60} h ${(it % 60).toString().padStart(2, '0')}" else "Reste $it min" }
@@ -1119,6 +1122,22 @@ class BrowseRepository @Inject constructor(
     }
 
     companion object {
+        /**
+         * Reprises à cacher : film ou série dont la catégorie n'est pas visible (verrouillée, masquée, adulte).
+         * Une œuvre absente du catalogue (catégorie inconnue) reste affichée : rien ne permet de la juger.
+         */
+        internal fun hiddenResumes(
+            list: List<com.sokoul.iptv.data.db.ProgressEntity>,
+            movieCat: Map<String, String>, seriesCat: Map<String, String>,
+            visibleMovies: Set<String>, visibleSeries: Set<String>,
+        ): Set<com.sokoul.iptv.data.db.ProgressEntity> = list.filterTo(HashSet()) { p ->
+            when (p.type) {
+                ContentType.MOVIE -> movieCat[p.itemId]?.let { it !in visibleMovies } == true
+                ContentType.SERIES -> p.parentId?.let { seriesCat[it] }?.let { it !in visibleSeries } == true
+                ContentType.LIVE -> false
+            }
+        }
+
         const val HERO_SIZE = 6
         /** Rangées éditoriales construites avec la page ; les suivantes arrivent par lots de [MORE_BATCH]. */
         const val FIRST_BATCH = 8
