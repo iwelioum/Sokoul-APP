@@ -33,14 +33,16 @@ android {
         }
     }
 
-    // Signature release : keystore.properties (non versionné) à la racine d'app-android :
-    // storeFile=…, storePassword=…, keyAlias=…, keyPassword=…
-    val keystoreProps = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { f ->
+    // Signature release : keystore.properties (non versionné) à la racine d'app-android, sinon
+    // ~/.sokoul/keystore.properties (clé définitive, hors dépôt) : storeFile=…, storePassword=…, keyAlias=…, keyPassword=…
+    val keystoreFile = listOf(rootProject.file("keystore.properties"), File(System.getProperty("user.home"), ".sokoul/keystore.properties"))
+        .firstOrNull { it.isFile }
+    val keystoreProps = keystoreFile?.let { f ->
         Properties().also { p -> f.inputStream().use { p.load(it) } }
     }
     signingConfigs {
         if (keystoreProps != null) create("release") {
-            storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+            storeFile = file(keystoreProps.getProperty("storeFile"))
             storePassword = keystoreProps.getProperty("storePassword")
             keyAlias = keystoreProps.getProperty("keyAlias")
             keyPassword = keystoreProps.getProperty("keyPassword")
