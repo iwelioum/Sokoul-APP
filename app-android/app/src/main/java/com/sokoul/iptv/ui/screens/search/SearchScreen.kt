@@ -1,6 +1,35 @@
 package com.sokoul.iptv.ui.screens.search
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.sokoul.iptv.ui.components.FocusStyle
+import com.sokoul.iptv.ui.components.TvKeyboardWidth
+import com.sokoul.iptv.ui.theme.LocalReducedMotion
+import com.sokoul.iptv.ui.theme.Motion
+import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -106,8 +135,19 @@ class SearchViewModel @Inject constructor(
     private val vod: VodRepository,
     private val browse: BrowseRepository,
     private val enrich: EnrichmentRepository,
+    private val settings: com.sokoul.iptv.data.SettingsStore,
 ) : ViewModel() {
     val query = MutableStateFlow("")
+    /** Recherches récentes (8 dernières), proposées quand le champ est vide. */
+    val recents: StateFlow<List<String>> = settings.recentSearches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Un résultat a été ouvert : la saisie rejoint les recherches récentes. */
+    fun picked() {
+        val q = query.value
+        if (q.trim().length >= 2) viewModelScope.launch { settings.addRecentSearch(q) }
+    }
+
+    fun clearRecents() = viewModelScope.launch { settings.clearRecentSearches() }
     /** Périmètre : fixé une fois par la page d'origine, puis modifiable par les pastilles. */
     val scope = MutableStateFlow<Set<SearchKind>?>(null)
     var playlistId: Long = 0
@@ -174,6 +214,7 @@ fun SearchScreen(nav: NavHostController, origin: String = com.sokoul.iptv.data.r
     val results by vm.results.collectAsStateWithLifecycle()
     val trending by vm.trending.collectAsStateWithLifecycle()
     val completions by vm.completions.collectAsStateWithLifecycle()
+    val recents by vm.recents.collectAsStateWithLifecycle()
     val l = LocalLayout.current
     val memory = rememberFocusMemory()
     val entry = remember { FocusRequester() }
@@ -190,7 +231,10 @@ fun SearchScreen(nav: NavHostController, origin: String = com.sokoul.iptv.data.r
     }
 
     val content: @Composable (Modifier) -> Unit = { m ->
-        SearchResults(results, query, trendingInScope, kinds, vm.playlistId, nav, memory, m)
+        SearchResults(
+            results, query, trendingInScope, kinds, vm.playlistId, nav, memory, m,
+            recents = recents, onRecent = { vm.query.value = it }, onPicked = vm::picked,
+        )
     }
     val chips: @Composable () -> Unit = {
         LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
@@ -199,16 +243,7 @@ fun SearchScreen(nav: NavHostController, origin: String = com.sokoul.iptv.data.r
     }
 
     if (l.isTv) {
-        Row(Modifier.fillMaxSize().padding(top = l.safeTop)) {
-            Column(Modifier.fillMaxHeight().padding(start = l.margin, top = Space.m)) {
-                TvKeyboard(query, { vm.query.value = it }, completions, searchPlaceholder(kinds), firstKey = entry)
-            }
-            Column(Modifier.weight(1f).fillMaxHeight().padding(top = Space.m)) {
-                Text("Chercher dans", Modifier.padding(horizontal = l.margin), style = Type.Overline)
-                Box(Modifier.padding(top = Space.s, bottom = Space.m)) { chips() }
-                content(Modifier.weight(1f))
-            }
-        }
+        TvSearch(query, { vm.query.value = it }, searchPlaceholder(kinds), completions, kinds, vm::toggle, entry, content)
     } else {
         Column(Modifier.fillMaxSize()) {
             FormField(
@@ -217,6 +252,99 @@ fun SearchScreen(nav: NavHostController, origin: String = com.sokoul.iptv.data.r
             )
             Box(Modifier.padding(bottom = Space.m)) { chips() }
             content(Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * Recherche TV, centrée : grand champ, suggestions et périmètre en pastilles, clavier AZERTY compact, puis les résultats
+ * en rangées. ▼ vers les résultats : le clavier se replie et les résultats prennent l'écran ; ▲ jusqu'au champ le rouvre.
+ * Entrée : la page descend en fondu (300 ms).
+ */
+@Composable
+private fun TvSearch(
+    query: String,
+    onQuery: (String) -> Unit,
+    placeholder: String,
+    completions: List<String>,
+    kinds: Set<SearchKind>,
+    onToggle: (SearchKind) -> Unit,
+    entry: FocusRequester,
+    content: @Composable (Modifier) -> Unit,
+) {
+    val l = LocalLayout.current
+    val reduced = LocalReducedMotion.current
+    var collapsed by remember { mutableStateOf(false) }
+    var reopen by remember { mutableStateOf(0) }
+    val intro = remember { Animatable(if (reduced) 1f else 0f) }
+    LaunchedEffect(Unit) { intro.animateTo(1f, tween(Motion.MEDIUM, easing = Motion.Decelerate)) }
+    // champ atteint par ▲ depuis les résultats : le clavier revient et reprend le focus
+    LaunchedEffect(reopen) {
+        if (reopen == 0) return@LaunchedEffect
+        repeat(10) { withFrameNanos { }; if (runCatching { entry.requestFocus() }.getOrDefault(false)) return@LaunchedEffect }
+    }
+    Column(
+        Modifier.fillMaxSize().padding(top = l.safeTop + 22.dp)
+            .graphicsLayer { alpha = intro.value; translationY = -(1f - intro.value) * 24.dp.toPx() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        SearchField(
+            query, placeholder, focusable = collapsed,
+            onFocus = { collapsed = false; reopen++ },
+            modifier = Modifier.fillMaxWidth(0.6f).widthIn(min = TvKeyboardWidth),
+        )
+        AnimatedVisibility(
+            !collapsed,
+            enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+            exit = shrinkVertically(tween(250)) + fadeOut(tween(200)),
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // suggestions (dès 2 lettres) puis périmètre, sur une ligne centrée ; place réservée : rien ne saute
+                Row(
+                    Modifier.padding(top = 12.dp, bottom = 14.dp).height(40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    completions.take(3).forEach { s -> SokoulChip(s, { onQuery(s) }, icon = Icons.Default.Search) }
+                    if (completions.isNotEmpty()) Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(22.dp).background(SokoulColors.white(0.18f)))
+                    SearchKind.entries.forEach { k -> SokoulChip(k.label, { onToggle(k) }, selected = k in kinds) }
+                }
+                TvKeyboard(query, onQuery, firstKey = entry)
+                Text(
+                    "Lecture : espace  ·  Retour rapide : effacer  ·  ▼ résultats", Modifier.padding(top = 10.dp, bottom = 6.dp),
+                    style = Type.Meta, color = SokoulColors.TextMuted,
+                )
+            }
+        }
+        Box(
+            Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp)
+                .onFocusChanged { if (it.hasFocus) collapsed = true },
+        ) { content(Modifier.fillMaxSize()) }
+    }
+}
+
+/** Champ de la recherche TV : grande saisie avec curseur. Focalisable seulement quand le clavier est replié (▲ le rouvre). */
+@Composable
+private fun SearchField(query: String, placeholder: String, focusable: Boolean, onFocus: () -> Unit, modifier: Modifier) {
+    val reduced = LocalReducedMotion.current
+    val blink = if (reduced) null else rememberInfiniteTransition(label = "caret").animateFloat(
+        1f, 0f, infiniteRepeatable(tween(530, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Reverse), label = "caret",
+    )
+    FocusSurface(
+        onClick = onFocus, onFocus = onFocus, style = FocusStyle.Chip, shape = Radius.Card,
+        color = SokoulColors.SurfaceHigh, focusedColor = SokoulColors.SurfaceHigher,
+        modifier = modifier.focusProperties { canFocus = focusable },
+    ) { _ ->
+        Row(Modifier.padding(horizontal = 22.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Search, null, Modifier.size(28.dp), tint = SokoulColors.Accent)
+            Spacer(Modifier.width(14.dp))
+            Text(
+                query.ifEmpty { placeholder }, Modifier.weight(1f, fill = false),
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (query.isEmpty()) SokoulColors.TextMuted else SokoulColors.TextPrimary,
+            )
+            // curseur : opacité lue au dessin (aucune recomposition)
+            Box(Modifier.padding(start = 3.dp).size(2.dp, 30.dp).graphicsLayer { alpha = blink?.value ?: 1f }.background(SokoulColors.Accent))
         }
     }
 }
@@ -231,20 +359,34 @@ private fun SearchResults(
     nav: NavHostController,
     memory: FocusMemory,
     modifier: Modifier,
+    recents: List<String> = emptyList(),
+    onRecent: (String) -> Unit = {},
+    onPicked: () -> Unit = {},
 ) {
     val l = LocalLayout.current
     val state = rememberLazyListState()
+    val open: (Work) -> Unit = { w -> onPicked(); nav.openWork(w) }
     when {
-        r == null && trending.isEmpty() ->
+        r == null && trending.isEmpty() && recents.isEmpty() ->
             EmptyState(Icons.Default.Search, "Recherche", "Tapez au moins 2 lettres.", modifier)
         r == null -> LazyColumn(modifier.fillMaxWidth(), state) {
-            item {
+            if (recents.isNotEmpty()) item("recents") {
+                Column(Modifier.padding(bottom = l.rowSpacing)) {
+                    RowHeader("Recherches récentes", null)
+                    LazyRow(contentPadding = PaddingValues(start = l.margin, end = l.margin, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                        items(recents, key = { it }) { q ->
+                            Box(Modifier.focusMemory(memory, "recents|$q")) { SokoulChip(q, { onRecent(q) }, icon = Icons.Default.History) }
+                        }
+                    }
+                }
+            }
+            if (trending.isNotEmpty()) item("hint") {
                 Text(
-                    "Tapez au moins 2 lettres. En attendant, les tendances de la semaine :",
-                    Modifier.padding(horizontal = l.margin).padding(bottom = 18.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodyMedium,
+                    "Tendances de la semaine",
+                    Modifier.padding(horizontal = l.margin).padding(bottom = 6.dp), color = SokoulColors.TextMuted, style = Type.Overline,
                 )
             }
-            trending.forEach { s -> workRow(s.title, s.tagline, s.works, "t:${s.title}", nav, memory) }
+            trending.forEach { s -> workRow(s.title, s.tagline, s.works, "t:${s.title}", memory, open) }
             item { Spacer(Modifier.height(40.dp)) }
         }
         r.isEmpty -> EmptyState(
@@ -254,14 +396,14 @@ private fun SearchResults(
         )
         else -> LazyColumn(modifier.fillMaxWidth(), state) {
             fun count(n: Int) = "$n résultat${if (n > 1) "s" else ""}"
-            if (r.movies.isNotEmpty()) workRow("Films", count(r.movies.size), r.movies, "movies", nav, memory)
-            if (r.series.isNotEmpty()) workRow("Séries", count(r.series.size), r.series, "series", nav, memory)
+            if (r.movies.isNotEmpty()) workRow("Films", count(r.movies.size), r.movies, "movies", memory, open)
+            if (r.series.isNotEmpty()) workRow("Séries", count(r.series.size), r.series, "series", memory, open)
             if (r.channels.isNotEmpty()) item("channels") {
                 Column(Modifier.padding(bottom = l.rowSpacing)) {
                     RowHeader("Chaînes", count(r.channels.size))
                     CardRow(r.channels, { it.id }) { _, c ->
                         Box(Modifier.focusMemory(memory, "channels|${c.id}")) {
-                            ChannelCard(c, null) { nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId)) }
+                            ChannelCard(c, null) { onPicked(); nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId)) }
                         }
                     }
                 }
@@ -271,7 +413,7 @@ private fun SearchResults(
                     RowHeader("Au programme", "Dans le guide TV des prochains jours")
                     CardRow(r.programs, { "${it.first.channelKey}|${it.first.start}" }) { _, (p, c) ->
                         FocusSurface(onClick = {
-                            if (c != null) nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId))
+                            if (c != null) { onPicked(); nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = c.categoryId)) }
                         }, modifier = Modifier.width(l.landscape).focusMemory(memory, "programs|${p.channelKey}:${p.start}")) { _ ->
                             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                                 Text(p.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -287,11 +429,11 @@ private fun SearchResults(
     }
 }
 
-private fun LazyListScope.workRow(title: String, tagline: String?, works: List<Work>, key: String, nav: NavHostController, memory: FocusMemory) {
+private fun LazyListScope.workRow(title: String, tagline: String?, works: List<Work>, key: String, memory: FocusMemory, open: (Work) -> Unit) {
     item(key) {
         Column(Modifier.padding(bottom = LocalLayout.current.rowSpacing)) {
             RowHeader(title, tagline)
-            CardRow(works, { it.uid }) { _, w -> WorkCard(w, { nav.openWork(w) }, Modifier.focusMemory(memory, "$key|${w.uid}")) }
+            CardRow(works, { it.uid }) { _, w -> WorkCard(w, { open(w) }, Modifier.focusMemory(memory, "$key|${w.uid}")) }
         }
     }
 }

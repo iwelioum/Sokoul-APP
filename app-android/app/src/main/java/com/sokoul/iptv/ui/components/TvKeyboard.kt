@@ -5,27 +5,26 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpaceBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -40,13 +39,12 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Space
-import com.sokoul.iptv.ui.theme.Type
 
 /** Une action de saisie, qu'elle vienne d'une touche à l'écran, de la télécommande ou d'un clavier. */
 sealed interface KeyInput {
@@ -77,90 +75,100 @@ fun remoteKeyInput(e: KeyEvent): KeyInput? {
     }
 }
 
-private val Letters = ('a'..'z') + ('0'..'9')
-private const val Columns = 7
-private val KeySize = 44.dp
-private val Gap = 6.dp
+/** Touche spéciale du clavier. */
+enum class KeyAction { TOGGLE, SPACE, DELETE, VOICE }
 
-/** Largeur de [n] touches côte à côte. */
-private fun keys(n: Int) = KeySize * n + Gap * (n - 1)
+/** Touche : un caractère, ou une action ; [span] en unités (10 par ligne). */
+data class KeySpec(val label: String, val char: Char? = null, val action: KeyAction? = null, val span: Int = 1)
 
 /**
- * Clavier de recherche pour la télécommande : champ en tête, 3 suggestions de complétion dès 2 lettres,
- * grille A–Z puis 0–9, puis Espace, Effacer et le micro (si la box a la reconnaissance vocale).
- * ▶ depuis la dernière colonne passe naturellement aux résultats, à droite.
+ * Disposition du clavier de recherche (testée) : AZERTY sur 3 lignes, puis Espace et la dictée.
+ * La touche « 123 » bascule vers les chiffres et les lettres accentuées (« ABC » pour revenir).
+ * Chaque ligne fait exactement [UNITS] unités : les colonnes restent alignées d'une ligne à l'autre.
+ */
+object KeyboardLayout {
+    const val UNITS = 10
+    private val LETTERS = listOf("azertyuiop", "qsdfghjklm", "wxcvbn")
+    private val SYMBOLS = listOf("1234567890", "éèàçù'-:&.", "âêîôû!")
+
+    fun rows(digits: Boolean, voice: Boolean): List<List<KeySpec>> {
+        val src = if (digits) SYMBOLS else LETTERS
+        fun chars(s: String) = s.map { KeySpec(it.uppercase(), char = it) }
+        return listOf(
+            chars(src[0]),
+            chars(src[1]),
+            listOf(KeySpec(if (digits) "ABC" else "123", action = KeyAction.TOGGLE, span = 2)) + chars(src[2]) +
+                KeySpec("Effacer", action = KeyAction.DELETE, span = 2),
+            if (voice) listOf(KeySpec("Espace", action = KeyAction.SPACE, span = 7), KeySpec("Dicter", action = KeyAction.VOICE, span = 3))
+            else listOf(KeySpec("Espace", action = KeyAction.SPACE, span = UNITS)),
+        )
+    }
+}
+
+private val KeyUnit = 46.dp
+private val KeyHeight = 42.dp
+private val Gap = 6.dp
+
+/** Largeur de [n] unités côte à côte. */
+private fun units(n: Int): Dp = KeyUnit * n + Gap * (n - 1)
+
+/** Largeur totale du clavier (pour aligner le champ et les suggestions dessus). */
+val TvKeyboardWidth: Dp = units(KeyboardLayout.UNITS)
+
+/**
+ * Clavier de recherche pour la télécommande : AZERTY compact (3 lignes), « 123 » pour les chiffres et accents,
+ * Espace et la dictée (si la box a la reconnaissance vocale). Touches rectangulaires, bien espacées.
+ * Effacer : appui long = tout effacer.
  */
 @Composable
 fun TvKeyboard(
     query: String,
     onQuery: (String) -> Unit,
-    suggestions: List<String>,
-    placeholder: String,
     modifier: Modifier = Modifier,
     firstKey: FocusRequester = remember { FocusRequester() },
 ) {
     val voice = rememberVoiceInput { onQuery(it) }
+    var digits by remember { mutableStateOf(false) }
     fun input(k: KeyInput) = onQuery(applyKey(query, k))
     Column(
-        modifier.width(keys(Columns)).onPreviewKeyEvent { e ->
+        modifier.width(TvKeyboardWidth).onPreviewKeyEvent { e ->
             val k = remoteKeyInput(e) ?: return@onPreviewKeyEvent false
             input(k); true
         },
+        verticalArrangement = Arrangement.spacedBy(Gap),
     ) {
-        // champ : la saisie en cours, ou ce qu'on peut chercher ici
-        Row(
-            Modifier.fillMaxWidth().background(SokoulColors.SurfaceHigh, Radius.Card).padding(horizontal = Space.m, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Default.Search, null, Modifier.size(22.dp), tint = SokoulColors.Accent)
-            Text(
-                query.ifEmpty { placeholder }, Modifier.padding(start = Space.s).weight(1f),
-                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = if (query.isEmpty()) SokoulColors.TextMuted else SokoulColors.TextPrimary,
-            )
-        }
-        // suggestions de complétion (place réservée : la grille ne saute pas quand elles arrivent)
-        Column(Modifier.fillMaxWidth().padding(vertical = Space.s).height(SuggestionsHeight), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            suggestions.take(3).forEach { s ->
-                FocusSurface(onClick = { onQuery(s) }, Modifier.fillMaxWidth(), style = FocusStyle.Row) { focused ->
-                    Text(
-                        s, Modifier.padding(horizontal = Space.m, vertical = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = if (focused) FontWeight.Bold else FontWeight.Normal,
-                    )
-                }
-            }
-        }
-        // 7 colonnes : A–Z et 0–8 sur 5 lignes, puis 9, Espace, Effacer (appui long : tout) et Dicter
-        Column(verticalArrangement = Arrangement.spacedBy(Gap)) {
-            val rows = Letters.chunked(Columns)
-            rows.forEachIndexed { r, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(Gap)) {
-                    row.forEachIndexed { c, ch ->
-                        KeyButton(Modifier.size(KeySize).then(if (r == 0 && c == 0) Modifier.focusRequester(firstKey) else Modifier), onClick = { input(KeyInput.Char(ch)) }) { focused ->
-                            Text(ch.uppercase(), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = onChip(focused))
-                        }
+        KeyboardLayout.rows(digits, voice != null).forEachIndexed { r, row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(Gap)) {
+                row.forEachIndexed { c, k ->
+                    val first = if (r == 0 && c == 0) Modifier.focusRequester(firstKey) else Modifier
+                    val onClick: () -> Unit = when (k.action) {
+                        null -> ({ input(KeyInput.Char(k.char!!)) })
+                        KeyAction.TOGGLE -> ({ digits = !digits })
+                        KeyAction.SPACE -> ({ input(KeyInput.Space) })
+                        KeyAction.DELETE -> ({ input(KeyInput.Delete) })
+                        KeyAction.VOICE -> ({ voice?.invoke() })
                     }
-                    if (r == rows.lastIndex) {
-                        val free = Columns - row.size
-                        val span = if (voice != null) free / 3 else free / 2
-                        KeyButton(Modifier.size(keys(span), KeySize), onClick = { input(KeyInput.Space) }) { f -> KeyIcon(Icons.Default.SpaceBar, "Espace", f) }
-                        KeyButton(Modifier.size(keys(free - span * (if (voice != null) 2 else 1)), KeySize), onClick = { input(KeyInput.Delete) }, onLongClick = { input(KeyInput.Clear) }) { f ->
-                            KeyIcon(Icons.AutoMirrored.Filled.Backspace, "Effacer", f)
+                    KeyButton(
+                        Modifier.size(units(k.span), KeyHeight).then(first), onClick,
+                        onLongClick = if (k.action == KeyAction.DELETE) ({ input(KeyInput.Clear) }) else null,
+                    ) { focused ->
+                        when (k.action) {
+                            null -> Text(k.label, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = onChip(focused))
+                            KeyAction.TOGGLE -> Text(k.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = onChip(focused))
+                            KeyAction.SPACE -> KeyIcon(Icons.Default.SpaceBar, k.label, focused)
+                            KeyAction.DELETE -> KeyIcon(Icons.AutoMirrored.Filled.Backspace, k.label, focused)
+                            KeyAction.VOICE -> KeyIcon(Icons.Default.Mic, k.label, focused)
                         }
-                        if (voice != null) KeyButton(Modifier.size(keys(span), KeySize), onClick = voice) { f -> KeyIcon(Icons.Default.Mic, "Dicter", f) }
                     }
                 }
             }
         }
-        Text("Lecture : espace  ·  Retour rapide : effacer", Modifier.padding(top = Space.s), style = Type.Meta, color = SokoulColors.TextMuted)
     }
 }
 
-private val SuggestionsHeight = 28.dp * 3 + 4.dp * 2
-
 @Composable
 private fun KeyButton(modifier: Modifier, onClick: () -> Unit, onLongClick: (() -> Unit)? = null, content: @Composable (Boolean) -> Unit) {
-    FocusSurface(onClick, modifier, style = FocusStyle.Chip, shape = Radius.Card, color = SokoulColors.SurfaceHigh, onLongClick = onLongClick) { focused ->
+    FocusSurface(onClick, modifier, style = FocusStyle.Chip, shape = Radius.Tiny, color = SokoulColors.SurfaceHigh, onLongClick = onLongClick) { focused ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content(focused) }
     }
 }

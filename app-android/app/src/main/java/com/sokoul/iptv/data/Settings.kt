@@ -19,6 +19,16 @@ enum class BufferProfile(val label: String) { LOW("Faible (zapping rapide)"), NO
 enum class LiveFormat(val label: String, val ext: String) { TS("MPEG-TS (.ts)", "ts"), HLS("HLS (.m3u8)", "m3u8") }
 enum class DecoderMode(val label: String) { AUTO("Auto (matériel + FFmpeg)"), HARDWARE("Matériel uniquement"), SOFTWARE("Logiciel prioritaire") }
 
+/** Recherches récentes : la nouvelle en tête, sans doublon (casse ignorée), 8 au plus, 2 lettres minimum. */
+object RecentSearches {
+    const val MAX = 8
+    fun add(list: List<String>, q: String): List<String> {
+        val t = q.trim().replace(Regex("\\s+"), " ").take(60)
+        if (t.length < 2) return list
+        return (listOf(t) + list.filterNot { it.equals(t, ignoreCase = true) }).take(MAX)
+    }
+}
+
 data class AppSettings(
     val activePlaylistId: Long = 0,
     val bufferProfile: BufferProfile = BufferProfile.NORMAL,
@@ -162,6 +172,21 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         context.dataStore.edit { it[pinFailures] = failures; it[pinLockedUntil] = lockedUntil }
     }
 
+    /** Recherches récentes (8 au plus, la plus récente d'abord). */
+    val recentSearches: Flow<List<String>> = context.dataStore.data.map { p ->
+        p[recentKey]?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
+    }
+
+    suspend fun addRecentSearch(q: String) {
+        context.dataStore.edit { p ->
+            val now = p[recentKey]?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
+            p[recentKey] = RecentSearches.add(now, q).joinToString("\n")
+        }
+    }
+
+    suspend fun clearRecentSearches() { context.dataStore.edit { it.remove(recentKey) } }
+
+    private val recentKey = stringPreferencesKey("recent_searches")
     private val pinFailures = intPreferencesKey("pin_failures")
     private val groupingRules = intPreferencesKey("grouping_rules")
 
