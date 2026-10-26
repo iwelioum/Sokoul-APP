@@ -38,7 +38,11 @@ class AlarmReceiver : BroadcastReceiver() {
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         val r = db.recordings().upcomingReminders(start - 1).firstOrNull { it.playlistId == pid && it.channelId == cid && it.start == start }
-                        if (r != null) notifyReminder(context, pid, cid, r.channelName, r.title, start)
+                        if (r != null) {
+                            notifyReminder(context, pid, cid, r.channelName, r.title, start)
+                            // app ouverte : bandeau dans l'app (notifications peu visibles sur Google TV)
+                            ReminderBus.post(ReminderBus.Reminder(pid, cid, r.channelName, r.title, start))
+                        }
                     } finally {
                         pending.finish()
                     }

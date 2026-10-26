@@ -60,6 +60,18 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Économiseur d'écran : fonds des films et séries de l'abonnement -->
+        <service
+            android:name=".screensaver.SokoulDream"
+            android:exported="true"
+            android:label="Sokoul TV"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".recording.AlarmReceiver"
             android:exported="false" />

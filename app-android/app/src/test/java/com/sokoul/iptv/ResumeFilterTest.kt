@@ -18,9 +18,9 @@ class ResumeFilterTest {
         val okEpisode = p(ContentType.SERIES, "e2", "s2")
         val hidden = BrowseRepository.hiddenResumes(
             listOf(lockedMovie, okMovie, unknownMovie, lockedEpisode, okEpisode),
-            movieCat = mapOf("m1" to "adult", "m2" to "films"),
+            movieCat = mapOf("m1" to "adult", "m2" to "films", "m3" to "orphan"),
             seriesCat = mapOf("s1" to "locked", "s2" to "series"),
-            visibleMovies = setOf("films"), visibleSeries = setOf("series"),
+            excludedMovies = setOf("adult"), excludedSeries = setOf("locked"),
         )
         assertEquals(setOf(lockedMovie, lockedEpisode), hidden)
     }

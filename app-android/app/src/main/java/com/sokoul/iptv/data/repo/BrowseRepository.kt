@@ -989,7 +989,7 @@ class BrowseRepository @Inject constructor(
         val series = b.seriesByIds(pid, list.filter { it.type == ContentType.SERIES }.mapNotNull { it.parentId }.distinct()).associateBy { it.id }
         // pas de reprise depuis un groupe verrouillé (code parental fermé), masqué ou adulte : même règle que les rangées
         val hidden = hiddenResumes(list, movies.mapValues { it.value.categoryId }, series.mapValues { it.value.categoryId },
-            ctx(pid, ContentType.MOVIE).visibleIds, ctx(pid, ContentType.SERIES).visibleIds)
+            ctx(pid, ContentType.MOVIE).excluded.toSet(), ctx(pid, ContentType.SERIES).excluded.toSet())
         val works = list.filterNot { it in hidden }.mapNotNull { p ->
             val fraction = if (p.durationMs > 0) (p.positionMs.toFloat() / p.durationMs).coerceIn(0f, 1f) else null
             val left = if (p.durationMs > 0) ((p.durationMs - p.positionMs) / 60_000).coerceAtLeast(1) else null
@@ -1123,17 +1123,17 @@ class BrowseRepository @Inject constructor(
 
     companion object {
         /**
-         * Reprises à cacher : film ou série dont la catégorie n'est pas visible (verrouillée, masquée, adulte).
-         * Une œuvre absente du catalogue (catégorie inconnue) reste affichée : rien ne permet de la juger.
+         * Reprises à cacher : film ou série dont la catégorie est exclue (verrouillée, masquée, adulte).
+         * Une œuvre absente du catalogue ou de catégorie inconnue reste affichée : rien ne permet de la juger.
          */
         internal fun hiddenResumes(
             list: List<com.sokoul.iptv.data.db.ProgressEntity>,
             movieCat: Map<String, String>, seriesCat: Map<String, String>,
-            visibleMovies: Set<String>, visibleSeries: Set<String>,
+            excludedMovies: Set<String>, excludedSeries: Set<String>,
         ): Set<com.sokoul.iptv.data.db.ProgressEntity> = list.filterTo(HashSet()) { p ->
             when (p.type) {
-                ContentType.MOVIE -> movieCat[p.itemId]?.let { it !in visibleMovies } == true
-                ContentType.SERIES -> p.parentId?.let { seriesCat[it] }?.let { it !in visibleSeries } == true
+                ContentType.MOVIE -> movieCat[p.itemId]?.let { it in excludedMovies } == true
+                ContentType.SERIES -> p.parentId?.let { seriesCat[it] }?.let { it in excludedSeries } == true
                 ContentType.LIVE -> false
             }
         }

@@ -9,6 +9,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -89,7 +91,15 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
     val vm: RootViewModel = hiltViewModel()
     val hasPlaylist by vm.hasPlaylist.collectAsStateWithLifecycle()
     // pas de fond ici : celui de la fenêtre (même couleur) suffit — chaque fond plein écran en plus coûte une passe GPU
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier.fillMaxSize().onPreviewKeyEvent { e ->
+            // bandeau de rappel affiché : ⏯ ouvre la chaîne, Retour l'ignore (appui et relâchement consommés)
+            val code = e.nativeKeyEvent.keyCode
+            if (com.sokoul.iptv.recording.ReminderBus.current.value == null) false
+            else if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown) com.sokoul.iptv.ui.components.ReminderKeys.handle(code)
+            else code == android.view.KeyEvent.KEYCODE_BACK || code == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == android.view.KeyEvent.KEYCODE_MEDIA_PLAY
+        },
+    ) {
         when (hasPlaylist) {
             null -> LoadingBox()
             else -> {
@@ -107,6 +117,7 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                         onPlayConsumed()
                     }
                 }
+                com.sokoul.iptv.ui.components.ReminderBanner { r -> nav.navigateOnce(PlayerRoute(PlayKind.LIVE, r.playlistId, r.channelId)) }
             }
         }
     }

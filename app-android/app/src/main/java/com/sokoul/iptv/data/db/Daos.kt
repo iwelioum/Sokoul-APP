@@ -643,6 +643,13 @@ data class CollectionCount(val collectionId: Int, val collectionName: String, va
  */
 @Dao
 interface BrowseDao {
+    /** Économiseur d'écran : œuvres du catalogue avec un fond TMDB, au hasard (une requête, à l'ouverture). */
+    @Query(
+        "SELECT DISTINCT t.* FROM tmdb_match m JOIN tmdb_meta t ON t.type = m.type AND t.tmdbId = m.tmdbId " +
+            "WHERE m.playlistId = :pid AND t.backdrop IS NOT NULL AND COALESCE(t.rating, 0) >= :minRating ORDER BY RANDOM() LIMIT :n",
+    )
+    suspend fun screensaverPicks(pid: Long, n: Int, minRating: Double = 6.5): List<TmdbMetaEntity>
+
     @Query("SELECT * FROM movies WHERE playlistId = :pid AND categoryId IN (:cats) ORDER BY added DESC LIMIT :limit")
     suspend fun moviesInByAdded(pid: Long, cats: List<String>, limit: Int): List<MovieEntity>
 
