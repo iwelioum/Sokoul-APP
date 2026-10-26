@@ -687,3 +687,69 @@ Branche `phase12-finitions-ecrans` (créée depuis `phase11-experience`). Cinq c
 - Le Guide reste au-dessus de 5 % selon `gfxinfo` (une image lente par appui).
 - Retour depuis le Guide : le focus revient sur « Lecture » de l'accueil, pas sur l'icône du Guide.
 - Son de navigation : non fait (pas d'API de son de focus en Compose ; risque de doublon avec les sons du système).
+
+## 15. Phase 13 — Real-Debrid et usage au quotidien (26/10/2026)
+
+Branche `phase13-real-debrid` (créée depuis `phase12-finitions-ecrans`). Sept commits locaux, de `ae811be` à `a266789`. Rien n'est poussé sur GitHub. La clé Real-Debrid est uniquement dans `local.properties` (non versionné) : 0 occurrence dans les commits (vérifié avant chacun). Elle s'affiche masquée dans l'app (`AEDU…BJYA`).
+
+### Tri des idées de Gemini
+| Idée | Verdict | Ce qui a été fait |
+|---|---|---|
+| Lire via Real-Debrid pendant un enregistrement | **Gardée, élargie** | Aussi pendant la pause imposée par le fournisseur et quand une version IPTV tombe en panne. **Défaut corrigé au passage** : un enregistrement ouvrait une 2ᵉ connexion IPTV. |
+| Lecture en un clic, meilleure source | **Gardée** | Un seul classement IPTV + RD : langue, puis définition, HDR, prêt ou non, IPTV d'abord à égalité, puis origine du fichier. « Lecture » lance la meilleure. |
+| Priorité aux versions « RD+ » | **Adaptée** | Real-Debrid ne dit plus à l'avance si un fichier est prêt. Une version pas prête en 3 s est écartée, et le torrent ajouté est supprimé. |
+| Changer de source au même instant | **Étendue** | Menu Version : IPTV et RD mêlés, reprise à la seconde près. |
+| Pack de saison | **Gardée** | Le fichier S02E05 est choisi dans le pack. |
+| Connexion sans clavier | **Gardée** | Code à saisir sur real-debrid.com/device. |
+| Mon cloud | **Gardée** | Rangée « Mes fichiers Real-Debrid » sur l'accueil. |
+| Fréquence d'image | **Gardée** | Voir plus bas : vérifiée sur la box. |
+| Son vers l'ampli | **Adaptée** | Réglage « Son vers l'ampli (passthrough) ». Désactivé, le son est décodé en PCM par l'appareil. |
+| Décalage des sous-titres | **Gardée** | Par 0,25 s. Sous-titres en ligne : avance et retard. Sous-titres du flux : retard seulement (limite de Media3). |
+| Chapitres MKV | **Adaptée** | « Passer l'intro » appris par série (Media3 ne lit pas les chapitres). |
+| Second moteur (libVLC, mpv) | **Rejetée** | +30 Mo, alors que le passage automatique à une autre version couvre le besoin. |
+| Trakt | **Reportée** | Avec les profils. |
+
+### Ce qui change
+| Sujet | Changement |
+|---|---|
+| **Enregistrement et lecture** | La connexion IPTV est prise par l'enregistrement. Un flux IPTV ouvert affiche « TF1 est en cours d'enregistrement » avec « Arrêter l'enregistrement et regarder », puis reprend seul à la fin. La pause du direct est refusée pendant un enregistrement. Films et séries passent par Real-Debrid. |
+| **Réglages › Real-Debrid** | État du compte (premium, jours restants), association par code, clé, extension de sources (format Stremio), taille maximale d'un fichier (auto : 25 Go en Wi-Fi). |
+| **Fiche film** | « Sources disponibles (n) » : IPTV et RD mêlées, pastille INSTANTANÉ, taille, origine (Remux, Blu-ray, WEB). « Lecture · RD » quand RD fait mieux. |
+| **Lecteur** | Secours automatique : RD → autre RD → IPTV, et IPTV bloquée ou en panne → RD (« Lecture via Real-Debrid »). Les épisodes suivants passent aussi par RD. |
+| **Titres hors abonnement** | Sagas, page acteur, Ma liste : « Lire via Real-Debrid ». La reprise apparaît dans « Reprendre ». |
+| **Accueil** | « Mes fichiers Real-Debrid » : images TMDB, un fichier par épisode (meilleure définition), lecture directe, reprise. Rappel quand il reste 7 jours de premium ou moins. |
+| **Fréquence de l'écran** | Calée sur le film. Si le fichier ne l'indique pas (MKV), elle est mesurée sur les 120 premières images. 50 Hz est préféré à 25 Hz. Le mode d'origine revient en quittant. VOD seulement. |
+| **« Ça coupe ? »** | Après 2 coupures de plus de 1,5 s (hors saut), une pastille propose « OK : version plus légère » (définition plus basse, ou 40 % plus petite, même langue). |
+| **« Passer l'intro »** | Un saut de 45 s à 3 min dans les 10 premières minutes est retenu pour la série. Ensuite, une pastille « OK : Passer l'intro » apparaît au même moment. |
+| **Finit à** | « Finit à 23h28 » sur le héros de l'accueil, la fiche film et l'écran de pause. |
+| **Explorer** | Filtre « Fini avant 22 h / 23 h / minuit » (seules les heures encore atteignables sont proposées). « Surprends-moi » choisit un titre non vu, noté 7 ou plus, qui respecte les filtres. |
+| **Fluidité** | Aperçu du Guide mis à jour 140 ms après le dernier déplacement. Images des cartes décodées directement à leur taille. |
+
+### Essais sur la box (Google TV, 4K 60 Hz)
+- **Compte** : Réglages › Real-Debrid affiche « ✓ OK · compte Iweliou · premium, 179 jours restants ».
+- **Mes fichiers Real-Debrid** : 4 épisodes de *Interview with the Vampire* affichés avec leurs images. Doublons fusionnés (le 1080p gardé, l'AVI SD écarté).
+- **Lecture via Real-Debrid** (aucune connexion IPTV) : épisode HEVC 1080p lu, état « lecture » au bout de 15 s.
+- **Fréquence** : la TV passe du mode 19 (4K 60 Hz) au mode 14 (4K 23,976 Hz) pendant la lecture, puis revient au mode 19 en quittant (`dumpsys display`). Au premier essai, rien ne se passait : le fichier MKV n'annonce pas sa fréquence. D'où la mesure sur les images.
+- **Reprendre** : l'épisode RD apparaît (« Real-Debrid · Reste 59 min ») et se relance dans le lecteur.
+- Aucun flux IPTV ouvert pendant ces essais. L'app a été fermée (`force-stop`) à la fin.
+
+### Tests
+- `:parser:test`, `:app:testDebugUnitTest` : **303 tests, 0 échec**, 2 ignorés (test réel du fournisseur ; test « sans clé », la clé étant présente). `lintRelease` : 0 erreur.
+- Nouveaux tests :
+  - `DebridClientTest` : client RD, plafond de requêtes, 429, choix du fichier, nettoyage, réutilisation d'un torrent prêt ;
+  - `DebridSourcesTest` : 20 noms de versions, classement, épisode dans un pack, taille maximale, adresse de l'extension ;
+  - `DebridCloudTest` : titres, fusion, routes de reprise ;
+  - `HomeCinemaTest` : choix du mode, fréquence mesurée (23,976 ≠ 24), intro, décalage, version plus légère ;
+  - `EveningTest` : « Finit à », « Fini avant » ;
+  - `StreamPlayerTest` : enregistrement en cours.
+
+### Limites connues
+- **L'extension de sources n'est pas renseignée** (Réglages › Real-Debrid › Extension). Sans elle, le cloud et le compte marchent, mais pas les versions RD sur les fiches ni les titres hors abonnement. C'est volontaire : aucun service de ce type n'est imposé par l'app. Les tests de bout en bout de cette partie restent donc à faire.
+- **Pas encore faits** :
+  - versions RD par épisode sur la fiche série (le lecteur les utilise déjà) ;
+  - rangée « Aussi disponible via Real-Debrid » dans la recherche.
+- **Pas vérifiés sur la box :**
+  - le son vers l'ampli (pas d'ampli branché) ;
+  - « Passer l'intro » et « Ça coupe ? » (couverts par les tests unitaires) ;
+  - la lecture RD pendant un enregistrement IPTV : cet essai ouvrirait une connexion IPTV.
+- Pas de nouvelle mesure `gfxinfo` pour le Guide et l'accueil.
