@@ -200,6 +200,9 @@ private fun TopTabs(
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 IconTab(Icons.Default.Search, "Recherche", open, toContent, onFocus = { settling = null }) { onAction(Dest.SEARCH) }
+                // guide et enregistrements : accessibles sans ouvrir de flux (une seule connexion chez le fournisseur)
+                IconTab(Dest.GUIDE.icon, "Guide TV", open, toContent, onFocus = { settling = null }) { onAction(Dest.GUIDE) }
+                IconTab(Dest.RECORDINGS.icon, "Enregistrements", open, toContent, onFocus = { settling = null }) { onAction(Dest.RECORDINGS) }
                 TvSwitch(open, toContent, onFocus = { settling = null }) { onAction(Dest.LIVE) }
                 IconTab(Icons.Default.Settings, "Réglages", open, toContent, onFocus = { settling = null }) { onAction(Dest.SETTINGS) }
                 Text(

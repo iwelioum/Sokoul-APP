@@ -117,8 +117,27 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import kotlin.math.roundToInt
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import com.sokoul.iptv.ui.components.AmbientBake
+import com.sokoul.iptv.ui.components.AmbientTint
+import com.sokoul.iptv.ui.components.of
+import com.sokoul.iptv.ui.components.FocusStyle
+import com.sokoul.iptv.ui.components.FocusSurface
+import com.sokoul.iptv.ui.components.KeyHint
+import com.sokoul.iptv.ui.components.KeyHints
+import com.sokoul.iptv.ui.components.NetImage
+import com.sokoul.iptv.ui.theme.LocalLayout
+import com.sokoul.iptv.ui.theme.Type
+import com.sokoul.iptv.ui.theme.Edge
 
-private const val HALF_HOUR = 30 * 60_000L
+private const val HALF_HOUR = GuideTime.HALF_HOUR
 private const val LOAD_SPAN = 12 * 3600_000L
 
 private data class Loaded(val from: Long, val to: Long, val programs: List<ProgramEntity>)
@@ -228,6 +247,7 @@ fun GuideScreen(nav: NavHostController) {
     val reminders by vm.reminders.collectAsStateWithLifecycle()
     val epgStatus by vm.epgStatus.collectAsStateWithLifecycle()
     val isTv = LocalIsTv.current
+    val layout = LocalLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val now = rememberNow()
@@ -246,11 +266,17 @@ fun GuideScreen(nav: NavHostController) {
     LaunchedEffect(windowStart, row, focusTime) { vm.windowStart = windowStart; vm.row = row; vm.focusTime = focusTime }
 
     val list = channels
+    val side = if (layout.isCompact) 16.dp else 48.dp
     Column(Modifier.fillMaxSize()) {
-        // --- en-tête : programme sélectionné ---
+        // --- aperçu : programme focalisé ---
         val currentChannel = list?.getOrNull(row)
         val currentProgram = currentChannel?.let { c -> programs[c.id]?.firstOrNull { focusTime >= it.start && focusTime < it.end } }
-        GuideHeader(currentChannel, currentProgram, now, windowStart)
+        GuidePreview(
+            currentChannel, currentProgram, now, windowStart,
+            catchup = currentChannel?.let { vm.supportsCatchup(it) } == true,
+            reminded = currentChannel != null && currentProgram != null && "${currentChannel.id}|${currentProgram.start}" in reminders,
+            compact = layout.isCompact, side = side,
+        )
 
         val pickCategory: (CategoryItem) -> Unit = { c ->
             if (c.locked && !vm.isUnlocked()) pinFor = c else {
@@ -259,34 +285,44 @@ fun GuideScreen(nav: NavHostController) {
         }
         if (!isTv) CategoryChips(categories, selected, pickCategory)
 
-        androidx.compose.foundation.layout.FlowRow(
-            Modifier.padding(horizontal = 16.dp, vertical = if (isTv) 8.dp else 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+        // --- barre : groupe, jours, maintenant ---
+        val today = GuideTime.dayStart(now)
+        val focusDay = GuideTime.dayStart(focusTime)
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = side, vertical = if (isTv) 8.dp else 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isTv) CategoryPickerButton(categories, selected, pickCategory)
-            AppButton("−3 h", { windowStart -= 6 * HALF_HOUR; focusTime = windowStart + HALF_HOUR }, icon = Icons.Default.ChevronLeft)
-            AppButton("Maintenant", { windowStart = vm.alignedNow() - HALF_HOUR; focusTime = System.currentTimeMillis() }, icon = Icons.Default.Schedule)
-            AppButton("+3 h", { windowStart += 6 * HALF_HOUR; focusTime = windowStart + HALF_HOUR }, icon = Icons.Default.ChevronRight)
+            GuideChip("Maintenant", selected = false, icon = Icons.Default.Schedule) {
+                windowStart = GuideTime.defaultWindow(System.currentTimeMillis()); focusTime = System.currentTimeMillis()
+            }
+            Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(22.dp).background(SokoulColors.Divider))
+            GuideTime.days(now).forEach { d ->
+                GuideChip(dayLabel(d, now), selected = d == focusDay) {
+                    val (w, f) = GuideTime.jumpTo(d, System.currentTimeMillis(), focusTime)
+                    windowStart = w; focusTime = f
+                }
+            }
             val st = epgStatus[pid]
-            Text(
-                when {
-                    st?.running == true -> "Mise à jour du guide… ${st.count}"
-                    st?.error != null -> "Guide : ${st.error}"
-                    else -> ""
-                },
-                Modifier.padding(start = 12.dp).align(Alignment.CenterVertically), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1,
-            )
+            val status = when {
+                st?.running == true -> "Mise à jour du guide… ${st.count}"
+                st?.error != null -> "Guide : ${st.error}"
+                else -> null
+            }
+            if (status != null) Text(status, Modifier.padding(start = 12.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
 
         when {
             list == null -> LoadingBox()
             list.isEmpty() -> EmptyState(Icons.Default.Star, "Aucune chaîne dans ce groupe")
-            else -> BoxWithConstraints(Modifier.fillMaxSize().padding(top = 8.dp)) {
-                val channelCol = if (isTv || maxWidth > 700.dp) 220.dp else 120.dp
+            else -> BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp)) {
+                // colonne des chaînes : logo + nom sur TV ; logos seuls sur écran étroit
+                val channelCol = if (isTv || maxWidth > 700.dp) 236.dp else 84.dp
                 val dpPerMin = if (isTv) 6.5.dp else 4.5.dp
-                val visibleMin = ((maxWidth - channelCol) / dpPerMin).toInt().coerceAtLeast(60)
+                val gridStart = if (layout.isCompact) 8.dp else side - 8.dp
+                val visibleMin = ((maxWidth - channelCol - gridStart) / dpPerMin).toInt().coerceAtLeast(60)
                 val windowEnd = windowStart + visibleMin * 60_000L
-                val rowHeight = 64.dp
+                val rowHeight = if (layout.isCompact) 58.dp else 66.dp
                 val density = LocalDensity.current
 
                 fun act(c: ChannelEntity, p: ProgramEntity?) {
@@ -303,7 +339,7 @@ fun GuideScreen(nav: NavHostController) {
                 }
 
                 Column(
-                    Modifier.fillMaxSize()
+                    Modifier.fillMaxSize().padding(start = gridStart)
                         .focusRequester(gridFocus)
                         .onFocusChanged { gridFocused = it.hasFocus }
                         .onKeyEvent { e ->
@@ -324,7 +360,7 @@ fun GuideScreen(nav: NavHostController) {
                                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
                                     val next = if (idx >= 0) rowPrograms.getOrNull(idx + 1) else rowPrograms.firstOrNull { it.start > focusTime }
                                     focusTime = next?.start ?: (focusTime + HALF_HOUR)
-                                    if (focusTime + 30 * 60_000L > windowEnd) windowStart = (focusTime - HALF_HOUR).let { it - it % HALF_HOUR }
+                                    if (focusTime + 30 * 60_000L > windowEnd) windowStart = GuideTime.align(focusTime - HALF_HOUR)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -334,18 +370,18 @@ fun GuideScreen(nav: NavHostController) {
                                     val onNow = cur == null || (cur.start <= t && cur.end > t)
                                     val atDefaultWindow = windowStart >= vm.alignedNow() - HALF_HOUR
                                     // Sur le programme en cours (ou sans guide), gauche ouvre le menu comme sur TiviMate ;
-                                    // le passé reste accessible via les chaînes en replay et les boutons −3 h.
+                                    // le passé reste accessible via les chaînes en replay et la touche ⏪.
                                     if (atDefaultWindow && (atLeftEdge || (onNow && !vm.supportsCatchup(c)) || rowPrograms.isEmpty())) {
                                         focusTime = t
                                         return@onKeyEvent false
                                     }
                                     val prev = if (idx > 0) rowPrograms[idx - 1] else rowPrograms.lastOrNull { it.end <= focusTime }
                                     focusTime = prev?.start?.coerceAtLeast(windowStart - 6 * HALF_HOUR) ?: (focusTime - HALF_HOUR)
-                                    if (focusTime < windowStart) windowStart = focusTime - focusTime % HALF_HOUR
+                                    if (focusTime < windowStart) windowStart = GuideTime.align(focusTime)
                                     true
                                 }
-                                KeyEvent.KEYCODE_MEDIA_REWIND -> { windowStart -= 6 * HALF_HOUR; focusTime = windowStart + HALF_HOUR; true }
-                                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { windowStart += 6 * HALF_HOUR; focusTime = windowStart + HALF_HOUR; true }
+                                KeyEvent.KEYCODE_MEDIA_REWIND -> { GuideTime.shift(windowStart, -GuideTime.JUMP).let { (w, f) -> windowStart = w; focusTime = f }; true }
+                                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { GuideTime.shift(windowStart, GuideTime.JUMP).let { (w, f) -> windowStart = w; focusTime = f }; true }
                                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                                     if (e.nativeKeyEvent.repeatCount == 0) act(c, rowPrograms.getOrNull(idx)); true
                                 }
@@ -368,7 +404,7 @@ fun GuideScreen(nav: NavHostController) {
                         }
                 ) {
                     TimeRuler(windowStart, visibleMin, channelCol, dpPerMin, now)
-                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
                         itemsIndexed(list, key = { _, c -> c.id }) { i, c ->
                             LaunchedEffect(c.id, windowStart) { vm.request(c, windowStart, windowEnd) }
                             GuideRow(
@@ -380,6 +416,7 @@ fun GuideScreen(nav: NavHostController) {
                                 dpPerMin = dpPerMin,
                                 height = rowHeight,
                                 now = now,
+                                selectedRow = i == row,
                                 focusedTime = if (i == row && gridFocused) focusTime else null,
                                 catchup = vm.supportsCatchup(c),
                                 reminders = reminders,
@@ -391,6 +428,16 @@ fun GuideScreen(nav: NavHostController) {
                             )
                         }
                     }
+                    KeyHints(
+                        listOf(
+                            KeyHint("OK", "Regarder"),
+                            KeyHint("Menu", "Rappel, enregistrement…"),
+                            KeyHint("⏪ ⏩", "−2 h / +2 h"),
+                            KeyHint("CH ±", "Page"),
+                            KeyHint("▲", "Jours et groupes"),
+                        ),
+                        Modifier.padding(start = channelCol, top = 8.dp, bottom = 14.dp),
+                    )
                 }
 
                 // garde la ligne focalisée visible
@@ -444,47 +491,124 @@ fun GuideScreen(nav: NavHostController) {
     }
 }
 
+/**
+ * Aperçu du programme focalisé, en haut du guide : fond « cuit » tiré de l'image du programme (s'il y en a une),
+ * étiquette (EN CE MOMENT, DEMAIN · 20:50…), titre à empattements, horaires, résumé, et l'heure.
+ */
 @Composable
-private fun GuideHeader(c: ChannelEntity?, p: ProgramEntity?, now: Long, windowStart: Long) {
-    val compact = com.sokoul.iptv.ui.theme.LocalLayout.current.isCompact
-    Row(
-        Modifier.fillMaxWidth().height(if (compact) 92.dp else 118.dp).padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 8.dp else 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (c != null) ChannelLogo(c.logo, c.name, if (compact) Modifier.size(64.dp, 40.dp) else Modifier.size(110.dp, 66.dp))
-        Column(Modifier.weight(1f).padding(start = if (compact) 12.dp else 18.dp)) {
-            Text(
-                "${dayLabel(windowStart, now)}  ·  ${c?.name ?: ""}", color = SokoulColors.Accent,
-                style = MaterialTheme.typography.labelLarge, maxLines = 1,
-            )
-            Text(p?.title ?: "Pas de programme", style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (p != null) {
+private fun GuidePreview(
+    c: ChannelEntity?, p: ProgramEntity?, now: Long, windowStart: Long,
+    catchup: Boolean, reminded: Boolean, compact: Boolean, side: Dp,
+) {
+    val context = LocalContext.current
+    var bg by remember { mutableStateOf<ImageBitmap?>(null) }
+    val icon = p?.icon?.takeIf { it.isNotBlank() }
+    LaunchedEffect(icon) {
+        bg = icon?.let { url ->
+            val tint = AmbientTint.of(context, url) ?: SokoulColors.AccentSoft
+            AmbientBake.bake(context, url, tint, SokoulColors.Background, aspect = 4.5f)
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(if (compact) 128.dp else 228.dp)) {
+        bg?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
+        // fondu vers la grille en bas
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(48.dp).background(Brush.verticalGradient(listOf(Color.Transparent, SokoulColors.Background))))
+        Row(
+            Modifier.fillMaxSize().padding(start = side, end = side, top = if (compact) 10.dp else 26.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(Modifier.weight(1f)) {
+                val live = p != null && p.start <= now && p.end > now
                 Text(
-                    formatRange(p.start, p.end) + (p.episode?.let { "  ·  $it" } ?: "") + (p.category?.let { "  ·  $it" } ?: ""),
-                    color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall,
+                    buildString {
+                        append(p?.let { GuideTime.kicker(it, now, catchup) } ?: "GUIDE")
+                        c?.let { append(" · ").append(it.name.uppercase()) }
+                    },
+                    style = Type.Kicker.copy(color = if (live) SokoulColors.Live else SokoulColors.Accent), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                p.description?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                Text(
+                    p?.title ?: "Pas de programme",
+                    Modifier.padding(top = 4.dp),
+                    style = if (compact) Type.Section else Type.ScreenTitle, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                if (p != null) {
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val meta = listOfNotNull(formatRange(p.start, p.end), GuideTime.duration(p), p.episode, p.category?.takeIf { it.isNotBlank() })
+                        Text(meta.joinToString("  ·  "), style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (live) {
+                            val f = ((now - p.start).toFloat() / (p.end - p.start)).coerceIn(0f, 1f)
+                            Box(Modifier.padding(start = 14.dp).width(120.dp).height(3.dp).background(SokoulColors.white(0.18f), Radius.Tiny)) {
+                                Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(SokoulColors.Live, Radius.Tiny))
+                            }
+                            Text(GuideTime.remaining(p, now), Modifier.padding(start = 10.dp), style = Type.Meta, maxLines = 1)
+                        }
+                        if (reminded) {
+                            Icon(Icons.Default.NotificationsActive, null, Modifier.padding(start = 14.dp).size(16.dp), tint = SokoulColors.Warning)
+                            Text("Rappel prévu", Modifier.padding(start = 4.dp), style = Type.Meta.copy(color = SokoulColors.Warning), maxLines = 1)
+                        }
+                    }
+                    if (!compact) p.description?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            it, Modifier.padding(top = 8.dp).widthIn(max = 760.dp), color = SokoulColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Column(Modifier.padding(start = 24.dp), horizontalAlignment = Alignment.End) {
+                Text(formatClock(now), style = Type.Section)
+                Text(dayLabel(windowStart, now).uppercase(), style = Type.Overline, maxLines = 1)
+                if (!compact) {
+                    Box(Modifier.padding(top = 12.dp).size(208.dp, 117.dp).clip(Radius.Card).background(SokoulColors.SurfaceHigh)) {
+                        if (icon != null) NetImage(icon, p?.title, Modifier.fillMaxSize()) { c?.let { ChannelLogo(it.logo, it.name, Modifier.fillMaxSize()) } }
+                        else c?.let { ChannelLogo(it.logo, it.name, Modifier.fillMaxSize().padding(18.dp)) }
+                    }
+                }
             }
         }
-        Text(formatClock(now), style = MaterialTheme.typography.headlineSmall)
     }
 }
 
+/** Pastille de la barre du guide (jour, Maintenant) : blanche au focus, teintée quand elle est le jour affiché. */
+@Composable
+private fun GuideChip(text: String, selected: Boolean, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
+    FocusSurface(
+        onClick = onClick, style = FocusStyle.Chip,
+        color = if (selected) SokoulColors.AccentTint else SokoulColors.white(0.06f),
+    ) { focused ->
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            val fg = when {
+                focused -> SokoulColors.OnLight
+                selected -> SokoulColors.Accent
+                else -> SokoulColors.TextPrimary
+            }
+            if (icon != null) Icon(icon, null, Modifier.padding(end = 6.dp).size(16.dp), tint = fg)
+            Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, color = fg, maxLines = 1)
+        }
+    }
+}
+
+/** Réglette des heures : heures pleines à empattements, demi-heures discrètes, pastille « maintenant ». */
 @Composable
 private fun TimeRuler(windowStart: Long, visibleMin: Int, channelCol: Dp, dpPerMin: Dp, now: Long) {
-    Box(Modifier.fillMaxWidth().height(28.dp).clipToBounds()) {
-        var t = windowStart - windowStart % HALF_HOUR
+    Box(Modifier.fillMaxWidth().height(34.dp).clipToBounds()) {
+        var t = GuideTime.align(windowStart)
         while (t < windowStart + visibleMin * 60_000L) {
             if (t >= windowStart) {
-                val x = channelCol + dpPerMin * ((t - windowStart) / 60_000f)
-                Text(formatClock(t), Modifier.offset(x = x + 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
-                Box(Modifier.offset(x = x).width(1.dp).height(28.dp).background(SokoulColors.Divider))
+                val x = channelCol + 3.dp + dpPerMin * ((t - windowStart) / 60_000f)
+                val fullHour = Math.floorMod(t, 2 * HALF_HOUR) == 0L
+                Box(Modifier.offset(x = x).align(Alignment.BottomStart).width(1.dp).height(if (fullHour) 12.dp else 7.dp).background(SokoulColors.white(0.28f)))
+                Text(
+                    formatClock(t), Modifier.offset(x = x + 7.dp).align(Alignment.BottomStart).padding(bottom = 2.dp),
+                    style = if (fullHour) Type.Tab else MaterialTheme.typography.labelLarge,
+                    color = if (fullHour) SokoulColors.TextPrimary else SokoulColors.TextMuted, maxLines = 1,
+                )
             }
             t += HALF_HOUR
         }
         if (now in windowStart until windowStart + visibleMin * 60_000L) {
-            val x = channelCol + dpPerMin * ((now - windowStart) / 60_000f)
-            Box(Modifier.offset(x = x - 1.dp).width(2.dp).height(28.dp).background(SokoulColors.Live))
+            val x = channelCol + 3.dp + dpPerMin * ((now - windowStart) / 60_000f)
+            Box(Modifier.offset(x = x - 1.dp).align(Alignment.BottomStart).width(2.dp).height(34.dp).background(SokoulColors.Accent))
         }
     }
 }
@@ -499,6 +623,7 @@ private fun GuideRow(
     dpPerMin: Dp,
     height: Dp,
     now: Long,
+    selectedRow: Boolean,
     focusedTime: Long?,
     catchup: Boolean,
     reminders: Set<String>,
@@ -507,33 +632,38 @@ private fun GuideRow(
 ) {
     val rowFocused = focusedTime != null
     Row(Modifier.fillMaxWidth().height(height).padding(vertical = 2.dp)) {
-        Row(
+        // chaîne : collée à gauche, éclairée et marquée d'un trait d'accent sur la ligne active
+        Box(
             Modifier.width(channelCol).fillMaxHeight()
-                .background(if (rowFocused) SokoulColors.SurfaceHigher else SokoulColors.Surface, Radius.Card)
-                .tap(onChannelClick)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .background(if (selectedRow) SokoulColors.SurfaceHigher else Color.Transparent, Radius.Card)
+                .tap(onChannelClick),
         ) {
-            Text(channel.number.toString(), Modifier.width(34.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelMedium)
-            ChannelLogo(channel.logo, channel.name, Modifier.size(52.dp, 34.dp))
-            if (channelCol > 150.dp) {
-                Text(
-                    channel.name, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall, maxLines = 2,
-                    overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium,
+            if (rowFocused) Box(Modifier.width(Edge.Accent).fillMaxHeight().padding(vertical = 8.dp).background(SokoulColors.Accent, Radius.Tiny))
+            Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (channelCol > 150.dp) Text(
+                    channel.number.toString(), Modifier.width(36.dp),
+                    color = if (selectedRow) SokoulColors.TextPrimary else SokoulColors.TextMuted, style = MaterialTheme.typography.labelLarge,
                 )
+                ChannelLogo(channel.logo, channel.name, Modifier.size(56.dp, 36.dp))
+                if (channelCol > 150.dp) {
+                    Text(
+                        channel.name, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis, fontWeight = if (selectedRow) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selectedRow) SokoulColors.TextPrimary else SokoulColors.TextSecondary,
+                    )
+                }
             }
         }
         Box(Modifier.weight(1f).fillMaxHeight().padding(start = 3.dp).clipToBounds()) {
             val visible = programs.orEmpty().filter { it.end > windowStart && it.start < windowEnd }
             if (programs != null && visible.isEmpty()) {
-                val focused = rowFocused
                 Box(
                     Modifier.fillMaxSize().padding(end = 2.dp)
-                        .background(if (focused) SokoulColors.Accent else SokoulColors.SurfaceHigh, Radius.Tiny)
+                        .background(if (rowFocused) SokoulColors.Focus else SokoulColors.Surface, Radius.Tiny)
                         .tap { onProgramClick(null) }
-                        .padding(horizontal = 10.dp),
+                        .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.CenterStart,
-                ) { Text("Pas d'information", color = if (focused) Color.White else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
+                ) { Text("Pas d'information · OK pour regarder", color = if (rowFocused) SokoulColors.OnLight else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
             }
             visible.forEach { p ->
                 val start = maxOf(p.start, windowStart)
@@ -544,41 +674,45 @@ private fun GuideRow(
                 val live = now >= p.start && now < p.end
                 val past = p.end <= now
                 val bg = when {
-                    focused -> SokoulColors.Accent
+                    focused -> SokoulColors.Focus
                     live -> SokoulColors.SurfaceHigher
                     past -> SokoulColors.Surface
                     else -> SokoulColors.SurfaceHigh
                 }
+                val fg = when {
+                    focused -> SokoulColors.OnLight
+                    past -> SokoulColors.TextSecondary
+                    else -> SokoulColors.TextPrimary
+                }
                 Box(
-                    Modifier.offset(x = x).width(w - 2.dp).fillMaxHeight()
+                    Modifier.offset(x = x).width(w - 3.dp).fillMaxHeight()
                         .background(bg, Radius.Tiny)
-                        .then(if (focused) Modifier.border(2.dp, SokoulColors.Focus, Radius.Tiny) else Modifier)
                         .tap { onProgramClick(p) }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
                 ) {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (past && catchup) Icon(Icons.Default.History, null, Modifier.size(12.dp).padding(end = 2.dp), tint = if (focused) Color.White else SokoulColors.TextMuted)
-                            if ("${channel.id}|${p.start}" in reminders) Icon(Icons.Default.NotificationsActive, null, Modifier.size(12.dp).padding(end = 2.dp), tint = SokoulColors.Warning)
+                            if (past && catchup) Icon(Icons.Default.History, null, Modifier.size(13.dp).padding(end = 3.dp), tint = if (focused) SokoulColors.OnLight else SokoulColors.TextMuted)
+                            if ("${channel.id}|${p.start}" in reminders) Icon(Icons.Default.NotificationsActive, null, Modifier.size(13.dp).padding(end = 3.dp), tint = SokoulColors.Warning)
                             Text(
                                 p.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, color = if (focused) Color.White else if (past) SokoulColors.TextSecondary else SokoulColors.TextPrimary,
+                                overflow = TextOverflow.Ellipsis, color = fg,
                             )
                         }
                         Text(
                             formatRange(p.start, p.end), style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                            color = if (focused) SokoulColors.white(0.87f) else SokoulColors.TextMuted,
+                            color = if (focused) SokoulColors.OnLight.copy(alpha = 0.7f) else SokoulColors.TextMuted,
                         )
                     }
                     if (live) {
                         val f = ((now - p.start).toFloat() / (p.end - p.start)).coerceIn(0f, 1f)
-                        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(f).height(2.dp).background(if (focused) Color.White else SokoulColors.Accent))
+                        Box(Modifier.align(Alignment.BottomStart).offset(y = 5.dp).fillMaxWidth(f).height(2.dp).background(if (focused) SokoulColors.Live else SokoulColors.Accent))
                     }
                 }
             }
             if (now in windowStart until windowEnd) {
                 val x = dpPerMin * ((now - windowStart) / 60_000f)
-                Box(Modifier.offset(x = x - 1.dp).width(2.dp).fillMaxHeight().background(SokoulColors.Live.copy(alpha = 0.8f)))
+                Box(Modifier.offset(x = x - 1.dp).width(2.dp).fillMaxHeight().background(SokoulColors.Accent.copy(alpha = 0.85f)))
             }
         }
     }
