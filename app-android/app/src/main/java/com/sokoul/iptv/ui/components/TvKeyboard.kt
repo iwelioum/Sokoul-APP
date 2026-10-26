@@ -9,7 +9,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -131,7 +134,7 @@ fun TvKeyboard(
     var digits by remember { mutableStateOf(false) }
     fun input(k: KeyInput) = onQuery(applyKey(query, k))
     Column(
-        modifier.width(TvKeyboardWidth).onPreviewKeyEvent { e ->
+        modifier.background(SokoulColors.Surface, Radius.Panel).padding(10.dp).width(TvKeyboardWidth).onPreviewKeyEvent { e ->
             val k = remoteKeyInput(e) ?: return@onPreviewKeyEvent false
             input(k); true
         },
@@ -153,7 +156,7 @@ fun TvKeyboard(
                         onLongClick = if (k.action == KeyAction.DELETE) ({ input(KeyInput.Clear) }) else null,
                     ) { focused ->
                         when (k.action) {
-                            null -> Text(k.label, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = onChip(focused))
+                            null -> Text(k.label, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = onChip(focused))
                             KeyAction.TOGGLE -> Text(k.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = onChip(focused))
                             KeyAction.SPACE -> KeyIcon(Icons.Default.SpaceBar, k.label, focused)
                             KeyAction.DELETE -> KeyIcon(Icons.AutoMirrored.Filled.Backspace, k.label, focused)
@@ -168,8 +171,15 @@ fun TvKeyboard(
 
 @Composable
 private fun KeyButton(modifier: Modifier, onClick: () -> Unit, onLongClick: (() -> Unit)? = null, content: @Composable (Boolean) -> Unit) {
-    FocusSurface(onClick, modifier, style = FocusStyle.Chip, shape = Radius.Tiny, color = SokoulColors.SurfaceHigh, onLongClick = onLongClick) { focused ->
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content(focused) }
+    FocusSurface(onClick, modifier, style = FocusStyle.Key, shape = Radius.Tiny, color = SokoulColors.SurfaceHigher, onLongClick = onLongClick) { focused ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            // relief discret : filet clair en haut, ombre en bas (effacés au focus : la touche devient blanche)
+            if (!focused) {
+                Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(1.dp).background(SokoulColors.white(0.09f)))
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).background(SokoulColors.black(0.35f)))
+            }
+            content(focused)
+        }
     }
 }
 

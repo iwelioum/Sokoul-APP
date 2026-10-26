@@ -355,6 +355,7 @@ fun LandscapeCard(
     image: String? = null,
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    dense: Boolean = false,
 ) {
     Box(modifier.width(width)) {
         FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card) { focused ->
@@ -365,18 +366,18 @@ fun LandscapeCard(
                 if (img != null) NetImage(img, work.title, imgMod) { PosterFallback(work.title, work.genres) }
                 else NetImage(tmdbSized(work.poster, "w342"), work.title, imgMod, alignment = Alignment.TopCenter) { PosterFallback(work.title, work.genres) }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to SokoulColors.black(0.92f))))
-                Row(Modifier.align(Alignment.BottomStart).padding(10.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                Row(Modifier.align(Alignment.BottomStart).padding(if (dense) 6.dp else 10.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
                         if (work.logo != null) {
                             NetImage(
                                 tmdbSized(work.logo, "w300"), work.title,
-                                Modifier.heightIn(max = 40.dp).widthIn(max = width * 0.6f), ContentScale.Fit,
+                                Modifier.heightIn(max = if (dense) 24.dp else 40.dp).widthIn(max = width * 0.6f), ContentScale.Fit,
                                 alignment = Alignment.BottomStart,
                             )
                         } else {
-                            TitleArt(work.title, work.genres, 22.sp, Modifier.widthIn(max = width * 0.75f), maxLines = 2)
+                            TitleArt(work.title, work.genres, if (dense) 14.sp else 22.sp, Modifier.widthIn(max = width * 0.8f), maxLines = if (dense) 1 else 2)
                         }
-                        work.subtitle?.let {
+                        if (!dense) work.subtitle?.let {
                             Text(it, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.white(0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -391,6 +392,24 @@ fun LandscapeCard(
                 if (work.progress != null && work.progress > 0f) ProgressLine(work.progress, Modifier.align(Alignment.BottomStart))
             }
         }
+    }
+}
+
+/**
+ * Top 10 en paysage (recherche) : grand chiffre à empattements, la carte 16:9 posée juste après.
+ * Le titre est dans l'image (logo ou TitleArt) : rien n'est coupé, quelle que soit sa longueur.
+ */
+@Composable
+fun RankLandscapeCard(rank: Int, work: Work, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = 260.dp) {
+    Row(modifier, verticalAlignment = Alignment.Bottom) {
+        Text(
+            rank.toString(), Modifier.offset(y = 14.dp).padding(end = 20.dp), maxLines = 1, softWrap = false,
+            style = com.sokoul.iptv.ui.theme.Type.Display.copy(
+                fontSize = (width.value * 0.46f).sp, lineHeight = (width.value * 0.46f).sp, letterSpacing = (-4).sp,
+                brush = Brush.verticalGradient(listOf(Color.White, SokoulColors.white(0.12f))),
+            ),
+        )
+        LandscapeCard(work, onClick, width = width)
     }
 }
 

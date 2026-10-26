@@ -113,6 +113,8 @@ enum class FocusStyle(val scale: Float, val border: Dp, val accentBar: Boolean, 
     Tile(1.06f, Edge.Focus, false, 3.dp),
     Row(1f, 0.dp, true, 0.dp),
     Chip(1.05f, 0.dp, false, 0.dp),
+    // touches du clavier : fond blanc au focus, agrandissement net
+    Key(1.1f, 0.dp, false, 0.dp),
 }
 
 /**
@@ -131,7 +133,7 @@ fun FocusSurface(
     focusedColor: Color = when (style) {
         FocusStyle.Card, FocusStyle.Tile -> color
         FocusStyle.Row -> SokoulColors.SurfaceHigher
-        FocusStyle.Chip -> SokoulColors.Focus
+        FocusStyle.Chip, FocusStyle.Key -> SokoulColors.Focus
     },
     onFocus: (() -> Unit)? = null,
     content: @Composable (focused: Boolean) -> Unit,

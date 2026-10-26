@@ -21,6 +21,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +33,7 @@ import com.sokoul.iptv.ui.theme.LocalReducedMotion
 import com.sokoul.iptv.ui.theme.Motion
 import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -60,6 +63,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -86,7 +90,11 @@ import com.sokoul.iptv.ui.components.FormField
 import com.sokoul.iptv.ui.components.RowHeader
 import com.sokoul.iptv.ui.components.SokoulChip
 import com.sokoul.iptv.ui.components.TvKeyboard
-import com.sokoul.iptv.ui.components.WorkCard
+import com.sokoul.iptv.ui.components.KeyHint
+import com.sokoul.iptv.ui.components.KeyHints
+import com.sokoul.iptv.ui.components.LandscapeCard
+import com.sokoul.iptv.ui.components.RankLandscapeCard
+import com.sokoul.iptv.ui.components.focusOnTop
 import com.sokoul.iptv.ui.components.focusMemory
 import com.sokoul.iptv.ui.components.rememberFocusMemory
 import com.sokoul.iptv.ui.nav.PlayKind
@@ -230,9 +238,9 @@ fun SearchScreen(nav: NavHostController, origin: String = com.sokoul.iptv.data.r
         }
     }
 
-    val content: @Composable (Modifier) -> Unit = { m ->
+    val content: @Composable (Modifier, Boolean) -> Unit = { m, keyboardOpen ->
         SearchResults(
-            results, query, trendingInScope, kinds, vm.playlistId, nav, memory, m,
+            results, query, trendingInScope, kinds, vm.playlistId, nav, memory, m, keyboardOpen = keyboardOpen,
             recents = recents, onRecent = { vm.query.value = it }, onPicked = vm::picked,
         )
     }
@@ -251,7 +259,7 @@ fun SearchScreen(nav: NavHostController, origin: String = com.sokoul.iptv.data.r
                 Modifier.padding(horizontal = l.margin, vertical = if (l.isCompact) 12.dp else 24.dp).focusRequester(entry), imeAction = ImeAction.Search,
             )
             Box(Modifier.padding(bottom = Space.m)) { chips() }
-            content(Modifier.weight(1f))
+            content(Modifier.weight(1f), false)
         }
     }
 }
@@ -270,7 +278,7 @@ private fun TvSearch(
     kinds: Set<SearchKind>,
     onToggle: (SearchKind) -> Unit,
     entry: FocusRequester,
-    content: @Composable (Modifier) -> Unit,
+    content: @Composable (Modifier, Boolean) -> Unit,
 ) {
     val l = LocalLayout.current
     val reduced = LocalReducedMotion.current
@@ -304,21 +312,27 @@ private fun TvSearch(
                     Modifier.padding(top = 12.dp, bottom = 14.dp).height(40.dp),
                     horizontalArrangement = Arrangement.spacedBy(Space.s), verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    completions.take(3).forEach { s -> SokoulChip(s, { onQuery(s) }, icon = Icons.Default.Search) }
+                    // suggestions courtes : la ligne tient toujours dans la largeur (périmètre jamais coupé)
+                    completions.take(3).forEach { s -> SokoulChip(chipLabel(s), { onQuery(s) }, icon = Icons.Default.Search) }
                     if (completions.isNotEmpty()) Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(22.dp).background(SokoulColors.white(0.18f)))
                     SearchKind.entries.forEach { k -> SokoulChip(k.label, { onToggle(k) }, selected = k in kinds) }
                 }
                 TvKeyboard(query, onQuery, firstKey = entry)
-                Text(
-                    "Lecture : espace  ·  Retour rapide : effacer  ·  ▼ résultats", Modifier.padding(top = 10.dp, bottom = 6.dp),
-                    style = Type.Meta, color = SokoulColors.TextMuted,
-                )
             }
         }
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp)
-                .onFocusChanged { if (it.hasFocus) collapsed = true },
-        ) { content(Modifier.fillMaxSize()) }
+                .onFocusChanged { if (it.hasFocus) collapsed = true }
+                // ▲ en haut des résultats : le clavier revient (le champ seul ne prenait pas toujours le focus)
+                .focusProperties { exit = { dir -> if (dir == FocusDirection.Up) { collapsed = false; reopen++; FocusRequester.Cancel } else FocusRequester.Default } }
+                .focusGroup(),
+        ) { content(Modifier.fillMaxSize(), !collapsed) }
+        // légendes des touches, toujours au même endroit en bas de l'écran
+        KeyHints(
+            if (collapsed) listOf(KeyHint("OK", "Ouvrir"), KeyHint("▲", "Clavier"), KeyHint("Retour", "Quitter"))
+            else listOf(KeyHint("⏯", "Espace"), KeyHint("◀◀", "Effacer"), KeyHint("▼", "Résultats")),
+            Modifier.padding(top = 4.dp, bottom = 14.dp),
+        )
     }
 }
 
@@ -362,6 +376,7 @@ private fun SearchResults(
     recents: List<String> = emptyList(),
     onRecent: (String) -> Unit = {},
     onPicked: () -> Unit = {},
+    keyboardOpen: Boolean = false,
 ) {
     val l = LocalLayout.current
     val state = rememberLazyListState()
@@ -380,13 +395,7 @@ private fun SearchResults(
                     }
                 }
             }
-            if (trending.isNotEmpty()) item("hint") {
-                Text(
-                    "Tendances de la semaine",
-                    Modifier.padding(horizontal = l.margin).padding(bottom = 6.dp), color = SokoulColors.TextMuted, style = Type.Overline,
-                )
-            }
-            trending.forEach { s -> workRow(s.title, s.tagline, s.works, "t:${s.title}", memory, open) }
+            trending.forEach { s -> rankRow(s.title, s.tagline, s.works, "t:${s.title}", memory, open) }
             item { Spacer(Modifier.height(40.dp)) }
         }
         r.isEmpty -> EmptyState(
@@ -394,10 +403,22 @@ private fun SearchResults(
             if (kinds != SearchKind.ALL) "Vérifiez l'orthographe, ou cochez d'autres types ci-dessus." else "Vérifiez l'orthographe ou essayez le titre original.",
             modifier,
         )
-        else -> LazyColumn(modifier.fillMaxWidth(), state) {
+        else -> BoxWithConstraints(modifier.fillMaxWidth()) {
+          val best = remember(r) { bestResults(r.movies, r.series) }
+          val bestIds = remember(best) { best.mapTo(HashSet()) { it.uid } }
+          // clavier ouvert : un aperçu (une rangée) taillé pour la hauteur qui reste, jamais coupé
+          val peekHeight = maxHeight
+          LazyColumn(Modifier.fillMaxSize(), state) {
             fun count(n: Int) = "$n résultat${if (n > 1) "s" else ""}"
-            if (r.movies.isNotEmpty()) workRow("Films", count(r.movies.size), r.movies, "movies", memory, open)
-            if (r.series.isNotEmpty()) workRow("Séries", count(r.series.size), r.series, "series", memory, open)
+            val total = r.movies.size + r.series.size
+            if (best.isNotEmpty()) {
+                item("best") { BestRow(best, total, if (keyboardOpen) peekHeight else null, memory, open) }
+            }
+            if (!keyboardOpen || best.isEmpty()) {
+            val movies = r.movies.filterNot { it.uid in bestIds }
+            val series = r.series.filterNot { it.uid in bestIds }
+            if (movies.isNotEmpty()) landscapeRow("Films", null, movies, "movies", memory, open)
+            if (series.isNotEmpty()) landscapeRow("Séries", null, series, "series", memory, open)
             if (r.channels.isNotEmpty()) item("channels") {
                 Column(Modifier.padding(bottom = l.rowSpacing)) {
                     RowHeader("Chaînes", count(r.channels.size))
@@ -424,16 +445,80 @@ private fun SearchResults(
                     }
                 }
             }
+            }
             item { Spacer(Modifier.height(40.dp)) }
+          }
         }
     }
 }
 
-private fun LazyListScope.workRow(title: String, tagline: String?, works: List<Work>, key: String, memory: FocusMemory, open: (Work) -> Unit) {
+/** Suggestion en pastille : sans balises du fournisseur ([SUB], année), 22 caractères au plus. */
+internal fun chipLabel(s: String): String {
+    val clean = s.replace(Regex("""\s*[\[(][^\])]*[\])]"""), "").replace(Regex("""\s+-\s+\d{4}\s*$"""), "").trim().ifEmpty { s.trim() }
+    return if (clean.length <= 22) clean else clean.take(21).trimEnd() + "…"
+}
+
+/** Meilleurs résultats : films et séries alternés (les plus pertinents de chaque liste d'abord). */
+internal fun bestResults(movies: List<Work>, series: List<Work>, n: Int = 12): List<Work> {
+    val out = ArrayList<Work>(n)
+    var i = 0
+    while (out.size < n && (i < movies.size || i < series.size)) {
+        movies.getOrNull(i)?.let(out::add)
+        if (out.size < n) series.getOrNull(i)?.let(out::add)
+        i++
+    }
+    return out
+}
+
+/**
+ * Meilleurs résultats. Clavier ouvert ([peekHeight] connu) : un aperçu taillé pour la hauteur qui reste ;
+ * clavier replié : grandes cartes paysage. Une seule et même rangée dans les deux cas (mêmes clés) :
+ * le focus ne se perd pas quand le clavier se replie.
+ */
+@Composable
+private fun BestRow(works: List<Work>, total: Int, peekHeight: Dp?, memory: FocusMemory, open: (Work) -> Unit) {
+    val l = LocalLayout.current
+    val label = 18.dp
+    val pad = if (peekHeight != null) 10.dp else 16.dp
+    val cardH = peekHeight?.let { (it - label - pad * 2).coerceAtLeast(48.dp) }
+    Column(Modifier.padding(bottom = if (peekHeight == null) l.rowSpacing else 0.dp)) {
+        Text(
+            "MEILLEURS RÉSULTATS · $total", Modifier.padding(horizontal = l.margin).height(label),
+            style = Type.Kicker, maxLines = 1,
+        )
+        if (peekHeight == null) Text("Les plus proches de votre saisie", Modifier.padding(horizontal = l.margin), style = Type.Section, maxLines = 1)
+        LazyRow(
+            contentPadding = PaddingValues(start = l.margin, end = l.margin, top = pad, bottom = if (peekHeight != null) pad else 26.dp),
+            horizontalArrangement = Arrangement.spacedBy(l.gutter),
+        ) {
+            items(works, key = { "best|${it.uid}" }) { w ->
+                Box(Modifier.focusOnTop()) {
+                    LandscapeCard(
+                        w, { open(w) }, Modifier.focusMemory(memory, "best|${w.uid}"),
+                        width = cardH?.let { it * 16f / 9f } ?: 260.dp, dense = cardH != null && cardH < 120.dp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Rangée de cartes paysage, assez larges (260 dp) pour que le titre tienne dans l'image. */
+private fun LazyListScope.landscapeRow(title: String, tagline: String?, works: List<Work>, key: String, memory: FocusMemory, open: (Work) -> Unit) {
     item(key) {
         Column(Modifier.padding(bottom = LocalLayout.current.rowSpacing)) {
             RowHeader(title, tagline)
-            CardRow(works, { it.uid }) { _, w -> WorkCard(w, { open(w) }, Modifier.focusMemory(memory, "$key|${w.uid}")) }
+            CardRow(works, { it.uid }) { _, w -> LandscapeCard(w, { open(w) }, Modifier.focusMemory(memory, "$key|${w.uid}"), width = 260.dp) }
+        }
+    }
+}
+
+/** Top 10 de la semaine : grand rang à empattements et carte paysage. */
+private fun LazyListScope.rankRow(title: String, tagline: String?, works: List<Work>, key: String, memory: FocusMemory, open: (Work) -> Unit) {
+    item(key) {
+        Column(Modifier.padding(bottom = LocalLayout.current.rowSpacing)) {
+            RowHeader(title, tagline, kicker = "TENDANCE")
+            CardRow(works.take(10), { it.uid }) { i, w -> RankLandscapeCard(i + 1, w, { open(w) }, Modifier.focusMemory(memory, "$key|${w.uid}"), width = 240.dp) }
         }
     }
 }
