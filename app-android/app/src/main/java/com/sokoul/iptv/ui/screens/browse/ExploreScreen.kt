@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Text
@@ -128,6 +129,15 @@ class ExploreViewModel @Inject constructor(
 
     fun start(t: ContentType) { if (type.value == null) type.value = t }
     fun set(f: ExploreFilter) { ui.value = ui.value.copy(loading = true); filter.value = f }
+
+    /** « Surprends-moi » : null si aucun titre ne convient. */
+    fun surprise(onResult: (Work?) -> Unit) {
+        val t = type.value ?: return
+        viewModelScope.launch {
+            val p = playlists.activeNow() ?: return@launch onResult(null)
+            onResult(runCatching { repo.surprise(p.id, t, filter.value) }.getOrNull())
+        }
+    }
 }
 
 private val Decades = listOf(2020, 2010, 2000, 1990, 1980, 1970, 1960)
@@ -151,6 +161,9 @@ fun ExploreScreen(nav: NavHostController, typeName: String) {
     var dialog by remember { mutableStateOf<String?>(null) }
     val movies = type == ContentType.MOVIE
     val genres = TmdbGenres.of(type)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // heures encore atteignables avec au moins 1 h de film
+    val finishHours = remember { listOf(22, 23, 24).filter { com.sokoul.iptv.data.repo.ExploreQuery.minutesUntil(it, System.currentTimeMillis()) >= 60 } }
 
     fun update(nf: ExploreFilter) { vm.set(nf); scope.launch { grid.scrollToItem(0) } }
 
@@ -177,10 +190,16 @@ fun ExploreScreen(nav: NavHostController, typeName: String) {
                     )
                     // filtres : une pastille par critère, la valeur choisie s'y affiche
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.s), contentPadding = PaddingValues(vertical = Space.xs)) {
+                        item("surprise") {
+                            SokoulChip("Surprends-moi", {
+                                vm.surprise { w -> if (w != null) nav.openWork(w) else android.widget.Toast.makeText(context, "Aucun titre bien noté et pas encore vu avec ces filtres", android.widget.Toast.LENGTH_SHORT).show() }
+                            }, Modifier.focusMemory(memory, "f:surprise"), icon = Icons.Default.Casino)
+                        }
                         item("genre") { FilterChip("Genre", f.genre?.let { genres[it] }, memory, "f:genre") { dialog = "genre" } }
                         item("decade") { FilterChip("Décennie", f.decade?.let(::decadeLabel), memory, "f:decade") { dialog = "decade" } }
                         item("rating") { FilterChip("Note", f.minRating?.let(::rating), memory, "f:rating") { dialog = "rating" } }
                         if (movies) item("duration") { FilterChip("Durée", f.duration?.label, memory, "f:duration") { dialog = "duration" } }
+                        if (movies && (f.finishBy != null || finishHours.isNotEmpty())) item("finish") { FilterChip("Fini avant", f.finishBy?.let(::hourLabel), memory, "f:finish") { dialog = "finish" } }
                         item("lang") { FilterChip("Langue", OriginalLanguage.entries.firstOrNull { it.code == f.language }?.label, memory, "f:lang") { dialog = "lang" } }
                         if (movies) item("uhd") {
                             SokoulChip("4K", { update(f.copy(uhd = !f.uhd)) }, Modifier.focusMemory(memory, "f:uhd"), selected = f.uhd)
@@ -227,9 +246,12 @@ fun ExploreScreen(nav: NavHostController, typeName: String) {
         "decade" -> Choice("Décennie", Decades.map { decadeLabel(it) to it }, f.decade, { dialog = null }) { update(f.copy(decade = it)) }
         "rating" -> Choice("Note TMDB", Ratings.map { rating(it) to it }, f.minRating, { dialog = null }) { update(f.copy(minRating = it)) }
         "duration" -> Choice("Durée", DurationBand.entries.map { it.label to it }, f.duration, { dialog = null }) { update(f.copy(duration = it)) }
+        "finish" -> Choice("Fini avant", finishHours.map { hourLabel(it) to it }, f.finishBy, { dialog = null }) { update(f.copy(finishBy = it)) }
         "lang" -> Choice("Langue originale", OriginalLanguage.entries.map { it.label to it.code }, f.language, { dialog = null }) { update(f.copy(language = it)) }
     }
 }
+
+internal fun hourLabel(h: Int) = if (h >= 24) "minuit" else "${h} h"
 
 internal fun decadeLabel(d: Int) = if (d >= 2000) "Années $d" else "Années ${d % 100}"
 

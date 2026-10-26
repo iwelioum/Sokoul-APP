@@ -79,14 +79,25 @@ fun NetImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     alignment: Alignment = Alignment.Center,
+    /** Taille affichée connue (cartes) : image décodée directement à cette taille, sans attendre la mise en page. */
+    size: androidx.compose.ui.unit.DpSize? = null,
     fallback: @Composable () -> Unit = {},
 ) {
     if (url.isNullOrBlank()) {
         Box(modifier, contentAlignment = alignment) { fallback() }
         return
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val model: Any = if (size == null) url else remember(url, size) {
+        with(density) {
+            coil.request.ImageRequest.Builder(context).data(url)
+                .size(size.width.roundToPx().coerceAtLeast(1), size.height.roundToPx().coerceAtLeast(1))
+                .allowHardware(true).build()
+        }
+    }
     SubcomposeAsyncImage(
-        model = url,
+        model = model,
         contentDescription = contentDescription,
         modifier = modifier,
         contentScale = contentScale,

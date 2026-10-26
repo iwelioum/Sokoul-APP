@@ -265,6 +265,7 @@ private fun heroMeta(w: Work, compact: Boolean): List<String> =
         w.year?.toString(),
         w.genres.take(2).joinToString(", ").ifEmpty { null },
         if (w.type == ContentType.SERIES) w.seasons?.let { if (it > 1) "$it saisons" else "1 saison" } else formatRuntime(w.runtimeMin),
+        w.runtimeMin?.takeIf { w.type != ContentType.SERIES && it > 0 }?.let { com.sokoul.iptv.ui.util.endsAt(it) },
     )
 
 /** Classification française : « 12 » → « -12 », « TP » → « Tous publics ». */

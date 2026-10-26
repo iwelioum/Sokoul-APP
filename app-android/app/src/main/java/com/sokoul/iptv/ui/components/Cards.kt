@@ -246,7 +246,7 @@ fun Work.revealLine(): String = listOfNotNull(
     rating?.takeIf { it >= 1.0 }?.let { "★ " + String.format(java.util.Locale.FRANCE, "%.1f", it) },
     year?.toString(),
     if (type == ContentType.SERIES) seasons?.let { if (it > 1) "$it saisons" else "1 saison" }
-    else runtimeMin?.takeIf { it > 0 }?.let { if (it >= 60) "${it / 60} h ${"%02d".format(it % 60)}" else "$it min" },
+    else formatRuntime(runtimeMin),
 ).joinToString(" · ")
 
 /**
@@ -277,7 +277,10 @@ fun PosterTile(
             Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
                 val zoom = rememberBreathing(focused)
                 val img = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }
-                NetImage(image, title, if (dimmed) img.offCatalogLook() else img) { PosterFallback(title) }
+                NetImage(
+                    image, title, if (dimmed) img.offCatalogLook() else img,
+                    size = if (width.isSpecified) androidx.compose.ui.unit.DpSize(width, width * 1.5f) else null,
+                ) { PosterFallback(title) }
                 if (platform != null) PlatformBadge(platform, Modifier.align(Alignment.TopStart).padding(6.dp))
                 if (corner != null) CornerBadge(corner, Modifier.align(Alignment.TopEnd).padding(6.dp))
                 if (reveal != null && focused && !l.isTouch) RevealOverlay(reveal, Modifier.align(Alignment.BottomStart))
@@ -363,7 +366,7 @@ fun LandscapeCard(
                 val zoom = rememberBreathing(focused, 1.04f)
                 val imgMod = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }
                 val img = image ?: tmdbSized(work.backdrop, "w780")
-                if (img != null) NetImage(img, work.title, imgMod) { PosterFallback(work.title, work.genres) }
+                if (img != null) NetImage(img, work.title, imgMod, size = androidx.compose.ui.unit.DpSize(width, width * 9f / 16f)) { PosterFallback(work.title, work.genres) }
                 else NetImage(tmdbSized(work.poster, "w342"), work.title, imgMod, alignment = Alignment.TopCenter) { PosterFallback(work.title, work.genres) }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to SokoulColors.black(0.92f))))
                 Row(Modifier.align(Alignment.BottomStart).padding(if (dense) 6.dp else 10.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {

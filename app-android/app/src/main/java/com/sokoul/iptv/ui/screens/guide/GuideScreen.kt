@@ -103,6 +103,7 @@ import com.sokoul.iptv.work.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -140,6 +141,8 @@ import com.sokoul.iptv.ui.theme.Edge
 
 private const val HALF_HOUR = GuideTime.HALF_HOUR
 private const val LOAD_SPAN = 12 * 3600_000L
+/** Délai avant de mettre à jour l'aperçu du Guide (le temps de relâcher la flèche). */
+private const val PREVIEW_SETTLE_MS = 140L
 
 private data class Loaded(val from: Long, val to: Long, val programs: List<ProgramEntity>)
 
@@ -270,8 +273,11 @@ fun GuideScreen(nav: NavHostController) {
     val side = if (layout.isCompact) 16.dp else 48.dp
     Column(Modifier.fillMaxSize()) {
         // --- aperçu : programme focalisé ---
-        val currentChannel = list?.getOrNull(row)
-        val currentProgram = currentChannel?.let { c -> programs[c.id]?.firstOrNull { focusTime >= it.start && focusTime < it.end } }
+        // mis à jour 140 ms après le dernier déplacement : en défilement rapide, la grille reste fluide
+        var preview by remember { mutableStateOf(row to focusTime) }
+        LaunchedEffect(row, focusTime) { if (preview != row to focusTime) { delay(PREVIEW_SETTLE_MS); preview = row to focusTime } }
+        val currentChannel = list?.getOrNull(preview.first)
+        val currentProgram = currentChannel?.let { c -> programs[c.id]?.firstOrNull { preview.second >= it.start && preview.second < it.end } }
         GuidePreview(
             currentChannel, currentProgram, now, windowStart,
             catchup = currentChannel?.let { vm.supportsCatchup(it) } == true,

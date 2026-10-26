@@ -159,6 +159,8 @@ data class ExploreFilter(
     val micro: MicroGenre? = null,
     /** Rangée du catalogue éditorial ([RowCatalog]). */
     val rule: TitleRule? = null,
+    /** Films finis avant cette heure si on les lance maintenant (22, 23 ; 24 = minuit). */
+    val finishBy: Int? = null,
 ) {
     val isEmpty get() = this == ExploreFilter()
 }
@@ -168,7 +170,7 @@ data class ExploreFilter(
  * Les œuvres sans fiche n'apparaissent pas (l'indexation les complète en arrière-plan).
  */
 object ExploreQuery {
-    fun build(pid: Long, type: ContentType, f: ExploreFilter, sort: GridSort, limit: Int): SimpleSQLiteQuery {
+    fun build(pid: Long, type: ContentType, f: ExploreFilter, sort: GridSort, limit: Int, nowMs: Long = System.currentTimeMillis()): SimpleSQLiteQuery {
         val args = ArrayList<Any>()
         val table = if (type == ContentType.SERIES) "series" else "movies"
         val where = ArrayList<String>()
@@ -183,6 +185,7 @@ object ExploreQuery {
             where += "t.runtimeMin IS NOT NULL"
         }
         f.language?.let { where += "t.originalLanguage = ?"; args += it }
+        f.finishBy?.let { h -> where += "t.runtimeMin IS NOT NULL AND t.runtimeMin <= ?"; args += minutesUntil(h, nowMs) }
         // 4K : qualité annoncée par le fournisseur ou nom d'une des versions (films seulement)
         // filtre sur la clé de l'œuvre (appliqué après la jointure au catalogue)
         val keyWhere = ArrayList<String>()
@@ -234,6 +237,15 @@ object ExploreQuery {
         if (sort == GridSort.DEFAULT) all.addAll(kwArgs)
         all += limit
         return SimpleSQLiteQuery(sql, all.toTypedArray())
+    }
+
+    /** Minutes d'ici [hour] h aujourd'hui (24 = minuit), 0 si l'heure est passée. */
+    fun minutesUntil(hour: Int, nowMs: Long): Int {
+        val c = java.util.Calendar.getInstance().apply {
+            timeInMillis = nowMs; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val target = c.timeInMillis + hour * 3_600_000L
+        return ((target - nowMs) / 60_000).toInt().coerceAtLeast(0)
     }
 
     private fun rule(r: TitleRule, where: MutableList<String>, args: MutableList<Any>) {

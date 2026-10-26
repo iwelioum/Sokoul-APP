@@ -218,6 +218,23 @@ class BrowseRepository @Inject constructor(
     suspend fun explore(pid: Long, type: ContentType, filter: ExploreFilter, sort: GridSort = GridSort.DEFAULT, limit: Int = GRID_LIMIT): List<Work> =
         withContext(Dispatchers.Default) { ctx(pid, type).explore(filter, sort, limit) }
 
+    /**
+     * « Surprends-moi » : un titre au hasard parmi les mieux notés (7 et plus) qui respectent les filtres,
+     * jamais vu (film terminé) ni commencé (série).
+     */
+    suspend fun surprise(pid: Long, type: ContentType, filter: ExploreFilter): Work? = withContext(Dispatchers.Default) {
+        val f = filter.copy(minRating = maxOf(filter.minRating ?: 0.0, 7.0))
+        val pool = ctx(pid, type).explore(f, GridSort.DEFAULT, 120)
+        val seen = if (type == ContentType.MOVIE) seenMovieKeys(pid) else startedSeriesKeys(pid)
+        pool.filter { it.key !in seen }.randomOrNull()
+    }
+
+    private suspend fun startedSeriesKeys(pid: Long): Set<String> {
+        val ids = db.browse().lastWatched(pid, 300).filter { it.type == ContentType.SERIES }.map { it.parentId ?: it.itemId }.distinct()
+        if (ids.isEmpty()) return emptySet()
+        return ids.chunked(500).flatMap { db.browse().seriesByIds(pid, it) }.mapTo(HashSet()) { it.toWork().key }
+    }
+
     /** Ambiances : chaque requête parcourt la table des fiches (~1 s sur la box) ; deux à la fois laissent des cœurs à l'interface. */
     private val moodGate = Semaphore(2)
 

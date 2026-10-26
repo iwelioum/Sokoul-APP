@@ -434,7 +434,7 @@ fun PauseScreen(ui: PlayerUi, position: Long, duration: Long) {
             }
             if (duration > 0) {
                 Text(
-                    "${formatDuration(position)} / ${formatDuration(duration)}  ·  reste ${formatDuration((duration - position).coerceAtLeast(0))}",
+                    "${formatDuration(position)} / ${formatDuration(duration)}  ·  reste ${formatDuration((duration - position).coerceAtLeast(0))}  ·  ${com.sokoul.iptv.ui.util.endsAt((((duration - position).coerceAtLeast(0) + 59_999) / 60_000).toInt()).replaceFirstChar { it.lowercase() }}",
                     Modifier.padding(top = 16.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextMuted,
                 )
             }

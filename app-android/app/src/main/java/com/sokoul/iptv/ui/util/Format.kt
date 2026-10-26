@@ -71,3 +71,9 @@ fun rememberNow(periodMs: Long = 30_000): Long {
     }
     return now
 }
+
+/** « Finit à 23h28 » : heure de fin si l'on lance maintenant [minutes] de programme. */
+fun endsAt(minutes: Int, nowMs: Long = System.currentTimeMillis()): String {
+    val c = Calendar.getInstance().apply { timeInMillis = nowMs + minutes * 60_000L }
+    return "Finit à %02dh%02d".format(c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
+}
