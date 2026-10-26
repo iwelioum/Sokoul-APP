@@ -15,6 +15,9 @@ data class CloudItem(
     val release: Release,
     val sizeBytes: Long,
     val addedAt: Long,
+    /** Image TMDB du film ou de la série, si le titre est reconnu. */
+    val backdrop: String? = null,
+    val poster: String? = null,
 )
 
 /**
@@ -22,7 +25,11 @@ data class CloudItem(
  * sans doublon (un même fichier en torrent et en lien), du plus récent au plus ancien. Cache 5 min.
  */
 @Singleton
-class DebridCloud @Inject constructor(private val rd: RealDebridClient) {
+class DebridCloud @Inject constructor(
+    private val rd: RealDebridClient,
+    private val tmdb: com.sokoul.iptv.data.net.TmdbClient,
+    private val settings: com.sokoul.iptv.data.SettingsStore,
+) {
     @Volatile private var cache: Pair<Long, List<CloudItem>>? = null
     @Volatile private var account: Pair<Long, RdUser?>? = null
 
@@ -33,9 +40,25 @@ class DebridCloud @Inject constructor(private val rd: RealDebridClient) {
             .map { t -> CloudItem("t:${t.id}", cleanTitle(t.filename), year(t.filename), ReleaseName.parse(t.filename), t.bytes, t.addedAt) }
         val downloads = runCatching { rd.downloads(50) }.getOrDefault(emptyList()).filter { ReleaseName.isVideo(it.filename) }
             .map { d -> CloudItem("d:${d.id}", cleanTitle(d.filename), year(d.filename), ReleaseName.parse(d.filename), d.bytes, d.generatedAt) }
-        val list = merge(torrents, downloads)
+        val list = withArt(merge(torrents, downloads))
         cache = System.currentTimeMillis() to list
         return list
+    }
+
+    /** Images TMDB : une recherche par titre (au plus 15, mises en cache par le client TMDB). */
+    private suspend fun withArt(list: List<CloudItem>): List<CloudItem> {
+        val key = runCatching { settings.current().tmdbApiKey }.getOrDefault("")
+        if (key.isBlank()) return list
+        val art = HashMap<String, com.sokoul.iptv.data.net.TmdbItem?>()
+        for (i in list) {
+            val k = (if (i.release.season != null) "tv|" else "movie|") + i.title.lowercase()
+            if (k in art || art.size >= 15) continue
+            art[k] = runCatching { tmdb.findByName(key, k.substringBefore('|'), i.title) }.getOrNull()
+        }
+        return list.map { i ->
+            val t = art[(if (i.release.season != null) "tv|" else "movie|") + i.title.lowercase()] ?: return@map i
+            i.copy(backdrop = t.backdrop, poster = t.poster)
+        }
     }
 
     /** Jours de premium restants (null = inconnu). Vérifié au plus une fois par heure. */
@@ -63,18 +86,23 @@ class DebridCloud @Inject constructor(private val rd: RealDebridClient) {
         const val TTL_MS = 5 * 60_000L
         const val KEY_PREFIX = "rdc:"
 
-        fun merge(torrents: List<CloudItem>, downloads: List<CloudItem>): List<CloudItem> {
-            val seen = HashSet<String>()
-            return (torrents + downloads).sortedByDescending { it.addedAt }
-                .filter { seen.add(it.title.lowercase() + "|" + it.year + "|" + it.release.season + "x" + it.release.episode) }
-        }
+        /** Un même film ou épisode en plusieurs fichiers : la meilleure définition reste, placée à la date du plus récent. */
+        fun merge(torrents: List<CloudItem>, downloads: List<CloudItem>): List<CloudItem> =
+            (torrents + downloads).groupBy { sameKey(it) }.values.map { g ->
+                val best = g.minWith(compareBy<CloudItem> { it.release.quality?.ordinal ?: Int.MAX_VALUE }.thenByDescending { it.addedAt })
+                best.copy(addedAt = g.maxOf { it.addedAt })
+            }.sortedByDescending { it.addedAt }
+
+        /** Titre sans casse ni ponctuation (« Interview With The Vampire » = « Interview with the Vampire »). */
+        private fun sameKey(i: CloudItem) =
+            i.title.lowercase().filter { it.isLetterOrDigit() } + "|" + i.year + "|" + i.release.season + "x" + i.release.episode
 
         /** « The.Batman.2022.2160p.WEB-DL… .mkv » → « The Batman ». */
         fun cleanTitle(name: String): String {
             val base = name.substringAfterLast('/').replace(Regex("(?i)\\.(mkv|mp4|avi|m4v|ts)$"), "")
             val cut = Regex("(?i)[ ._(\\[-]((19|20)\\d{2})[ ._)\\]-]|[ ._-]S\\d{1,2}E\\d{1,3}|[ ._-]S\\d{1,2}[ ._-]|[ ._-](2160p|1080p|720p|480p|4k|uhd|multi|french|truefrench|vostfr|webrip|web-dl|bluray|hdtv)\\b")
                 .find(base)?.range?.first ?: base.length
-            return base.substring(0, cut).replace(Regex("[._]+"), " ").trim().ifEmpty { base }
+            return base.substring(0, cut).replace(Regex("[._]+"), " ").trim().trimEnd('-', '–', ':', ' ').ifEmpty { base }
         }
 
         fun year(name: String): Int? = Regex("[ ._(\\[-]((19|20)\\d{2})([ ._)\\]-]|$)").find(name)?.groupValues?.get(1)?.toIntOrNull()
@@ -84,7 +112,7 @@ class DebridCloud @Inject constructor(private val rd: RealDebridClient) {
             type = if (i.release.season != null) ContentType.SERIES else ContentType.MOVIE,
             id = KEY_PREFIX + i.id, key = KEY_PREFIX + i.id,
             title = i.title + (i.release.season?.let { s -> " · S%02dE%02d".format(s, i.release.episode ?: 0) } ?: ""),
-            year = i.year, poster = null,
+            year = i.year, poster = i.poster, backdrop = i.backdrop,
             quality = when (i.release.quality) { VideoQuality.UHD_4K -> "4K"; VideoQuality.FHD_1080 -> "FHD"; VideoQuality.HD_720 -> "HD"; else -> null },
             subtitle = listOfNotNull(
                 i.release.quality?.let { com.sokoul.iptv.ui.components.SourceLabels.quality(it) },

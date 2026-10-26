@@ -22,6 +22,7 @@ class WorkActions @Inject constructor(
     suspend fun playRoute(pid: Long?, w: Work): Any {
         if (w.key.startsWith(com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX))
             return PlayerRoute(PlayKind.CLOUD, pid ?: 0, w.key.removePrefix(com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX), title = w.title)
+        com.sokoul.iptv.ui.screens.browse.debridResumeRoute(pid ?: 0, w)?.let { return it }
         if (pid == null) return detailRoute(w)
         w.resume?.let { return resumeRoute(pid, it) }
         return when (w.type) {
@@ -55,4 +56,11 @@ class WorkActions @Inject constructor(
         } ?: listOf(w.id)
         vod.toggleFavorite(pid, w.type, ids, w.id)
     }
+}
+
+/** Carte « Reprendre » d'un titre lu uniquement via Real-Debrid (« tmdb:m:603 ») : route du lecteur, sinon null. */
+fun debridResumeRoute(pid: Long, w: Work): PlayerRoute? {
+    if (!w.key.startsWith("tmdb:")) return null
+    val q = com.sokoul.iptv.data.debrid.DebridQuery.decode(w.key.removePrefix("tmdb:")) ?: return null
+    return PlayerRoute(PlayKind.DEBRID, pid, q.encode(), query = q.encode(), title = w.title)
 }

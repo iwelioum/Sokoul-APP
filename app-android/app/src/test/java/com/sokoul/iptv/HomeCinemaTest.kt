@@ -25,11 +25,26 @@ class HomeCinemaTest {
     @Test fun frequenceDuFilm() {
         assertEquals(4, FrameRateMatcher.pick(modes, now, 23.976f)) // 23,976 ≠ 24
         assertEquals(3, FrameRateMatcher.pick(modes, now, 24f))
+        assertEquals(4, FrameRateMatcher.pick(modes, now, 23.98f)) // fréquence arrondie par le fichier
         assertEquals(2, FrameRateMatcher.pick(modes, now, 25f)) // 50 Hz, même définition (pas le 1080p)
         assertNull(FrameRateMatcher.pick(modes, now, 30f)) // 60 Hz convient déjà
         assertNull(FrameRateMatcher.pick(modes, now, -1f)) // fréquence inconnue
         assertEquals(6, FrameRateMatcher.pick(modes, now, 29.97f))
         assertNull(FrameRateMatcher.pick(listOf(now), now, 24f)) // pas d'autre mode : rien à changer
+        // 25 i/s : 50 Hz plutôt que 25 Hz quand les deux existent
+        assertEquals(2, FrameRateMatcher.pick(modes + Mode(7, 3840, 2160, 25f), now, 25f))
+        assertEquals(7, FrameRateMatcher.pick(listOf(now, Mode(7, 3840, 2160, 25f)), now, 25f))
+    }
+
+    @Test fun frequenceMesuree() {
+        // horodatages MKV arrondis à la milliseconde
+        fun pts(fps: Double, n: Int = 120) = (0 until n).map { i -> (i * 1000.0 / fps).toLong() * 1000 }
+        assertEquals(23.976f, FrameRateMatcher.estimate(pts(24000.0 / 1001))!!, 0.001f)
+        assertEquals(24f, FrameRateMatcher.estimate(pts(24.0))!!, 0.001f)
+        assertEquals(25f, FrameRateMatcher.estimate(pts(25.0))!!, 0.001f)
+        assertEquals(59.94f, FrameRateMatcher.estimate(pts(60000.0 / 1001))!!, 0.001f)
+        assertNull(FrameRateMatcher.estimate(pts(24.0).reversed())) // pas dans l'ordre
+        assertNull(FrameRateMatcher.estimate(pts(37.0))) // aucune fréquence standard
     }
 
     @Test fun introApprise() {

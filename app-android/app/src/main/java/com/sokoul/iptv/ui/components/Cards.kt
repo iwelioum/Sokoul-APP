@@ -366,8 +366,9 @@ fun LandscapeCard(
                 val zoom = rememberBreathing(focused, 1.04f)
                 val imgMod = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }
                 val img = image ?: tmdbSized(work.backdrop, "w780")
-                if (img != null) NetImage(img, work.title, imgMod, size = androidx.compose.ui.unit.DpSize(width, width * 9f / 16f)) { PosterFallback(work.title, work.genres) }
-                else NetImage(tmdbSized(work.poster, "w342"), work.title, imgMod, alignment = Alignment.TopCenter) { PosterFallback(work.title, work.genres) }
+                if (img != null) NetImage(img, work.title, imgMod, size = androidx.compose.ui.unit.DpSize(width, width * 9f / 16f)) { PosterFallback("") }
+                // sans image : simple dégradé, le titre est déjà écrit en bas de la carte
+                else NetImage(tmdbSized(work.poster, "w342"), work.title, imgMod, alignment = Alignment.TopCenter) { PosterFallback("") }
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to SokoulColors.black(0.92f))))
                 Row(Modifier.align(Alignment.BottomStart).padding(if (dense) 6.dp else 10.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {

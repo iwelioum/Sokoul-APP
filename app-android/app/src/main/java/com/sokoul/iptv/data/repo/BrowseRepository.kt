@@ -4,6 +4,7 @@ import com.sokoul.iptv.data.SettingsStore
 import com.sokoul.iptv.data.db.AppDatabase
 import com.sokoul.iptv.data.db.CategoryWithPrefs
 import com.sokoul.iptv.data.db.ContentType
+import com.sokoul.iptv.data.debrid.DebridCloud
 import com.sokoul.iptv.data.db.MovieEntity
 import com.sokoul.iptv.data.db.PlaylistEntity
 import com.sokoul.iptv.data.db.SeriesEntity
@@ -1011,6 +1012,11 @@ class BrowseRepository @Inject constructor(
             val fraction = if (p.durationMs > 0) (p.positionMs.toFloat() / p.durationMs).coerceIn(0f, 1f) else null
             val left = if (p.durationMs > 0) ((p.durationMs - p.positionMs) / 60_000).coerceAtLeast(1) else null
             val remaining = left?.let { if (it >= 60) "Reste ${it / 60} h ${(it % 60).toString().padStart(2, '0')}" else "Reste $it min" }
+            // lu via Real-Debrid (fichier du compte, titre hors abonnement) : la carte relance directement le lecteur
+            if (p.itemId.startsWith(DebridCloud.KEY_PREFIX) || isDebridOnly(p.itemId)) return@mapNotNull Work(
+                p.type, p.itemId, p.itemId, p.title, null, p.image, progress = fraction, resume = p,
+                subtitle = listOfNotNull(EpisodeMerge.caption(p.subtitle), remaining).joinToString(" · ").ifEmpty { null },
+            )
             when (p.type) {
                 ContentType.MOVIE -> movies[p.itemId]?.toWork()?.let { it.copy(backdrop = it.backdrop ?: p.image, progress = fraction, resume = p, subtitle = remaining) }
                     ?: Work(ContentType.MOVIE, p.itemId, "id:${p.itemId}", p.title, null, p.image, progress = fraction, resume = p, subtitle = remaining)
@@ -1194,3 +1200,7 @@ class BrowseRepository @Inject constructor(
         }
     }
 }
+
+/** Reprise d'un titre lu uniquement via Real-Debrid : « tmdb:m:603 », « tmdb:s:1399:1:1 ». */
+internal fun isDebridOnly(itemId: String) =
+    itemId.startsWith("tmdb:") && com.sokoul.iptv.data.debrid.DebridQuery.decode(itemId.removePrefix("tmdb:")) != null

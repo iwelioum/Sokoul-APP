@@ -195,7 +195,7 @@ class PlayerViewModel @Inject constructor(
             _player.value = sp
             watchEnd(sp)
             watchStutter(sp)
-            playlist = playlists.get(route.playlistId) ?: if (route.kind == PlayKind.CLOUD) playlists.activeNow() else null
+            playlist = playlists.get(route.playlistId) ?: if (route.kind == PlayKind.CLOUD || route.kind == PlayKind.DEBRID) playlists.activeNow() else null
             startSafely()
         }
     }
@@ -329,8 +329,12 @@ class PlayerViewModel @Inject constructor(
                 val resume = if (route.fromStart) 0 else LibraryRepository.resumeFrom(library.progress(p.id, ContentType.MOVIE, itemId))
                 _ui.update { it.copy(title = title, subtitle = "Mes fichiers Real-Debrid", isLive = false, resumedFromMs = resume, seriesBackdrop = null, overview = null) }
                 val url = cloud.playable(route.id)
+                // image TMDB trouvée pour la rangée (liste en cache) : reprise illustrée sur l'accueil
+                val art = runCatching { cloud.items().firstOrNull { it.id == route.id } }.getOrNull()
+                    ?.let { i -> (i.backdrop ?: i.poster)?.let { com.sokoul.iptv.data.repo.tmdbSized(it, "w780") } }
+                if (art != null) _ui.update { it.copy(image = art) }
                 play(ResolvedStream(listOf(url), settingsStore.current().userAgent, null, isLive = false, provider = false), title, resume)
-                trackProgress { pos, dur -> library.saveProgress(p.id, ContentType.MOVIE, itemId, null, title, "Real-Debrid", null, pos, dur) }
+                trackProgress { pos, dur -> library.saveProgress(p.id, ContentType.MOVIE, itemId, null, title, "Real-Debrid", art, pos, dur) }
             }
             PlayKind.DEBRID -> {
                 // titre absent de l'abonnement : uniquement Real-Debrid

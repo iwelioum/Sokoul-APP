@@ -17,12 +17,21 @@ class DebridCloudTest {
         assertEquals("Dune Part Two", DebridCloud.cleanTitle("Dune.Part.Two.(2024).MULTI.1080p.mkv"))
         assertEquals("The Bear", DebridCloud.cleanTitle("The.Bear.S03E02.FRENCH.1080p.WEB.mkv"))
         assertEquals("Le Bureau des Légendes", DebridCloud.cleanTitle("Le_Bureau_des_Légendes_S01_MULTI_1080p"))
+        assertEquals("Interview with the Vampire - The Vampire Lestat", DebridCloud.cleanTitle("Interview with the Vampire - The Vampire Lestat - S03E05 - 1080p.mkv"))
         assertEquals(2022, DebridCloud.year("The.Batman.2022.2160p.mkv"))
         assertNull(DebridCloud.year("The.Bear.S03E02.1080p.mkv"))
     }
 
     private fun item(id: String, name: String, at: Long) =
         CloudItem(id, DebridCloud.cleanTitle(name), DebridCloud.year(name), ReleaseName.parse(name), 1_000_000_000L, at)
+
+    @Test fun memeEpisodeLaMeilleureDefinitionReste() {
+        val sd = item("t:1", "Interview.With.The.Vampire.S03E05.XviD.avi", 300)
+        val hd = item("t:2", "Interview.with.the.Vampire.S03E05.720p.mkv", 100)
+        val out = DebridCloud.merge(listOf(sd, hd), emptyList())
+        assertEquals(listOf("t:2"), out.map { it.id })
+        assertEquals(300, out[0].addedAt)
+    }
 
     @Test fun fusionSansDoublonDuPlusRecent() {
         val t = item("t:1", "The.Batman.2022.2160p.mkv", 100)
@@ -34,6 +43,14 @@ class DebridCloudTest {
         assertEquals(ContentType.SERIES, w.type)
         assertEquals("The Bear · S03E02", w.title)
         assertEquals("rdc:d:3", w.key)
+    }
+
+    @Test fun repriseViaRealDebrid() {
+        val w = Work(type = ContentType.MOVIE, id = "tmdb:m:603", key = "tmdb:m:603", title = "Matrix", year = null, poster = null)
+        val r = com.sokoul.iptv.ui.screens.browse.debridResumeRoute(3, w)!!
+        assertEquals(PlayKind.DEBRID, r.kind)
+        assertEquals("m:603", r.query)
+        assertNull(com.sokoul.iptv.ui.screens.browse.debridResumeRoute(3, w.copy(key = "tmdb:603"))) // œuvre hors catalogue : sa fiche
     }
 
     @Test fun routeHorsAbonnement() {

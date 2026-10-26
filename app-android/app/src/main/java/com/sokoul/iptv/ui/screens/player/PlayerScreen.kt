@@ -245,9 +245,15 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) = check()
             override fun onRenderedFirstFrame() = check()
         }
+        // fichier sans fréquence annoncée (MKV) : mesurée sur les premières images
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        val estimator = com.sokoul.iptv.player.FrameRateMatcher.Estimator { fps ->
+            main.post { if ((exo.videoFormat?.frameRate ?: -1f) <= 0f) sw.match(fps) }
+        }
         exo.addListener(lis)
+        exo.setVideoFrameMetadataListener(estimator)
         check()
-        onDispose { exo.removeListener(lis) }
+        onDispose { exo.removeListener(lis); exo.clearVideoFrameMetadataListener(estimator) }
     }
 
     // --- intégration système : PiP, MediaSession, plein écran, arrière-plan ---

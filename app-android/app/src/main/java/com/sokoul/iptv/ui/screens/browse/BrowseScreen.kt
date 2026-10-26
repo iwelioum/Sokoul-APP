@@ -145,6 +145,8 @@ fun NavHostController.openWork(w: Work) {
         navigateOnce(com.sokoul.iptv.ui.nav.PlayerRoute(com.sokoul.iptv.ui.nav.PlayKind.CLOUD, 0, w.key.removePrefix(com.sokoul.iptv.data.debrid.DebridCloud.KEY_PREFIX), title = w.title))
         return
     }
+    // titre lu uniquement via Real-Debrid : reprise dans le lecteur
+    debridResumeRoute(0, w)?.let { navigateOnce(it); return }
     navigateOnce(if (w.type == ContentType.MOVIE) MovieDetailRoute(w.id) else SeriesDetailRoute(w.id))
 }
 
