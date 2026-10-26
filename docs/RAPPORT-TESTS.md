@@ -641,3 +641,49 @@ Branche `phase11-experience` (créée depuis `phase10-finitions`). Onze commits 
 - **Pause du direct** : flux HLS chiffrés et fMP4 (`EXT-X-MAP`) refusés par l'écrivain. Dans ce cas, la pause reste une pause simple.
 - Les premières descentes sur l'accueil dépassent 5 % tant que les images ne sont pas en cache.
 - La version installée sur la box est une version de production, sans journaux. Le recalcul de l'accueil après une lecture est donc prouvé par les tests, pas par les journaux de la box.
+
+## 14. Phase 12 — Écrans oubliés, finitions, fluidité, rappels (26/10/2026)
+
+Branche `phase12-finitions-ecrans` (créée depuis `phase11-experience`). Cinq commits locaux, de `f016db2` à `86eb6ef`. Rien n'est poussé sur GitHub.
+
+### Ce qui change
+| Écran ou sujet | Changement |
+|---|---|
+| **Guide TV** | **Aperçu du programme** en haut : étiquette (EN CE MOMENT, DEMAIN · 20:50, DÉJÀ DIFFUSÉ · REPLAY), titre à empattements, horaires, durée, avancement et « reste 27 min », résumé sur 2 lignes, image ou logo de la chaîne. Barre de **pastilles de jour** (Aujourd'hui, Demain… sur 7 jours, à la même heure que le programme focalisé) et « Maintenant ». Réglette avec les heures pleines à empattements et un trait « maintenant ». Programme focalisé en blanc. Ligne active : fond éclairé et trait d'accent. Légendes des touches en bas. ⏪ / ⏩ font maintenant ±2 h (au lieu de ±3 h, avec des boutons à l'écran). Téléphone : colonne des chaînes réduite aux logos. |
+| **Accès au Guide et aux Enregistrements (TV)** | Deux icônes dans la barre du haut. Avant, ces écrans ne s'ouvraient que depuis le menu du lecteur, donc en ouvrant un flux. |
+| **Enregistrements** | Cartes 16:9 par rubrique : En cours (● REC, barre d'avancement), Programmés, Terminés, Échecs et annulés, puis Rappels. Titre généré, logo de la chaîne, espace utilisé et espace libre. **Nom de fichier** : « TF1 - Le Journal - 2026-10-26 20h50 » ; le titre est omis s'il répète la chaîne (plus de « FR TF1 FHD_FR TF1 FHD »). |
+| **Direct (liste)** | Panneau de détails au style des tiroirs TV (étiquette, titre à empattements, légendes des touches). Numéro de chaîne en accent au focus. |
+| **Multi-écran** | Avec 1 connexion : un écran explique pourquoi le multi-écran est indisponible, au lieu de quatre cases dont trois restaient noires. Il s'activera tout seul avec un abonnement à plusieurs connexions. |
+| **Ajout d'un abonnement** | Avancement en 3 étapes (Abonnement → Synchronisation → C'est prêt) et titres cinéma. Le mot de passe reste masqué. |
+| **Écrans vides et erreurs** | Même rendu partout : icône dans un halo teinté et titre à empattements. |
+| **Lancement** | Écran de lancement Android 12+ aux couleurs de l'app (logo sur fond sombre). |
+| **Reprendre** | Les films et séries d'un groupe verrouillé (code fermé), masqué ou adulte n'y apparaissent plus. |
+| **Fiche et page acteur** | Elles s'ouvrent par un fondu avec un léger agrandissement (260 ms). |
+| **Rappels de programmes** | Ils existaient en notification, peu visible sur Google TV. Désormais, si l'app est ouverte, un **bandeau** apparaît en haut à droite (« DANS 1 MINUTE · TF1 ») : ⏯ ouvre la chaîne, Retour l'ignore, et il disparaît seul après 15 s. Il ne prend pas le focus. |
+| **Économiseur d'écran** | `SokoulDream` : fonds TMDB des films et séries de l'abonnement (note ≥ 6,5), un par œuvre, fondu lent et léger zoom, logo ou titre et l'heure. |
+
+### Fluidité mesurée sur la box (`dumpsys gfxinfo`, part d'images saccadées)
+| Écran | Mesure | Commentaire |
+|---|---|---|
+| **Zapping TV** (3 appuis rapides, un seul flux ouvert) | **4,8 %** (médiane 6 ms) | Première mesure : en phase 9, le fournisseur avait refusé le flux. |
+| Accueil, première descente après démarrage | **5,6 %** (avant 6,1 à 7,2 %) | Images des 2 rangées suivantes préchargées sur disque. |
+| Accueil, remontée | 3,9 % | — |
+| Guide, défilement des chaînes | 14 à 16 % (médiane 10 à 16 ms, GPU 5 ms) | Une image lente (~26 ms) par appui : mise en page de l'aperçu. Pas de saccade visible, car rien ne défile en continu. |
+
+### Tests
+- `:parser:test`, `:app:testDebugUnitTest` : **274 tests, 0 échec**, 1 ignoré (test réel du fournisseur). `lintRelease` : 0 erreur.
+- Nouveaux tests :
+  - `GuideTimeTest` : fenêtre, ±2 h, 7 jours, saut de jour, étiquettes, durée ;
+  - `RecordingNamesTest` : nom de chaîne lisible, nom de fichier sans doublon et sûr, rubriques ;
+  - `ResumeFilterTest` ;
+  - `ScreensaverTest` ;
+  - `ReminderBannerTest` (Robolectric : affichage, ⏯, effacement après 15 s).
+- `ShellUiTest` mis à jour pour les deux nouvelles icônes.
+- Sur la box : captures du Guide, des écrans vides et de la barre du haut, puis le zapping. Une seule chaîne a été ouverte, et l'app a été fermée (`force-stop`) après les essais.
+
+### Limites connues
+- **Profils (dont le profil Enfant) : reportés.** Ils demandent une migration de toutes les tables personnelles (reprises, Ma liste, goûts) et de chaque requête qui les lit. C'est trop risqué pour les données existantes en fin de phase. À faire dans une phase dédiée, comme Real-Debrid.
+- **Économiseur d'écran** : Google TV ne propose dans ses réglages que ses propres économiseurs. Pour activer celui de Sokoul : `adb shell settings put secure screensaver_components com.sokoul.iptv/.screensaver.SokoulDream`. Pour revenir à celui de Google : `com.google.android.apps.tv.dreamx/.service.Backdrop`. Il n'a pas pu être lancé à la demande sur la box (la commande demande l'accès root). Il est couvert par le test unitaire.
+- Le Guide reste au-dessus de 5 % selon `gfxinfo` (une image lente par appui).
+- Retour depuis le Guide : le focus revient sur « Lecture » de l'accueil, pas sur l'icône du Guide.
+- Son de navigation : non fait (pas d'API de son de focus en Compose ; risque de doublon avec les sons du système).
