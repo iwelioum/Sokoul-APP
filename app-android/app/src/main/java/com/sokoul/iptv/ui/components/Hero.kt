@@ -153,7 +153,7 @@ fun HeroCarousel(
                     repeat(n) { i ->
                         val width by animateDpAsState(if (i == activeDot) 28.dp else 8.dp, tween(Motion.MEDIUM), label = "dot")
                         Box(Modifier.width(width).height(4.dp).background(SokoulColors.white(0.33f), Radius.Tiny)) {
-                            if (i == activeDot) Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(Color.White, Radius.Tiny))
+                            if (i == activeDot) Box(Modifier.fillMaxHeight().fillMaxWidth(fill.value).background(SokoulColors.OnVideo, Radius.Tiny))
                         }
                     }
                 }
@@ -205,7 +205,7 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
             if (label != null) {
                 Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.background(SokoulColors.Live, Radius.Tiny).padding(horizontal = 5.dp, vertical = 1.dp)) {
-                        Text("TOP", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        Text("TOP", color = SokoulColors.OnVideo, style = com.sokoul.iptv.ui.theme.Type.Badge)
                     }
                     Text(label, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextPrimary, fontWeight = FontWeight.Bold)
                 }
@@ -284,26 +284,8 @@ private fun HeroTitle(title: String, genres: List<String>, compact: Boolean) {
     )
 }
 
-/** Bouton du héros : blanc plein (lecture) ou translucide. */
+/** Bouton du héros : [SokoulButton] principal (lecture) ou en verre. */
 @Composable
-fun HeroButton(text: String, icon: ImageVector, primary: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val l = LocalLayout.current
-    FocusSurface(style = FocusStyle.Chip, 
-        onClick = onClick, modifier = modifier, shape = Radius.Card,
-        // TV : seul l'élément focalisé est blanc (sinon le bouton principal semble sélectionné à la place du focus)
-        color = if (primary && !l.isTv) Color.White else if (primary) SokoulColors.white(0.45f) else SokoulColors.white(0.35f),
-        focusedColor = if (primary || l.isTv) Color.White else SokoulColors.white(0.55f),
-        
-    ) { focused ->
-        Row(
-            Modifier.height(if (l.isCompact) 42.dp else 44.dp).padding(horizontal = if (l.isCompact) 18.dp else 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val c = if ((primary && !l.isTv) || (l.isTv && focused)) SokoulColors.OnLight else Color.White
-            Icon(icon, null, Modifier.size(22.dp), tint = c)
-            Spacer(Modifier.width(8.dp))
-            Text(text, color = c, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
-    }
-}
+fun HeroButton(text: String, icon: ImageVector, primary: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) =
+    SokoulButton(text, onClick, modifier, icon, if (primary) ButtonKind.Primary else ButtonKind.Glass)
 

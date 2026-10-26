@@ -35,17 +35,17 @@ internal fun LazyListScope.playbackSection(c: SettingsCtx) {
         }
     }
     item("pb-next") {
-        SettingRow("Épisode suivant automatique", if (s.autoplayNextEpisode) "Activé" else "Désactivé", "Enchaîne l'épisode suivant à la fin du générique", icon = Icons.Default.SkipNext) {
+        SettingRow("Épisode suivant automatique", null, "Enchaîne l'épisode suivant à la fin du générique", icon = Icons.Default.SkipNext, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(s.autoplayNextEpisode) }) {
             c.vm.update { it.copy(autoplayNextEpisode = !s.autoplayNextEpisode) }
         }
     }
     item("pb-rate") {
-        SettingRow("Adapter la fréquence de l'écran", if (s.frameRateMatch) "Activé" else "Désactivé", "Films et séries : la TV passe en 24 ou 25 Hz pour des mouvements sans saccade", icon = Icons.Default.Tv) {
+        SettingRow("Adapter la fréquence de l'écran", null, "Films et séries : la TV passe en 24 ou 25 Hz pour des mouvements sans saccade", icon = Icons.Default.Tv, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(s.frameRateMatch) }) {
             c.vm.update { it.copy(frameRateMatch = !s.frameRateMatch) }
         }
     }
     item("pb-passthrough") {
-        SettingRow("Son vers l'ampli (passthrough)", if (s.audioPassthrough) "Activé" else "Désactivé", "Dolby et DTS envoyés tels quels à l'ampli ou à la barre de son. Désactivez si le son est absent.", icon = Icons.Default.Speaker) {
+        SettingRow("Son vers l'ampli (passthrough)", null, "Dolby et DTS envoyés tels quels à l'ampli ou à la barre de son. Désactivez si le son est absent.", icon = Icons.Default.Speaker, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(s.audioPassthrough) }) {
             c.vm.update { it.copy(audioPassthrough = !s.audioPassthrough) }
         }
     }

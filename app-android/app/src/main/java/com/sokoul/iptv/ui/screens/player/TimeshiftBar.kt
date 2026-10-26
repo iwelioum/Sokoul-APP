@@ -53,13 +53,13 @@ internal fun TimeshiftBar(s: LiveTimeshift.State, channel: String, modifier: Mod
             .padding(start = side, end = side, top = 56.dp, bottom = 28.dp),
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Icon(if (s.paused) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(34.dp), tint = Color.White)
+            Icon(if (s.paused) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(34.dp), tint = SokoulColors.OnVideo)
             Column(Modifier.padding(start = 14.dp).weight(1f)) {
                 Text(if (s.paused) "PAUSE DU DIRECT" else if (s.atLive) "EN DIRECT" else "EN DIFFÉRÉ", style = Type.Kicker)
                 Text(channel, style = Type.PlayerTitle, maxLines = 1)
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(if (s.atLive && !s.paused) "Direct" else behindLabel(s.behindMs), style = Type.ScreenTitle, color = if (s.atLive && !s.paused) SokoulColors.Live else Color.White)
+                Text(if (s.atLive && !s.paused) "Direct" else behindLabel(s.behindMs), style = Type.ScreenTitle, color = if (s.atLive && !s.paused) SokoulColors.Live else SokoulColors.OnVideo)
                 Text("sur le direct", style = Type.Meta, color = SokoulColors.TextMuted)
             }
         }
@@ -69,7 +69,7 @@ internal fun TimeshiftBar(s: LiveTimeshift.State, channel: String, modifier: Mod
             val f = ((s.position - s.start).toFloat() / span).coerceIn(0f, 1f)
             Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(5.dp).background(SokoulColors.white(0.25f), Radius.Tiny))
             Box(Modifier.align(Alignment.CenterStart).fillMaxWidth(f).height(5.dp).background(SokoulColors.Accent, Radius.Tiny))
-            Box(Modifier.align(Alignment.CenterStart).offset(x = maxWidth * f - 7.dp).size(14.dp).background(Color.White, Radius.Round))
+            Box(Modifier.align(Alignment.CenterStart).offset(x = maxWidth * f - 7.dp).size(14.dp).background(SokoulColors.OnVideo, Radius.Round))
         }
         Row(Modifier.padding(top = 6.dp).fillMaxWidth()) {
             Text(formatClock(s.start), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextMuted)
@@ -94,6 +94,6 @@ internal fun DelayBadge(behindMs: Long, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(3.dp).height(14.dp).background(SokoulColors.Accent))
-        Text("DIFFÉRÉ ${behindLabel(behindMs)}", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = Color.White)
+        Text("DIFFÉRÉ ${behindLabel(behindMs)}", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = SokoulColors.OnVideo)
     }
 }

@@ -40,7 +40,7 @@ internal fun LazyListScope.librarySection(c: SettingsCtx) {
         ) { c.vm.refreshCoverage() }
     }
     item("lib-group") {
-        SettingRow("Regrouper les doublons", if (s.groupDuplicates) "Activé" else "Désactivé", "Une fiche par film ou série, toutes versions réunies", icon = Icons.Default.MergeType) {
+        SettingRow("Regrouper les doublons", null, "Une fiche par film ou série, toutes versions réunies", icon = Icons.Default.MergeType, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(s.groupDuplicates) }) {
             c.vm.update { it.copy(groupDuplicates = !s.groupDuplicates) }
         }
     }

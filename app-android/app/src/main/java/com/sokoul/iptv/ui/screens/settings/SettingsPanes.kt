@@ -166,8 +166,8 @@ fun SettingsPanes(
 @Composable
 private fun PaneHeader(c: SettingsCategory, modifier: Modifier) {
     Column(modifier.padding(bottom = 12.dp)) {
-        Text(c.label, style = Type.ScreenTitle)
-        Text(c.blurb, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = SokoulColors.TextSecondary)
+        Text(c.label, style = Type.Section)
+        Text(c.blurb, Modifier.padding(top = 4.dp), style = Type.Meta)
     }
 }
 

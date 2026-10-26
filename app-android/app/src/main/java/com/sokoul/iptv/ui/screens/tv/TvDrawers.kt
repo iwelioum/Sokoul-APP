@@ -92,11 +92,7 @@ private fun DrawerRow(highlighted: Boolean, modifier: Modifier, content: @Compos
 fun ProgramEntity.progressAt(now: Long): Float = ((now - start).toFloat() / (end - start).coerceAtLeast(1)).coerceIn(0f, 1f)
 
 @Composable
-private fun ThinProgress(f: Float, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(2.dp).background(SokoulColors.white(0.14f))) {
-        Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(SokoulColors.Accent))
-    }
-}
+private fun ThinProgress(f: Float, modifier: Modifier = Modifier) = com.sokoul.iptv.ui.components.ProgressLine(f, modifier, thickness = 2.dp, onImage = false)
 
 /** Liste des chaînes de la catégorie en cours (◀) : numéro, logo, nom, programme en cours et son avancement. */
 @Composable

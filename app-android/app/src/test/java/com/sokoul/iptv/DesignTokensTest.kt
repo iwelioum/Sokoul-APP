@@ -21,7 +21,31 @@ class DesignTokensTest {
         Regex("""FontFamily\(|FontFamily\.(Serif|SansSerif|Monospace|Cursive)""") to "police en dur → Manrope (thème)",
         Regex("""\bfocusScale\s*=""") to "agrandissement de focus en dur → FocusStyle",
         Regex("""\bborderWidth\s*=""") to "liseré de focus en dur → FocusStyle",
+        Regex("""\d\.sp\b""") to "taille de texte en dur → Type / TitleSize",
+        Regex("""\bColor\.(White|Black)\b""") to "blanc / noir en dur → SokoulColors.OnVideo / OnLight / VideoBlack",
+        Regex("""\bOutlinedTextField\(""") to "champ Material → FormField",
+        Regex("""\bLinearProgressIndicator\(""") to "barre Material → ProgressLine ou squelette",
     )
+
+    private fun sources() = uiDir.walkTopDown().filter { it.isFile && it.extension == "kt" }
+        .associate { it.relativeTo(uiDir).invariantSeparatorsPath to it.readText() }
+
+    @Test
+    fun `une seule roue de chargement`() {
+        val offenders = sources().filter { (path, text) -> path != "components/Controls.kt" && text.contains("CircularProgressIndicator(") }.keys
+        assertTrue("Roue Material hors SokoulSpinner : $offenders", offenders.isEmpty())
+    }
+
+    @Test
+    fun `un seul bouton, une seule barre, un seul cadre de fenetre`() {
+        val s = sources()
+        listOf("fun AppButton(" to "SokoulButton", "fun LoadingBox(" to "squelettes", "fun Pill(" to "SokoulChip").forEach { (sig, use) ->
+            assertTrue("$sig ne doit plus exister ($use)", s.values.none { it.contains(sig) })
+        }
+        assertTrue("ProgressLine défini une seule fois", s.values.count { it.contains("fun ProgressLine(") } == 1)
+        val rawDialogs = s.filter { (path, text) -> path != "components/Dialogs.kt" && Regex("""\bDialog\(onDismissRequest""").containsMatchIn(text) }.keys
+        assertTrue("Fenêtres hors SokoulDialog : $rawDialogs", rawDialogs.isEmpty())
+    }
 
     @Test
     fun `aucune valeur visuelle en dur hors du theme`() {

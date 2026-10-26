@@ -1,6 +1,7 @@
 package com.sokoul.iptv.ui.components
 
 import com.sokoul.iptv.ui.theme.SokoulColors
+import com.sokoul.iptv.ui.theme.Space
 import com.sokoul.iptv.ui.theme.Radius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -113,8 +115,8 @@ fun ChannelLogo(url: String?, name: String, modifier: Modifier = Modifier) {
     Box(modifier.clip(Radius.Card).background(SokoulColors.SurfaceHigher), contentAlignment = Alignment.Center) {
         NetImage(url, name, Modifier.fillMaxSize().padding(4.dp), ContentScale.Fit) {
             Text(
-                initials(name), color = SokoulColors.TextSecondary, fontWeight = FontWeight.Bold,
-                fontSize = 15.sp, maxLines = 1,
+                initials(name), color = SokoulColors.TextSecondary, style = com.sokoul.iptv.ui.theme.Type.Initials,
+                maxLines = 1,
             )
         }
     }
@@ -130,35 +132,6 @@ fun initials(name: String): String {
 }
 
 
-@Composable
-fun AppButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    icon: ImageVector? = null,
-    primary: Boolean = false,
-    enabled: Boolean = true,
-    focusRequester: FocusRequester? = null,
-) {
-    FocusSurface(style = FocusStyle.Chip,
-        onClick = { if (enabled) onClick() },
-        modifier = modifier.then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
-        shape = Radius.Pill,
-        color = if (primary) SokoulColors.Accent else SokoulColors.SurfaceHigher,
-    ) { focused ->
-        Row(
-            Modifier.heightIn(min = 44.dp).padding(horizontal = 20.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            if (icon != null) {
-                Icon(icon, null, Modifier.size(20.dp), tint = onChip(focused, enabled))
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(text, style = MaterialTheme.typography.labelLarge, color = onChip(focused, enabled))
-        }
-    }
-}
 
 @Composable
 fun Tag(text: String, color: Color = SokoulColors.SurfaceHigher, textColor: Color = SokoulColors.TextPrimary) {
@@ -166,14 +139,6 @@ fun Tag(text: String, color: Color = SokoulColors.SurfaceHigher, textColor: Colo
         text, Modifier.background(color, Radius.Tiny).padding(horizontal = 8.dp, vertical = 3.dp),
         style = MaterialTheme.typography.labelMedium, color = textColor,
     )
-}
-
-@Composable
-fun LoadingBox(modifier: Modifier = Modifier, message: String? = null) {
-    Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        CircularProgressIndicator(color = SokoulColors.Accent)
-        if (message != null) Text(message, Modifier.padding(top = 16.dp), color = SokoulColors.TextSecondary)
-    }
 }
 
 @Composable
@@ -219,12 +184,14 @@ fun FormField(
     var editing by remember { mutableStateOf(!isTv || autoEdit) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    OutlinedTextField(
+    var focused by remember { mutableStateOf(false) }
+    val accent = focused || (editing && isTv)
+    androidx.compose.foundation.text.BasicTextField(
         value = value,
         onValueChange = onValueChange,
         readOnly = !editing,
         modifier = modifier.fillMaxWidth()
-            .onFocusChanged { if (isTv && !autoEdit && !it.isFocused) editing = false }
+            .onFocusChanged { focused = it.isFocused; if (isTv && !autoEdit && !it.isFocused) editing = false }
             .onPreviewKeyEvent { e ->
                 if (!isTv) return@onPreviewKeyEvent false
                 // Les champs Compose consomment les flèches (déplacement du curseur) : on rend la main au focus.
@@ -244,21 +211,31 @@ fun FormField(
                 if (e.type == KeyEventType.KeyUp) { editing = true; keyboard?.show() }
                 true
             },
-        label = { Text(label) },
-        placeholder = placeholder?.let { { Text(it, color = SokoulColors.TextMuted) } },
         singleLine = singleLine,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = SokoulColors.TextPrimary),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(SokoulColors.Accent),
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else keyboardType, imeAction = imeAction, autoCorrectEnabled = false),
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }, onGo = { onDone?.invoke() }),
-        shape = Radius.Card,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = SokoulColors.Accent,
-            unfocusedBorderColor = SokoulColors.Divider,
-            focusedLabelColor = SokoulColors.Accent,
-            cursorColor = SokoulColors.Accent,
-            focusedContainerColor = SokoulColors.SurfaceHigh,
-            unfocusedContainerColor = SokoulColors.Surface,
-        ),
+        // champ maison : fond plein, libellé au-dessus de la valeur, trait d'accent en bas au focus
+        decorationBox = { inner ->
+            Column(
+                Modifier.fillMaxWidth().clip(Radius.Card)
+                    .background(if (accent) SokoulColors.SurfaceHigher else SokoulColors.SurfaceHigh)
+                    .drawBehind {
+                        val h = (if (accent) 2.dp else 1.dp).toPx()
+                        drawRect(if (accent) SokoulColors.Accent else SokoulColors.Divider, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - h), size = androidx.compose.ui.geometry.Size(size.width, h))
+                    }
+                    .padding(horizontal = Space.m, vertical = 10.dp),
+            ) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = if (accent) SokoulColors.Accent else SokoulColors.TextSecondary, maxLines = 1)
+                Box(Modifier.padding(top = 2.dp).fillMaxWidth()) {
+                    if (value.isEmpty() && placeholder != null) Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = SokoulColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    inner()
+                }
+                if (isTv && !editing && focused) Text("OK pour modifier", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextMuted)
+            }
+        },
     )
 }
 
@@ -271,15 +248,13 @@ data class MenuOption(
 /** Menu contextuel modal, navigable à la télécommande. */
 @Composable
 fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Unit, subtitle: String? = null) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // TV : panneau à droite (la page reste visible) ; téléphone : boîte centrée
+    SokoulDialog(onDismiss, DialogPlacement.Side, maxWidth = 520.dp) {
         val first = remember { FocusRequester() }
-        Column(
-            Modifier.fillMaxWidth(0.92f).widthIn(max = 520.dp).clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(20.dp)
-        ) {
-            Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (subtitle != null) Text(subtitle, Modifier.padding(top = 4.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
-            Spacer(Modifier.height(14.dp))
-            LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        run {
+            DialogHeader(title, subtitle)
+            Spacer(Modifier.height(Space.m))
+            LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 720.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 itemsIndexed(options) { i, o ->
                     FocusSurface(style = FocusStyle.Row,
                         onClick = { if (o.enabled) { o.onClick(); onDismiss() } },
@@ -309,14 +284,14 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
 
 @Composable
 fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
+    SokoulDialog(onDismiss) {
         val focus = remember { FocusRequester() }
-        Column(Modifier.clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(24.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+        run {
+            DialogHeader(title)
             Text(message, Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary)
             Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppButton("Annuler", onDismiss, focusRequester = focus)
-                AppButton(confirm, { onConfirm(); onDismiss() }, primary = true)
+                SokoulButton("Annuler", onDismiss, focusRequester = focus)
+                SokoulButton(confirm, { onConfirm(); onDismiss() }, kind = ButtonKind.Primary)
             }
         }
         LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -329,10 +304,10 @@ fun PinDialog(title: String, onResult: (String) -> Unit, onDismiss: () -> Unit, 
     var pin by remember { mutableStateOf("") }
     // Code refusé : on vide la saisie pour permettre un nouvel essai sans effacer chiffre par chiffre
     LaunchedEffect(error) { if (error != null) pin = "" }
-    Dialog(onDismissRequest = onDismiss) {
+    SokoulDialog(onDismiss, maxWidth = 380.dp) {
         val first = remember { FocusRequester() }
         Column(
-            Modifier.clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(24.dp)
+            Modifier.fillMaxWidth()
                 // touches numériques de la télécommande (0-9) et retour arrière
                 .onPreviewKeyEvent { e ->
                     if (e.nativeKeyEvent.action != android.view.KeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false

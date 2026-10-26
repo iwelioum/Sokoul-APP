@@ -8,7 +8,6 @@ import androidx.navigation.NavHostController
 import com.sokoul.iptv.data.SettingsStore
 import com.sokoul.iptv.data.db.AppDatabase
 import com.sokoul.iptv.data.repo.PlaylistRepository
-import com.sokoul.iptv.ui.components.LoadingBox
 import com.sokoul.iptv.ui.nav.LiveRoute
 import com.sokoul.iptv.ui.nav.PlayKind
 import com.sokoul.iptv.ui.nav.PlayerRoute
@@ -38,7 +37,7 @@ class TvLauncherViewModel @Inject constructor(
 @Composable
 fun TvLauncher(nav: NavHostController) {
     val vm: TvLauncherViewModel = hiltViewModel()
-    LoadingBox()
+    com.sokoul.iptv.ui.components.BrandSplash()
     LaunchedEffect(Unit) {
         val to: Any = vm.target() ?: LiveRoute
         nav.navigate(to) { popUpTo<TvRoute> { inclusive = true } }

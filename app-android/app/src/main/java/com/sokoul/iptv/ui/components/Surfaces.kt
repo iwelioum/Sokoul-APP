@@ -41,11 +41,13 @@ fun ScreenHeader(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    /** Marge du haut imposée (page sous les onglets, sous la barre d'état) ; sinon marge standard. */
+    top: androidx.compose.ui.unit.Dp? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val l = LocalLayout.current
     Row(
-        modifier.fillMaxWidth().padding(top = if (l.isTv) l.safeTop else Space.m, bottom = Space.m),
+        modifier.fillMaxWidth().padding(top = top ?: if (l.isTv) l.safeTop else Space.m, bottom = Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

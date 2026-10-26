@@ -1,5 +1,6 @@
 package com.sokoul.iptv.ui.screens.settings
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,6 +51,7 @@ internal fun SettingRow(
     hint: String? = null,
     icon: ImageVector? = null,
     modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     FocusSurface(style = FocusStyle.Row, onClick = onClick, modifier = modifier.fillMaxWidth(), color = SokoulColors.Surface) { _ ->
@@ -63,13 +65,14 @@ internal fun SettingRow(
                 value, Modifier.padding(start = 16.dp).widthIn(max = if (LocalLayout.current.isCompact) 140.dp else 300.dp),
                 color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
             )
+            if (trailing != null) Box(Modifier.padding(start = 16.dp)) { trailing() }
         }
     }
 }
 
 @Composable
 internal fun ToggleRow(title: String, value: Boolean, hint: String? = null, onChange: (Boolean) -> Unit) =
-    SettingRow(title, if (value) "Activé" else "Désactivé", hint) { onChange(!value) }
+    SettingRow(title, null, hint, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(value) }) { onChange(!value) }
 
 /** Section « Avancé » repliable : réglages techniques qu'on touche rarement. */
 @Composable

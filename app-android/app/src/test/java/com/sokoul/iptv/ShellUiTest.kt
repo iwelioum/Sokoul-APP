@@ -32,7 +32,7 @@ import com.sokoul.iptv.ui.Dest
 import com.sokoul.iptv.ui.LocalTopBar
 import com.sokoul.iptv.ui.Shell
 import com.sokoul.iptv.ui.TAB_SETTLE_MS
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
 import com.sokoul.iptv.ui.nav.HomeRoute
 import com.sokoul.iptv.ui.nav.MoviesRoute
 import com.sokoul.iptv.ui.nav.MyListRoute
@@ -72,7 +72,7 @@ class ShellUiTest {
         Box(Modifier.fillMaxSize().focusGroup()) {
             Box(Modifier.padding(top = 200.dp, start = 48.dp)) {
                 // OK simule la descente dans les rangées
-                AppButton("Lecture ${d.label}", { bar?.deep = true }, modifier = Modifier.focusRequester(play))
+                SokoulButton("Lecture ${d.label}", { bar?.deep = true }, modifier = Modifier.focusRequester(play))
             }
         }
     }

@@ -50,7 +50,8 @@ import com.sokoul.iptv.data.repo.PersonPage
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.Work
 import com.sokoul.iptv.data.repo.tmdbSized
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
+import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.CardRow
 import com.sokoul.iptv.ui.components.EmptyState
 import com.sokoul.iptv.ui.components.FocusMemory
@@ -125,7 +126,7 @@ fun PersonScreen(nav: NavHostController, personId: Int, name: String) {
             ui.loading -> PersonSkeleton(name)
             ui.noKey -> EmptyState(Icons.Default.Key, "Clé TMDB nécessaire", "Les filmographies s'appuient sur TheMovieDB : ajoutez une clé dans Réglages.")
             page == null -> EmptyState(Icons.Default.Refresh, "Impossible de charger cette page", "Vérifiez la connexion, puis réessayez.") {
-                AppButton("Réessayer", vm::retry, primary = true, icon = Icons.Default.Refresh, modifier = Modifier.focusMemory(memory, "retry"))
+                SokoulButton("Réessayer", vm::retry, kind = ButtonKind.Primary, icon = Icons.Default.Refresh, modifier = Modifier.focusMemory(memory, "retry"))
             }
             else -> {
                 val open: (Work) -> Unit = { w -> if (w.available) nav.openWork(w) else rdPlay?.invoke(w) }

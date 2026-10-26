@@ -85,7 +85,8 @@ import com.sokoul.iptv.data.repo.userMessage
 import com.sokoul.iptv.data.repo.BackupPassphraseException
 import com.sokoul.iptv.ui.ParentalGate
 import com.sokoul.iptv.ui.PinCheck
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
+import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.ConfirmDialog
 import com.sokoul.iptv.ui.components.FocusSurface
 import com.sokoul.iptv.ui.components.FormField
@@ -511,14 +512,14 @@ private fun TextEditDialog(t: TextEdit, onDismiss: () -> Unit) {
         val e = t.validate(value)
         if (e != null) error = e else { t.onSave(value); onDismiss() }
     }
-    Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().widthIn(max = 560.dp).background(SokoulColors.SurfaceHigh, Radius.Panel).padding(24.dp)) {
-            Text(t.title, style = MaterialTheme.typography.titleLarge)
+    com.sokoul.iptv.ui.components.SokoulDialog(onDismiss) {
+        run {
+            com.sokoul.iptv.ui.components.DialogHeader(t.title)
             FormField("Valeur", value, { value = it; error = null }, Modifier.padding(top = 14.dp).focusRequester(focus), password = t.password, autoEdit = true, onDone = save)
             error?.let { Text(it, Modifier.padding(top = 8.dp), color = SokoulColors.Live, style = MaterialTheme.typography.bodyMedium) }
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppButton("Annuler", onDismiss)
-                AppButton("Valider", save, primary = true)
+                SokoulButton("Annuler", onDismiss)
+                SokoulButton("Valider", save, kind = ButtonKind.Primary)
             }
         }
         LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }

@@ -92,7 +92,8 @@ import com.sokoul.iptv.data.repo.Work
 import com.sokoul.iptv.data.repo.tmdbSized
 import com.sokoul.iptv.ui.LocalTopBar
 import com.sokoul.iptv.ui.TopTabsHeight
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
+import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.EmptyState
 import com.sokoul.iptv.ui.components.FocusMemory
 import com.sokoul.iptv.ui.components.FocusStyle
@@ -112,7 +113,6 @@ import com.sokoul.iptv.ui.components.shimmer
 import com.sokoul.iptv.ui.nav.SagaRoute
 import com.sokoul.iptv.ui.nav.navigateOnce
 import com.sokoul.iptv.ui.screens.browse.openWork
-import com.sokoul.iptv.ui.screens.vod.Pill
 import com.sokoul.iptv.ui.screens.vod.entrance
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.LocalReducedMotion
@@ -193,13 +193,10 @@ fun SagasHubScreen(nav: NavHostController) {
             verticalArrangement = Arrangement.spacedBy(l.gutter + 6.dp),
         ) {
             if (!banner) item("head", span = { GridItemSpan(maxLineSpan) }) {
-                Column(Modifier.statusBarsPadding().padding(top = if (bar != null) TopTabsHeight + l.safeTop else if (l.isTouch) 56.dp else 28.dp, bottom = 8.dp)) {
-                    Text("Sagas", style = Type.ScreenTitle)
-                    Text(
-                        "Les grandes histoires du catalogue, film après film.", Modifier.padding(top = 4.dp),
-                        color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
+                com.sokoul.iptv.ui.components.ScreenHeader(
+                    "Sagas", Modifier.statusBarsPadding(), subtitle = "Les grandes histoires du catalogue, film après film.",
+                    top = if (bar != null) TopTabsHeight + l.safeTop else if (l.isTouch) 56.dp else 28.dp,
+                )
             }
             when {
                 ui.loading -> items(8) { Box(Modifier.fillMaxWidth().height(l.landscape * 9f / 16f).clip(Radius.Card).shimmer()) }
@@ -310,7 +307,7 @@ private fun SagaTitle(name: String, logo: String?, modifier: Modifier = Modifier
 @Composable
 private fun SagaArt(name: String, modifier: Modifier = Modifier) {
     com.sokoul.iptv.ui.components.TitleArt(
-        com.sokoul.iptv.ui.components.sagaLabel(name), emptyList(), 44.sp, modifier.widthIn(max = 560.dp), maxLines = 2,
+        com.sokoul.iptv.ui.components.sagaLabel(name), emptyList(), com.sokoul.iptv.ui.theme.TitleSize.Saga, modifier.widthIn(max = 560.dp), maxLines = 2,
         style = com.sokoul.iptv.ui.theme.TitleStyle.GOLD,
     )
 }
@@ -401,7 +398,7 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
             ui.loading -> SagaSkeleton()
             ui.noKey -> EmptyState(Icons.Default.Key, "Clé TMDB nécessaire", "Les sagas s'appuient sur TheMovieDB : ajoutez une clé dans Réglages.")
             page == null -> EmptyState(Icons.Default.Refresh, "Impossible de charger cette saga", "Vérifiez la connexion, puis réessayez.") {
-                AppButton("Réessayer", vm::retry, primary = true, icon = Icons.Default.Refresh, modifier = Modifier.focusMemory(memory, "retry"))
+                SokoulButton("Réessayer", vm::retry, kind = ButtonKind.Primary, icon = Icons.Default.Refresh, modifier = Modifier.focusMemory(memory, "retry"))
             }
             else -> {
                 val films = if (story) page.story ?: page.films else page.films
@@ -466,7 +463,7 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
                 Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(Radius.Round).background(SokoulColors.black(0.5f))
                     .dpadClickable({ nav.popBackStack() }),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = Color.White) }
+            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = SokoulColors.OnVideo) }
         }
     }
 
@@ -566,16 +563,16 @@ private fun SagaHeader(
             horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
             if (next != null) {
-                AppButton(
+                SokoulButton(
                     (if (page.seen.isEmpty()) "Commencer" else "Continuer") +
                         (if (page.story == null) " la saga" else if (story) " · ordre du récit" else " · ordre de sortie"),
                     { onNext(next) },
-                    Modifier.focusMemory(memory, "go"), icon = Icons.Default.PlayArrow, primary = true,
+                    Modifier.focusMemory(memory, "go"), icon = Icons.Default.PlayArrow, kind = ButtonKind.Primary,
                 )
             }
             if (page.story != null) {
-                Pill("Ordre de sortie", selected = !story, modifier = Modifier.focusMemory(memory, "o:release")) { onStory(false) }
-                Pill("Ordre du récit", selected = story, modifier = Modifier.focusMemory(memory, "o:story")) { onStory(true) }
+                com.sokoul.iptv.ui.components.SokoulChip("Ordre de sortie", { onStory(false) }, Modifier.focusMemory(memory, "o:release"), selected = !story)
+                com.sokoul.iptv.ui.components.SokoulChip("Ordre du récit", { onStory(true) }, Modifier.focusMemory(memory, "o:story"), selected = story)
             }
             if (next != null) {
                 Text(
@@ -632,7 +629,7 @@ private fun TimelineStop(w: Work, index: Int, last: Boolean, seen: Boolean, gutt
         val lineColor = SokoulColors.white(0.18f)
         val dot = when {
             seen -> SokoulColors.Accent
-            w.available -> Color.White
+            w.available -> SokoulColors.OnVideo
             else -> SokoulColors.white(0.3f)
         }
         Box(

@@ -94,7 +94,8 @@ import com.sokoul.iptv.data.repo.tmdbSized
 import com.sokoul.iptv.ui.components.rememberAmbient
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
+import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.CardRow
 import com.sokoul.iptv.ui.components.EmptyState
 import com.sokoul.iptv.ui.components.FocusMemory
@@ -195,19 +196,19 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
     val retryFocus = remember { FocusRequester() }
     if (!ui.loading && p == null) {
         EmptyState(Icons.Default.LiveTv, "Aucune playlist", "Ajoutez un abonnement dans les réglages pour commencer.") {
-            AppButton("Réglages", { nav.navigate(SettingsRoute) }, primary = true)
+            SokoulButton("Réglages", { nav.navigate(SettingsRoute) }, kind = ButtonKind.Primary)
         }
         return
     }
     if (p != null && p.liveCount + p.movieCount + p.seriesCount == 0 && !ui.loading && ui.rows.all { it.isEmpty }) {
         EmptyState(Icons.Default.Sync, "Catalogue vide", "La playlist n'est pas encore synchronisée.") {
-            AppButton("Synchroniser", { nav.navigate(SyncRoute(p.id)) }, primary = true, icon = Icons.Default.Sync)
+            SokoulButton("Synchroniser", { nav.navigate(SyncRoute(p.id)) }, kind = ButtonKind.Primary, icon = Icons.Default.Sync)
         }
         return
     }
     if (ui.failed && ui.rows.all { it.isEmpty }) {
         EmptyState(Icons.Default.Refresh, "Impossible d'afficher cette page", "Vérifiez la connexion internet de l'appareil, puis réessayez.") {
-            AppButton("Réessayer", vm::retry, primary = true, icon = Icons.Default.Refresh, modifier = Modifier.focusRequester(retryFocus))
+            SokoulButton("Réessayer", vm::retry, kind = ButtonKind.Primary, icon = Icons.Default.Refresh, modifier = Modifier.focusRequester(retryFocus))
         }
         LaunchedEffect(Unit) { delay(100); runCatching { retryFocus.requestFocus() } }
         return
@@ -366,7 +367,7 @@ fun BrowseScreen(nav: NavHostController, vm: BrowseViewModel, title: String) {
                     Row(Modifier.padding(horizontal = l.margin, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Une partie de la page n'a pas pu se charger.", Modifier.weight(1f, fill = false), color = SokoulColors.TextSecondary)
                         Spacer(Modifier.width(12.dp))
-                        AppButton("Réessayer", vm::retry, icon = Icons.Default.Refresh)
+                        SokoulButton("Réessayer", vm::retry, icon = Icons.Default.Refresh)
                     }
                 }
             }
@@ -606,7 +607,7 @@ private fun SpotPanel(spot: Spot?, height: androidx.compose.ui.unit.Dp, modifier
 
 @Composable
 private fun SpotTitle(t: String, genres: List<String>) {
-    com.sokoul.iptv.ui.components.TitleArt(t, genres, 34.sp, Modifier.widthIn(max = 520.dp), maxLines = 2)
+    com.sokoul.iptv.ui.components.TitleArt(t, genres, com.sokoul.iptv.ui.theme.TitleSize.Banner, Modifier.widthIn(max = 520.dp), maxLines = 2)
 }
 
 /** Barre du haut (téléphone/tablette) : transparente sur le héros, opaque en défilant. */
@@ -638,7 +639,7 @@ private fun TopBar(title: String, firstIndex: Int, offset: Int, heroPx: Float, k
 @Composable
 private fun TopIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     Box(Modifier.size(44.dp).clip(Radius.Pill).dpadClickable(onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, label, Modifier.size(24.dp), tint = Color.White)
+        Icon(icon, label, Modifier.size(24.dp), tint = SokoulColors.OnVideo)
     }
 }
 

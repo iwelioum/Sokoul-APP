@@ -80,13 +80,11 @@ import com.sokoul.iptv.data.repo.SpecialCategory
 import com.sokoul.iptv.data.repo.StreamResolver
 import com.sokoul.iptv.data.repo.SyncEngine
 import com.sokoul.iptv.recording.RecordingScheduler
-import com.sokoul.iptv.ui.components.AppButton
 import com.sokoul.iptv.ui.components.CategoryChips
 import com.sokoul.iptv.ui.components.CategoryPickerButton
 import com.sokoul.iptv.ui.components.CategoryItem
 import com.sokoul.iptv.ui.components.ChannelLogo
 import com.sokoul.iptv.ui.components.EmptyState
-import com.sokoul.iptv.ui.components.LoadingBox
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.components.PinDialog
@@ -320,7 +318,7 @@ fun GuideScreen(nav: NavHostController) {
         }
 
         when {
-            list == null -> LoadingBox()
+            list == null -> com.sokoul.iptv.ui.components.GuideSkeleton()
             list.isEmpty() -> EmptyState(Icons.Default.Star, "Aucune chaîne dans ce groupe")
             else -> BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp)) {
                 // colonne des chaînes : logo + nom sur TV ; logos seuls sur écran étroit
@@ -543,9 +541,7 @@ private fun GuidePreview(
                         Text(meta.joinToString("  ·  "), style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (live) {
                             val f = ((now - p.start).toFloat() / (p.end - p.start)).coerceIn(0f, 1f)
-                            Box(Modifier.padding(start = 14.dp).width(120.dp).height(3.dp).background(SokoulColors.white(0.18f), Radius.Tiny)) {
-                                Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(SokoulColors.Live, Radius.Tiny))
-                            }
+                            com.sokoul.iptv.ui.components.ProgressLine(f, Modifier.padding(start = 14.dp).width(120.dp), tone = com.sokoul.iptv.ui.components.ProgressTone.Live, thickness = 3.dp, onImage = false)
                             Text(GuideTime.remaining(p, now), Modifier.padding(start = 10.dp), style = Type.Meta, maxLines = 1)
                         }
                         if (reminded) {

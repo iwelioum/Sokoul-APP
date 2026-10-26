@@ -176,8 +176,8 @@ fun PlatformBadge(p: Platform, modifier: Modifier = Modifier, large: Boolean = f
     Text(
         p.label.uppercase(),
         modifier.background(Color(p.color), Radius.Tiny).padding(horizontal = if (large) 7.dp else 5.dp, vertical = if (large) 2.dp else 1.dp),
-        color = if (p == Platform.HULU) Color.Black else Color.White,
-        fontSize = if (large) 11.sp else 8.5.sp, fontWeight = FontWeight.Black, letterSpacing = 0.6.sp, maxLines = 1,
+        color = if (p == Platform.HULU) SokoulColors.OnLight else SokoulColors.OnVideo,
+        style = if (large) com.sokoul.iptv.ui.theme.Type.BadgeLarge else com.sokoul.iptv.ui.theme.Type.Badge, maxLines = 1,
     )
 }
 
@@ -185,7 +185,7 @@ fun PlatformBadge(p: Platform, modifier: Modifier = Modifier, large: Boolean = f
 private fun CornerBadge(text: String, modifier: Modifier = Modifier, color: Color = SokoulColors.black(0.85f)) {
     Text(
         text, modifier.background(color, Radius.Tiny).padding(horizontal = 5.dp, vertical = 1.dp),
-        color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        color = SokoulColors.OnVideo, style = com.sokoul.iptv.ui.theme.Type.Badge, maxLines = 1,
     )
 }
 
@@ -204,8 +204,8 @@ private fun PosterFallback(title: String, genres: List<String> = emptyList(), st
         Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SokoulColors.PlaceholderTop, SokoulColors.PlaceholderBottom))),
         contentAlignment = Alignment.Center,
     ) {
-        if (style != null) TitleArt(title, genres, 24.sp, Modifier.padding(12.dp), maxLines = 4, align = TextAlign.Center, style = style)
-        else TitleArt(title, genres, 24.sp, Modifier.padding(12.dp), maxLines = 4, align = TextAlign.Center)
+        if (style != null) TitleArt(title, genres, com.sokoul.iptv.ui.theme.TitleSize.Poster, Modifier.padding(12.dp), maxLines = 4, align = TextAlign.Center, style = style)
+        else TitleArt(title, genres, com.sokoul.iptv.ui.theme.TitleSize.Poster, Modifier.padding(12.dp), maxLines = 4, align = TextAlign.Center)
     }
 }
 
@@ -335,14 +335,7 @@ private fun RevealOverlay(r: Reveal, modifier: Modifier) {
 
 @Composable
 private fun RevealTitle(title: String, genres: List<String>) {
-    TitleArt(title, genres, 20.sp, maxLines = 2)
-}
-
-@Composable
-fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(4.dp).background(SokoulColors.black(0.5f))) {
-        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0.02f, 1f)).background(SokoulColors.Accent))
-    }
+    TitleArt(title, genres, com.sokoul.iptv.ui.theme.TitleSize.Card, maxLines = 2)
 }
 
 /**
@@ -379,7 +372,7 @@ fun LandscapeCard(
                                 alignment = Alignment.BottomStart,
                             )
                         } else {
-                            TitleArt(work.title, work.genres, if (dense) 14.sp else 22.sp, Modifier.widthIn(max = width * 0.8f), maxLines = if (dense) 1 else 2)
+                            TitleArt(work.title, work.genres, if (dense) com.sokoul.iptv.ui.theme.TitleSize.Dense else com.sokoul.iptv.ui.theme.TitleSize.Landscape, Modifier.widthIn(max = width * 0.8f), maxLines = if (dense) 1 else 2)
                         }
                         if (!dense) work.subtitle?.let {
                             Text(it, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.white(0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -387,9 +380,9 @@ fun LandscapeCard(
                     }
                     if (work.resume != null) {
                         Box(
-                            Modifier.size(30.dp).background(if (focused) Color.White else SokoulColors.black(0.6f), Radius.Round),
+                            Modifier.size(30.dp).background(if (focused) SokoulColors.OnVideo else SokoulColors.black(0.6f), Radius.Round),
                             contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp), tint = if (focused) Color.Black else Color.White) }
+                        ) { Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp), tint = if (focused) SokoulColors.OnLight else SokoulColors.OnVideo) }
                     }
                 }
                 if (work.platform != null) PlatformBadge(work.platform, Modifier.align(Alignment.TopStart).padding(8.dp))
@@ -410,7 +403,7 @@ fun RankLandscapeCard(rank: Int, work: Work, onClick: () -> Unit, modifier: Modi
             rank.toString(), Modifier.offset(y = 14.dp).padding(end = 20.dp), maxLines = 1, softWrap = false,
             style = com.sokoul.iptv.ui.theme.Type.Display.copy(
                 fontSize = (width.value * 0.46f).sp, lineHeight = (width.value * 0.46f).sp, letterSpacing = (-4).sp,
-                brush = Brush.verticalGradient(listOf(Color.White, SokoulColors.white(0.12f))),
+                brush = Brush.verticalGradient(listOf(SokoulColors.OnVideo, SokoulColors.white(0.12f))),
             ),
         )
         LandscapeCard(work, onClick, width = width)
@@ -462,7 +455,7 @@ fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null,
                 val films = saga.facts?.films?.takeIf { it > 0 } ?: saga.count
                 Text(
                     if (films > 1) "SAGA · $films FILMS" else "SAGA",
-                    color = SokoulColors.Gold, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, maxLines = 1,
+                    style = com.sokoul.iptv.ui.theme.Type.SagaKicker, maxLines = 1,
                 )
                 if (saga.logo != null) {
                     NetImage(
@@ -484,7 +477,7 @@ fun SagaTile(saga: SagaCard, onClick: () -> Unit, onFocus: (() -> Unit)? = null,
 
 @Composable
 private fun SagaName(name: String) {
-    TitleArt(sagaLabel(name), emptyList(), 22.sp, maxLines = 2, style = com.sokoul.iptv.ui.theme.TitleStyle.GOLD)
+    TitleArt(sagaLabel(name), emptyList(), com.sokoul.iptv.ui.theme.TitleSize.Landscape, maxLines = 2, style = com.sokoul.iptv.ui.theme.TitleStyle.GOLD)
 }
 
 /** Nom de saga sans les suffixes du catalogue (« - Saga », « (Collection) »). */
@@ -538,10 +531,10 @@ fun PlatformTileView(tile: PlatformTile, onClick: () -> Unit, onFocus: (() -> Un
             contentAlignment = Alignment.Center,
         ) {
             // reflet
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(if (focused) 0x40FFFFFF else 0x22FFFFFF), Color.Transparent))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SokoulColors.white(if (focused) 0.25f else 0.13f), Color.Transparent))))
             Text(
-                p.label, color = if (p == Platform.HULU) SokoulColors.OnLight else Color.White,
-                fontSize = if (l.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp, maxLines = 1,
+                p.label, color = if (p == Platform.HULU) SokoulColors.OnLight else SokoulColors.OnVideo,
+                style = if (l.isCompact) com.sokoul.iptv.ui.theme.Type.PlatformName.copy(fontSize = com.sokoul.iptv.ui.theme.Type.PlatformName.fontSize * 0.8f) else com.sokoul.iptv.ui.theme.Type.PlatformName, maxLines = 1,
             )
         }
     }
@@ -562,7 +555,7 @@ fun SeeAllCard(onClick: () -> Unit, landscape: Boolean = false) {
             Box(
                 Modifier.size(44.dp).background(if (focused) SokoulColors.Accent else SokoulColors.SurfaceHigher, Radius.Pill),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Color.White) }
+            ) { Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = SokoulColors.OnVideo) }
             Text("Tout voir", Modifier.padding(top = 10.dp), style = MaterialTheme.typography.titleSmall)
         }
     }

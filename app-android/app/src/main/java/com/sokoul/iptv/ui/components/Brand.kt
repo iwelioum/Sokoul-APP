@@ -22,5 +22,5 @@ fun SokoulMark(modifier: Modifier = Modifier, size: Dp = 32.dp) {
     Box(
         modifier.size(size).background(Brush.linearGradient(listOf(SokoulColors.Accent, SokoulColors.AccentEnd)), Radius.Card),
         contentAlignment = Alignment.Center,
-    ) { Text("S", color = Color.White, fontWeight = FontWeight.Black, fontSize = (size.value * 0.56f).sp) }
+    ) { Text("S", color = SokoulColors.OnVideo, fontWeight = FontWeight.Black, fontSize = (size.value * 0.56f).sp) }
 }

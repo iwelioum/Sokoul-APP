@@ -67,7 +67,8 @@ import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.Work
 import com.sokoul.iptv.ui.components.metaLine
 import com.sokoul.iptv.data.repo.tmdbSized
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
+import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.EmptyState
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.NetImage
@@ -79,7 +80,6 @@ import com.sokoul.iptv.ui.components.focusMemory
 import com.sokoul.iptv.ui.components.rememberFocusMemory
 import com.sokoul.iptv.ui.components.shimmer
 import com.sokoul.iptv.ui.nav.navigateOnce
-import com.sokoul.iptv.ui.screens.vod.Pill
 import com.sokoul.iptv.ui.theme.LocalLayout
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -211,10 +211,10 @@ fun BrowseGridScreen(
                 item("sort", span = { GridItemSpan(maxLineSpan) }) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
                         items(GridSort.entries, key = { it.name }) { s ->
-                            Pill(s.label, selected = s == ui.sort, modifier = Modifier.focusMemory(memory, "sort:${s.name}")) {
+                            com.sokoul.iptv.ui.components.SokoulChip(s.label, selected = s == ui.sort, modifier = Modifier.focusMemory(memory, "sort:${s.name}"), onClick = {
                                 vm.setSort(s)
                                 scope.launch { grid.scrollToItem(0) }
-                            }
+                            })
                         }
                     }
                 }
@@ -223,7 +223,7 @@ fun BrowseGridScreen(
                 ui.loading -> items(18) { Box(Modifier.fillMaxWidth().padding(bottom = 30.dp).height(l.gridCell * 1.5f).shimmer()) }
                 ui.failed -> item("failed", span = { GridItemSpan(maxLineSpan) }) {
                     EmptyState(Icons.Default.Refresh, "Impossible de charger cette sélection", "Vérifiez la connexion, puis réessayez.", Modifier.height(320.dp)) {
-                        AppButton("Réessayer", vm::retry, primary = true, icon = Icons.Default.Refresh, modifier = Modifier.focusMemory(memory, "retry"))
+                        SokoulButton("Réessayer", vm::retry, kind = ButtonKind.Primary, icon = Icons.Default.Refresh, modifier = Modifier.focusMemory(memory, "retry"))
                     }
                 }
                 works.isEmpty() -> item("empty", span = { GridItemSpan(maxLineSpan) }) {
@@ -242,7 +242,7 @@ fun BrowseGridScreen(
                 Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(Radius.Pill).background(SokoulColors.black(0.5f))
                     .dpadClickable({ nav.popBackStack() }),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = Color.White) }
+            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = SokoulColors.OnVideo) }
         }
     }
 
@@ -310,11 +310,11 @@ private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: 
     val l = LocalLayout.current
     val rich = header?.backdrop != null || header?.platform != null
     if (!rich) {
-        Column(Modifier.statusBarsPadding().padding(top = when { underTabs -> TopTabsHeight + l.safeTop; l.isTouch -> 56.dp; else -> 28.dp }, bottom = 8.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val sub = header?.subtitle ?: if (!loading) countText else null
-            if (sub != null) Text(sub, Modifier.padding(top = 4.dp), color = SokoulColors.TextSecondary)
-        }
+        com.sokoul.iptv.ui.components.ScreenHeader(
+            title, Modifier.statusBarsPadding(),
+            subtitle = header?.subtitle ?: if (!loading) countText else null,
+            top = when { underTabs -> TopTabsHeight + l.safeTop; l.isTouch -> 56.dp; else -> 28.dp },
+        )
         return
     }
     val h = (l.heightDp * if (l.isCompact) 0.36f else 0.42f).dp
@@ -329,8 +329,8 @@ private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: 
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to SokoulColors.bg(0.8f))))
         Column(Modifier.align(Alignment.BottomStart).padding(20.dp).widthIn(max = l.heroTextWidth)) {
             if (p != null) PlatformBadge(p, Modifier.padding(bottom = 10.dp), large = true)
-            else Text("SAGA", color = SokoulColors.Gold, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black)
-            Text(header.title, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            else Text("SAGA", style = com.sokoul.iptv.ui.theme.Type.SagaKicker)
+            Text(header.title, style = com.sokoul.iptv.ui.theme.Type.Display, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(Modifier.padding(top = 4.dp)) {
                 Text(listOfNotNull(header.subtitle, if (!loading) (if (truncated) countText else "$count disponibles") else null).joinToString(" · "), color = SokoulColors.TextSecondary)
             }

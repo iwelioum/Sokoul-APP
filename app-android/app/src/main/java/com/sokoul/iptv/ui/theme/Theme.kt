@@ -47,6 +47,10 @@ object SokoulColors {
     val GlassHeavy = Color(0x59FFFFFF)
     /** Panneaux opaques au-dessus de la vidéo. */
     val Panel = Color(0xF2111118)
+    /** Texte et icônes posés sur la vidéo ou une image (lecteur, héros). */
+    val OnVideo = Color.White
+    /** Fond noir derrière la vidéo. */
+    val VideoBlack = Color.Black
     /** Texte et icônes posés sur un fond blanc (bouton focalisé). */
     val OnLight = Color(0xFF0A0A0F)
     /** Teinte d'accent très légère (élément courant dans une liste). */

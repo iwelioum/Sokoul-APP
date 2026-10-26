@@ -74,7 +74,6 @@ import com.sokoul.iptv.ui.components.CategoryItem
 import com.sokoul.iptv.ui.components.ChannelLogo
 import com.sokoul.iptv.ui.components.EmptyState
 import com.sokoul.iptv.ui.components.FocusSurface
-import com.sokoul.iptv.ui.components.LoadingBox
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.components.PinDialog
@@ -218,7 +217,11 @@ fun LiveScreen(nav: NavHostController) {
         val showDetails = l.isTv || l.widthDp >= 1000
         val catWidth = if (l.widthDp < 840) 180.dp else 210.dp
         Row(Modifier.fillMaxSize()) {
-            CategoryColumn(categories, selected, selectCategory, Modifier.width(catWidth).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f)), onLongClick = openCategoryMenu)
+            Column(Modifier.width(catWidth).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f))) {
+                // titre de la page, même rôle que les autres écrans
+                Text("Direct", Modifier.padding(start = 20.dp, top = l.safeTop, end = 12.dp), style = com.sokoul.iptv.ui.theme.Type.ScreenTitle, maxLines = 1)
+                CategoryColumn(categories, selected, selectCategory, Modifier.weight(1f).fillMaxWidth(), onLongClick = openCategoryMenu)
+            }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it }, vm.lastPlayed) { vm.lastPlayed = null }
             }
@@ -299,7 +302,7 @@ private fun ChannelList(
     onRestored: () -> Unit = {},
 ) {
     when {
-        channels == null -> LoadingBox()
+        channels == null -> com.sokoul.iptv.ui.components.ChannelListSkeleton()
         channels.isEmpty() -> EmptyState(Icons.Default.LiveTv, "Aucune chaîne", "Ce groupe est vide. Ajoutez des favoris avec un appui long (ou la touche Menu) sur une chaîne.")
         else -> {
             val now = rememberNow()
@@ -365,9 +368,7 @@ private fun ChannelRow(
                 if (now != null) {
                     Text(now.title, style = com.sokoul.iptv.ui.theme.Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val f = ((time - now.start).toFloat() / (now.end - now.start).coerceAtLeast(1)).coerceIn(0f, 1f)
-                    Box(Modifier.padding(top = 4.dp).fillMaxWidth(0.6f).height(3.dp).background(SokoulColors.white(0.13f), Radius.Tiny)) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(SokoulColors.Accent, Radius.Tiny))
-                    }
+                    com.sokoul.iptv.ui.components.ProgressLine(f, Modifier.padding(top = 4.dp).fillMaxWidth(0.6f), thickness = 3.dp, onImage = false)
                 }
             }
             if (now != null) Text(formatClock(now.end), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextMuted)
@@ -395,9 +396,7 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modif
             Text("EN CE MOMENT", style = com.sokoul.iptv.ui.theme.Type.Kicker.copy(color = SokoulColors.Live))
             Text(now.title, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(formatRange(now.start, now.end) + (now.episode?.let { "  ·  $it" } ?: ""), style = com.sokoul.iptv.ui.theme.Type.Meta)
-            Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(4.dp).background(SokoulColors.white(0.13f), Radius.Tiny)) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(nn.progress(time)).background(SokoulColors.Accent, Radius.Tiny))
-            }
+            com.sokoul.iptv.ui.components.ProgressLine(nn.progress(time), Modifier.padding(vertical = 8.dp), tone = com.sokoul.iptv.ui.components.ProgressTone.Live, onImage = false)
             now.description?.let { Text(it, color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 7, overflow = TextOverflow.Ellipsis) }
         } else {
             Text("Pas d'information de programme", color = SokoulColors.TextMuted)

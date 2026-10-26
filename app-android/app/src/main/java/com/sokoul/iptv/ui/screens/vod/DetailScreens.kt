@@ -113,7 +113,6 @@ import com.sokoul.iptv.data.repo.userMessage
 import com.sokoul.iptv.ui.components.CardRow
 import com.sokoul.iptv.ui.components.FocusSurface
 import com.sokoul.iptv.ui.components.HeroButton
-import com.sokoul.iptv.ui.components.LoadingBox
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.NetImage
 import com.sokoul.iptv.ui.components.OptionsDialog
@@ -879,20 +878,6 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>, memory: com.sokoul
 }
 
 @Composable
-/** Pastille sélectionnable (saisons, versions, tris). */
-fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    FocusSurface(style = FocusStyle.Chip,
-        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Pill,
-        color = if (selected) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh,
-    ) { focused ->
-        Text(
-            text, Modifier.padding(horizontal = 18.dp, vertical = 9.dp), style = MaterialTheme.typography.labelLarge,
-            color = onChip(focused), fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
 private fun VersionChip(source: com.sokoul.iptv.domain.PlaybackSource, detail: String?, preferred: Boolean, first: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
     FocusSurface(style = FocusStyle.Chip,
         onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Card,
@@ -928,8 +913,8 @@ private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boo
                         }
                         if (focused) {
                             Box(Modifier.fillMaxSize().background(SokoulColors.black(0.33f)), contentAlignment = Alignment.Center) {
-                                Box(Modifier.size(40.dp).background(Color.White, Radius.Round), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.PlayArrow, null, tint = Color.Black)
+                                Box(Modifier.size(40.dp).background(SokoulColors.OnVideo, Radius.Round), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.OnLight)
                                 }
                             }
                         }

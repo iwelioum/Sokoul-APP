@@ -410,7 +410,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     }
 
     Box(
-        Modifier.fillMaxSize().background(Color.Black)
+        Modifier.fillMaxSize().background(SokoulColors.VideoBlack)
             .onPreviewKeyEvent { e ->
                 // écran de pause : la première touche le ferme (OK reprend la lecture, Retour le ferme seul, les autres montrent la barre)
                 if (pauseScreen && e.type == KeyEventType.KeyDown) {
@@ -713,7 +713,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             if (numberBuffer.isNotEmpty() && typed == null) {
                 Text(
                     numberBuffer, Modifier.align(Alignment.TopEnd).padding(32.dp).background(SokoulColors.black(0.8f), Radius.Card).padding(horizontal = 22.dp, vertical = 10.dp),
-                    fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                    style = com.sokoul.iptv.ui.theme.Type.ChannelNumber, color = SokoulColors.OnVideo,
                 )
             }
             // carte « Épisode suivant » : glisse depuis la droite ; le dernier épisode connu reste affiché pendant la sortie
@@ -857,7 +857,7 @@ private fun LiveInfoBar(ui: PlayerUi, actions: List<PlayerAction>? = null, first
         Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (c != null) {
-                if (!compact) Text(c.number.toString(), Modifier.padding(end = 18.dp), fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                if (!compact) Text(c.number.toString(), Modifier.padding(end = 18.dp), style = com.sokoul.iptv.ui.theme.Type.ChannelNumberMedium, color = SokoulColors.OnVideo)
                 ChannelLogo(c.logo, c.name, if (compact) Modifier.size(64.dp, 40.dp) else Modifier.size(120.dp, 72.dp))
             }
             Column(Modifier.weight(1f).padding(start = if (compact) 12.dp else 22.dp)) {
@@ -948,7 +948,7 @@ private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?,
     val l = LocalLayout.current
     Text(
         t, modifier.padding(horizontal = 48.dp).background(SokoulColors.black(0.7f), Radius.Tiny).padding(horizontal = 12.dp, vertical = 4.dp),
-        color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        color = SokoulColors.OnVideo, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         style = if (l.isTv) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
     )
 }
@@ -1002,9 +1002,9 @@ private fun OkPrompt(title: String, detail: String?, modifier: Modifier, onClick
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("OK", Modifier.background(Color.White, Radius.Tiny).padding(horizontal = 8.dp, vertical = 2.dp), color = Color.Black, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Text("OK", Modifier.background(SokoulColors.OnVideo, Radius.Tiny).padding(horizontal = 8.dp, vertical = 2.dp), color = SokoulColors.OnLight, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         Column(Modifier.padding(start = 12.dp)) {
-            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(title, color = SokoulColors.OnVideo, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
             if (detail != null) Text(detail, color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }

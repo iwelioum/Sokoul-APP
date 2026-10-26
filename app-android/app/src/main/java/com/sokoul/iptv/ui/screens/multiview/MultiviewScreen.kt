@@ -179,7 +179,7 @@ fun MultiviewScreen(nav: NavHostController) {
         return
     }
 
-    Column(Modifier.fillMaxSize().background(Color.Black).padding(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxSize().background(SokoulColors.VideoBlack).padding(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val banner = notice ?: maxConn?.takeIf { it == 1 }?.let { "Votre abonnement n'autorise qu'une connexion : une seule case peut être lue à la fois." }
         if (banner != null) {
             Text(
@@ -254,7 +254,7 @@ fun MultiviewScreen(nav: NavHostController) {
 private fun SlotView(slot: SlotState, hasAudio: Boolean) {
     val sp = slot.player
     val c = slot.channel
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(SokoulColors.VideoBlack), contentAlignment = Alignment.Center) {
         if (sp == null || c == null) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Add, null, Modifier.size(42.dp), tint = SokoulColors.TextMuted)
@@ -277,7 +277,7 @@ private fun SlotView(slot: SlotState, hasAudio: Boolean) {
         )
         val state by sp.state.collectAsState()
         when (val s = state) {
-            is StreamState.Loading, is StreamState.Buffering, is StreamState.Reconnecting, is StreamState.Waiting -> CircularProgressIndicator(Modifier.size(32.dp), color = SokoulColors.Accent)
+            is StreamState.Loading, is StreamState.Buffering, is StreamState.Reconnecting, is StreamState.Waiting -> com.sokoul.iptv.ui.components.SokoulSpinner(size = 32.dp)
             is StreamState.Failed -> Text(s.message, Modifier.padding(16.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
             is StreamState.Busy -> Text("Connexion utilisée par l'enregistrement de ${s.channel}", Modifier.padding(16.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
             else -> Unit
@@ -287,7 +287,7 @@ private fun SlotView(slot: SlotState, hasAudio: Boolean) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (hasAudio) Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(14.dp).padding(end = 4.dp), tint = SokoulColors.Accent)
-            Text(c.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
+            Text(c.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = SokoulColors.OnVideo)
         }
     }
 }
@@ -317,7 +317,7 @@ private fun SingleConnectionNotice(onBack: () -> Unit) {
                     "Le multi-écran s'activera tout seul avec un abonnement à plusieurs connexions.",
                 Modifier.padding(top = 14.dp), style = MaterialTheme.typography.bodyLarge, color = SokoulColors.TextSecondary, textAlign = TextAlign.Center,
             )
-            com.sokoul.iptv.ui.components.AppButton("Retour", onBack, Modifier.padding(top = 28.dp).focusRequester(focus), primary = true)
+            com.sokoul.iptv.ui.components.SokoulButton("Retour", onBack, Modifier.padding(top = 28.dp).focusRequester(focus), kind = com.sokoul.iptv.ui.components.ButtonKind.Primary)
         }
     }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }

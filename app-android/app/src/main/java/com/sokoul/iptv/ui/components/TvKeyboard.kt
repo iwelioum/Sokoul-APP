@@ -156,7 +156,7 @@ fun TvKeyboard(
                         onLongClick = if (k.action == KeyAction.DELETE) ({ input(KeyInput.Clear) }) else null,
                     ) { focused ->
                         when (k.action) {
-                            null -> Text(k.label, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = onChip(focused))
+                            null -> Text(k.label, style = com.sokoul.iptv.ui.theme.Type.Key, color = onChip(focused))
                             KeyAction.TOGGLE -> Text(k.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = onChip(focused))
                             KeyAction.SPACE -> KeyIcon(Icons.Default.SpaceBar, k.label, focused)
                             KeyAction.DELETE -> KeyIcon(Icons.AutoMirrored.Filled.Backspace, k.label, focused)

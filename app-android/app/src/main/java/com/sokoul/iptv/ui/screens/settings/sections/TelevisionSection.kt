@@ -47,7 +47,7 @@ internal fun LazyListScope.televisionSection(c: SettingsCtx) {
         }
     }
     item("tv-xmltv") {
-        SettingRow("Guide TV xmltv.fr", if (s.epgXmltvFr) "Activé" else "Désactivé", "Chaînes françaises, belges et suisses en complément du guide du fournisseur (environ 8 Mo à chaque mise à jour)") {
+        SettingRow("Guide TV xmltv.fr", null, "Chaînes françaises, belges et suisses en complément du guide du fournisseur (environ 8 Mo à chaque mise à jour)", trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(s.epgXmltvFr) }) {
             c.vm.update { it.copy(epgXmltvFr = !it.epgXmltvFr) }
         }
     }

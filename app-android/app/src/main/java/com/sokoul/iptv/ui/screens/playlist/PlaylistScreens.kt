@@ -3,6 +3,7 @@ package com.sokoul.iptv.ui.screens.playlist
 import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Radius
+import com.sokoul.iptv.ui.components.shimmer
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -63,7 +64,8 @@ import com.sokoul.iptv.data.repo.SyncEngine
 import com.sokoul.iptv.data.repo.SyncStatus
 import com.sokoul.iptv.data.repo.userMessage
 import com.sokoul.iptv.parser.ServerUrl
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
+import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.ConfirmDialog
 import com.sokoul.iptv.ui.components.FocusSurface
 import com.sokoul.iptv.ui.components.FormField
@@ -207,7 +209,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                 }
                 // Masqué sur Android TV : le sélecteur de fichiers y est factice (rien ne s'ouvrirait)
                 if (remember { context.hasDocumentPicker() }) {
-                    AppButton("Choisir un fichier sur l'appareil", { filePicker.launch(arrayOf("*/*")) }, icon = Icons.Default.FolderOpen)
+                    SokoulButton("Choisir un fichier sur l'appareil", { filePicker.launch(arrayOf("*/*")) }, icon = Icons.Default.FolderOpen)
                 }
             }
             FormField("Guide TV XMLTV (facultatif)", epg, { epg = it }, placeholder = "Fourni par le serveur si vide", keyboardType = KeyboardType.Uri)
@@ -225,7 +227,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val p = existing
-                AppButton(
+                SokoulButton(
                     text = if (busy) "Vérification…" else if (p != null) "Enregistrer" else "Ajouter et synchroniser",
                     onClick = {
                         when {
@@ -234,15 +236,15 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                             else -> vm.addM3u(name, m3u, epg, ua, onSaved)
                         }
                     },
-                    primary = true,
+                    kind = ButtonKind.Primary,
                     enabled = !busy,
                     focusRequester = if (p != null) firstFocus else null,
                 )
-                if (busy) CircularProgressIndicator(Modifier.size(28.dp), color = SokoulColors.Accent)
+                if (busy) com.sokoul.iptv.ui.components.SokoulSpinner(size = 28.dp)
                 if (p != null) {
-                    AppButton("Supprimer", { confirmDelete = true }, icon = Icons.Default.Delete)
+                    SokoulButton("Supprimer", { confirmDelete = true }, icon = Icons.Default.Delete)
                 }
-                if (!firstRun && p == null) AppButton("Annuler", { nav.popBackStack() })
+                if (!firstRun && p == null) SokoulButton("Annuler", { nav.popBackStack() })
             }
             Spacer(Modifier.height(40.dp))
         }
@@ -306,9 +308,9 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
                     Text("La synchronisation a échoué", Modifier.padding(top = 16.dp), style = com.sokoul.iptv.ui.theme.Type.Section)
                     Text(s.error, Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center)
                     Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AppButton("Réessayer", { vm.retry(playlistId) }, icon = Icons.Default.Refresh, primary = true, focusRequester = focus)
-                        AppButton("Modifier", { nav.navigate(PlaylistEditRoute(playlistId)) })
-                        AppButton("Continuer", { nav.navigate(HomeRoute) { popUpTo(nav.graph.id) { inclusive = true } } })
+                        SokoulButton("Réessayer", { vm.retry(playlistId) }, icon = Icons.Default.Refresh, kind = ButtonKind.Primary, focusRequester = focus)
+                        SokoulButton("Modifier", { nav.navigate(PlaylistEditRoute(playlistId)) })
+                        SokoulButton("Continuer", { nav.navigate(HomeRoute) { popUpTo(nav.graph.id) { inclusive = true } } })
                     }
                 }
                 done -> {
@@ -326,18 +328,18 @@ fun SyncScreen(nav: NavHostController, playlistId: Long) {
                         },
                         Modifier.padding(top = 10.dp), color = SokoulColors.TextMuted, textAlign = TextAlign.Center,
                     )
-                    AppButton(
+                    SokoulButton(
                         "C'est parti", { nav.navigate(HomeRoute) { popUpTo(nav.graph.id) { inclusive = true } } },
-                        Modifier.padding(top = 24.dp), primary = true, focusRequester = focus,
+                        Modifier.padding(top = 24.dp), kind = ButtonKind.Primary, focusRequester = focus,
                     )
                 }
                 else -> {
                     SetupSteps(2)
-                    CircularProgressIndicator(Modifier.padding(top = 28.dp), color = SokoulColors.Accent)
+                    com.sokoul.iptv.ui.components.SokoulSpinner(Modifier.padding(top = 28.dp))
                     Text("Synchronisation en cours", Modifier.padding(top = 20.dp), style = com.sokoul.iptv.ui.theme.Type.Section)
                     Text(s?.step ?: "En attente du réseau…", Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary)
                     if ((s?.count ?: 0) > 0) Text("${s?.count} éléments", color = SokoulColors.TextMuted)
-                    LinearProgressIndicator(Modifier.padding(top = 20.dp).fillMaxWidth(), color = SokoulColors.Accent, trackColor = SokoulColors.SurfaceHigher)
+                    Box(Modifier.padding(top = 20.dp).fillMaxWidth().height(4.dp).shimmer(Radius.Tiny))
                     Text(
                         "Les grosses playlists peuvent prendre une à deux minutes. Les mises à jour suivantes se font en arrière-plan.",
                         Modifier.padding(top = 16.dp), color = SokoulColors.TextMuted, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall,
@@ -363,7 +365,7 @@ internal fun SetupSteps(current: Int, modifier: Modifier = Modifier) {
                 Modifier.size(22.dp).background(if (done || active) SokoulColors.Accent else SokoulColors.SurfaceHigher, Radius.Round),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (done) "✓" else "$n", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = if (done || active) androidx.compose.ui.graphics.Color.White else SokoulColors.TextMuted)
+                Text(if (done) "✓" else "$n", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = if (done || active) SokoulColors.OnVideo else SokoulColors.TextMuted)
             }
             Text(
                 label, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge,

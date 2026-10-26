@@ -107,15 +107,15 @@ fun CategoryPickerButton(
 ) {
     var open by remember { mutableStateOf(false) }
     val current = items.firstOrNull { it.id == selected }?.name ?: "Groupe"
-    AppButton(current.take(28), { open = true }, modifier, icon = Icons.AutoMirrored.Filled.List)
+    SokoulButton(current.take(28), { open = true }, modifier, icon = Icons.AutoMirrored.Filled.List)
     if (open) {
-        Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        SokoulDialog({ open = false }, DialogPlacement.Side) {
             val focus = remember { FocusRequester() }
             val start = items.indexOfFirst { it.id == selected }.coerceAtLeast(0)
             val state = rememberLazyListState((start - 4).coerceAtLeast(0))
-            Column(Modifier.widthIn(min = 360.dp, max = 560.dp).clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(vertical = 16.dp)) {
-                Text("Groupes (${items.size})", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.titleLarge)
-                LazyColumn(Modifier.heightIn(max = 480.dp), state = state, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            run {
+                DialogHeader("Groupes", "${items.size} groupes")
+                LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 720.dp), state = state, contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     itemsIndexed(items, key = { _, c -> c.id }) { i, c ->
                         val isSel = c.id == selected
                         FocusSurface(style = FocusStyle.Row,

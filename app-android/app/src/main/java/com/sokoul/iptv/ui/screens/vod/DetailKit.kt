@@ -409,7 +409,7 @@ private fun AvailabilityLine(services: List<Pair<String, Long?>>, modifier: Modi
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // contour clair : une couleur de marque sombre (Disney+) reste visible sur le fond
-                Box(Modifier.size(9.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, Radius.Round).border(1.dp, Color.White.copy(alpha = 0.55f), Radius.Round))
+                Box(Modifier.size(9.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, Radius.Round).border(1.dp, SokoulColors.OnVideo.copy(alpha = 0.55f), Radius.Round))
                 Text(name, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextPrimary, maxLines = 1)
             }
         }
@@ -428,8 +428,8 @@ private fun ExternalRating(source: String, value: String) {
             .semantics(mergeDescendants = true) { contentDescription = "$source $value" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(source, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black, color = if (imdb) Color.Black else SokoulColors.TextSecondary)
-        Text(value, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = if (imdb) Color.Black else SokoulColors.TextPrimary)
+        Text(source, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black, color = if (imdb) SokoulColors.OnLight else SokoulColors.TextSecondary)
+        Text(value, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = if (imdb) SokoulColors.OnLight else SokoulColors.TextPrimary)
     }
 }
 
@@ -438,7 +438,7 @@ private fun DetailTitle(title: String, genres: String?) {
     val l = LocalLayout.current
     val list = remember(genres) { genres?.split(",", "·")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty() }
     com.sokoul.iptv.ui.components.TitleArt(
-        title, list, if (l.isCompact) 30.sp else 50.sp,
+        title, list, if (l.isCompact) com.sokoul.iptv.ui.theme.TitleSize.DetailCompact else com.sokoul.iptv.ui.theme.TitleSize.Detail,
         Modifier.widthIn(max = if (l.isCompact) 320.dp else (l.widthDp * 0.5f).dp), maxLines = 2,
     )
 }
@@ -485,9 +485,9 @@ fun DetailPrimaryButton(a: PrimaryAction, modifier: Modifier = Modifier) {
     val l = LocalLayout.current
     FocusSurface(style = FocusStyle.Chip,
         onClick = a.onClick, modifier = modifier.semantics { contentDescription = listOfNotNull(a.label, a.detail).joinToString(", ") },
-        shape = Radius.Card, color = if (l.isTv) SokoulColors.GlassHeavy else Color.White, focusedColor = Color.White,
+        shape = Radius.Card, color = com.sokoul.iptv.ui.components.buttonRest(com.sokoul.iptv.ui.components.ButtonKind.Primary, l.isTv), focusedColor = SokoulColors.Focus,
     ) { focused ->
-        val c = if (!l.isTv || focused) SokoulColors.OnLight else Color.White
+        val c = com.sokoul.iptv.ui.components.buttonContent(!l.isTv || focused)
         Row(
             Modifier.height(if (l.isCompact) 50.dp else 54.dp).padding(start = 18.dp, end = 24.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (l.isCompact) Arrangement.Center else Arrangement.Start,
@@ -495,13 +495,11 @@ fun DetailPrimaryButton(a: PrimaryAction, modifier: Modifier = Modifier) {
             Icon(Icons.Default.PlayArrow, null, Modifier.size(28.dp), tint = c)
             Spacer(Modifier.width(8.dp))
             Column {
-                Text(a.label, color = c, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(a.label, color = c, style = com.sokoul.iptv.ui.theme.Type.Button, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (a.progress != null || a.detail != null) {
                     Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (a.progress != null) {
-                            Box(Modifier.width(72.dp).height(3.dp).clip(Radius.Tiny).background(c.copy(alpha = 0.28f))) {
-                                Box(Modifier.fillMaxHeight().fillMaxWidth(a.progress.coerceIn(0.03f, 1f)).background(if (focused || !l.isTv) SokoulColors.Accent else Color.White))
-                            }
+                            com.sokoul.iptv.ui.components.ProgressLine(a.progress, Modifier.width(72.dp), tone = if (focused || !l.isTv) com.sokoul.iptv.ui.components.ProgressTone.Accent else com.sokoul.iptv.ui.components.ProgressTone.OnVideo, thickness = 3.dp, track = c.copy(alpha = 0.28f))
                             Spacer(Modifier.width(8.dp))
                         }
                         a.detail?.let { Text(it, color = c.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, maxLines = 1) }
@@ -520,9 +518,9 @@ fun DetailPrimaryButton(a: PrimaryAction, modifier: Modifier = Modifier) {
 fun DetailActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
     FocusSurface(style = FocusStyle.Chip,
         onClick = a.onClick, modifier = modifier.semantics { contentDescription = a.label }, shape = Radius.Pill,
-        color = SokoulColors.GlassLight, focusedColor = Color.White,
+        color = com.sokoul.iptv.ui.components.buttonRest(com.sokoul.iptv.ui.components.ButtonKind.Glass, true), focusedColor = SokoulColors.Focus,
     ) { focused ->
-        val c = if (focused) SokoulColors.OnLight else Color.White
+        val c = com.sokoul.iptv.ui.components.buttonContent(focused)
         Row(
             Modifier.height(54.dp).widthIn(min = 54.dp).animateContentSize(Motion.enter()).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
@@ -540,7 +538,7 @@ fun DetailActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
 private fun PhoneActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
     FocusSurface(style = FocusStyle.Chip, onClick = a.onClick, modifier = modifier.widthIn(min = 72.dp), shape = Radius.Card, color = Color.Transparent, focusedColor = SokoulColors.SurfaceHigh) { _ ->
         Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            MorphIcon(a.icon, Color.White, 26)
+            MorphIcon(a.icon, SokoulColors.OnVideo, 26)
             Text(a.label, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextSecondary, maxLines = 1)
         }
     }
@@ -621,7 +619,7 @@ private fun PhoneDetail(
             Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(Radius.Round).background(SokoulColors.Scrim).dpadClickable({ nav.popBackStack() })
                 .semantics { contentDescription = "Retour" },
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }
+        ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = SokoulColors.OnVideo) }
     }
 }
 
@@ -679,7 +677,7 @@ fun SeasonTabs(
             FocusSurface(style = FocusStyle.Chip,
                 onClick = { onSelect(n) }, onLongClick = { onLongClick(n) },
                 modifier = Modifier.focusMemory(memory, "season:$n").onFocusChanged { if (it.isFocused) focusedTab = n },
-                shape = Radius.Pill, color = Color.Transparent, focusedColor = Color.White,
+                shape = Radius.Pill, color = Color.Transparent, focusedColor = SokoulColors.OnVideo,
             ) { focused ->
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -780,12 +778,12 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
                         if (fallbackImage != null && fallbackImage != ev.image) NetImage(tmdbSized(fallbackImage, "w780"), null, Modifier.fillMaxSize().graphicsLayer { alpha = 0.45f })
                         Text(
                             "${ev.entity.episode}", Modifier.align(Alignment.BottomEnd).padding(horizontal = 12.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = Color.White.copy(alpha = 0.55f),
+                            style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = SokoulColors.OnVideo.copy(alpha = 0.55f),
                         )
                     }
                 }
                 androidx.compose.animation.AnimatedVisibility(visible = focused, enter = fadeIn(Motion.enter()) + scaleIn(Motion.enter(), initialScale = 0.7f), exit = fadeOut(Motion.exit()), modifier = Modifier.align(Alignment.Center)) {
-                    Box(Modifier.size(46.dp).background(Color.White, Radius.Round), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(46.dp).background(SokoulColors.OnVideo, Radius.Round), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.OnLight)
                     }
                 }
@@ -793,7 +791,7 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
                     Text(
                         if (resumable) "En cours" else "À suivre",
                         Modifier.align(Alignment.TopStart).padding(8.dp).background(SokoulColors.Accent, Radius.Card).padding(horizontal = 8.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White,
+                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = SokoulColors.OnVideo,
                     )
                 }
                 if (watched) Icon(Icons.Default.CheckCircle, "Vu", Modifier.align(Alignment.TopEnd).padding(8.dp).size(22.dp), tint = SokoulColors.Success)
@@ -812,20 +810,16 @@ fun EpisodeCard(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, mo
 /** Résumé complet (TV : depuis le menu ⋯ ; tactile : en touchant le résumé). */
 @Composable
 fun SynopsisDialog(title: String, text: String, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    com.sokoul.iptv.ui.components.SokoulDialog(onDismiss, maxWidth = 760.dp) {
         val close = remember { FocusRequester() }
-        Column(
-            Modifier.fillMaxWidth(0.9f).widthIn(max = 760.dp).clip(Radius.Panel).background(SokoulColors.Panel).padding(28.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        run {
+            com.sokoul.iptv.ui.components.DialogHeader(title)
             Text(
                 text, Modifier.padding(top = 14.dp).heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
                 style = MaterialTheme.typography.bodyLarge, color = SokoulColors.TextPrimary.copy(alpha = 0.92f),
             )
             Spacer(Modifier.height(20.dp))
-            FocusSurface(style = FocusStyle.Chip, onClick = onDismiss, modifier = Modifier.focusRequester(close), shape = Radius.Card, color = SokoulColors.GlassLight, focusedColor = Color.White) { f ->
-                Text("Fermer", Modifier.padding(horizontal = 22.dp, vertical = 12.dp), color = if (f) SokoulColors.OnLight else Color.White, fontWeight = FontWeight.Bold)
-            }
+            com.sokoul.iptv.ui.components.SokoulButton("Fermer", onDismiss, focusRequester = close)
         }
         LaunchedEffect(Unit) { delay(60); runCatching { close.requestFocus() } }
     }

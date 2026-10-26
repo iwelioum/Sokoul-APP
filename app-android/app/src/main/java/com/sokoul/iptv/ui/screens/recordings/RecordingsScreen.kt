@@ -157,7 +157,7 @@ fun RecordingsScreen(nav: NavHostController) {
             sections.forEach { (section, list) ->
                 item(key = section.name) {
                     Column {
-                        SectionTitle(section.kicker, section.title, list.size)
+                        com.sokoul.iptv.ui.components.RowHeader(section.title, countLabel(list.size, "enregistrement"), kicker = section.kicker)
                         LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                             items(list, key = { it.id }) { r ->
                                 RecordingCard(r, logos["${r.playlistId}|${r.channelId}"], now, onClick = { open(r) }, onLongClick = { menu = r })
@@ -168,7 +168,7 @@ fun RecordingsScreen(nav: NavHostController) {
             }
             if (reminders.isNotEmpty()) item(key = "reminders") {
                 Column {
-                    SectionTitle("RAPPELS", "Programmes à ne pas manquer", reminders.size)
+                    com.sokoul.iptv.ui.components.RowHeader("Programmes à ne pas manquer", countLabel(reminders.size, "rappel"), kicker = "RAPPELS")
                     LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         items(reminders, key = { "${it.playlistId}|${it.channelId}|${it.start}" }) { r ->
                             FocusSurface(onClick = { reminderMenu = r }, style = FocusStyle.Row, color = SokoulColors.Surface, modifier = Modifier.width(320.dp)) { _ ->
@@ -214,17 +214,7 @@ fun RecordingsScreen(nav: NavHostController) {
     }
 }
 
-@Composable
-private fun SectionTitle(kicker: String, title: String, count: Int) {
-    val l = LocalLayout.current
-    Column(Modifier.padding(start = l.margin, end = l.margin, bottom = 10.dp)) {
-        Text(kicker, style = Type.Kicker, maxLines = 1)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(title, style = Type.Section, maxLines = 1)
-            Text("  $count", Modifier.padding(bottom = 3.dp), style = Type.Meta, color = SokoulColors.TextMuted)
-        }
-    }
-}
+private fun countLabel(n: Int, word: String) = "$n $word" + if (n > 1) "s" else ""
 
 /**
  * Carte d'enregistrement (16:9) : titre généré sur un fond sombre, logo de la chaîne, pastille d'état
@@ -236,7 +226,7 @@ private fun RecordingCard(r: RecordingEntity, logo: String?, now: Long, onClick:
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SokoulColors.PlaceholderTop, SokoulColors.PlaceholderBottom)))) {
             val dim = r.status == RecordingStatus.FAILED || r.status == RecordingStatus.CANCELLED
             TitleArt(
-                r.title, emptyList(), 26.sp,
+                r.title, emptyList(), com.sokoul.iptv.ui.theme.TitleSize.Recording,
                 Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp),
                 maxLines = 2, align = androidx.compose.ui.text.style.TextAlign.Center,
             )
@@ -262,9 +252,7 @@ private fun RecordingCard(r: RecordingEntity, logo: String?, now: Long, onClick:
             }
             if (r.status == RecordingStatus.RECORDING) {
                 val f = ((now - r.startAt).toFloat() / (r.endAt - r.startAt).coerceAtLeast(1)).coerceIn(0f, 1f)
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(SokoulColors.white(0.15f))) {
-                    Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(SokoulColors.Live))
-                }
+                com.sokoul.iptv.ui.components.ProgressLine(f, Modifier.align(Alignment.BottomStart), tone = com.sokoul.iptv.ui.components.ProgressTone.Live, thickness = 3.dp)
             }
         }
     }
@@ -273,8 +261,8 @@ private fun RecordingCard(r: RecordingEntity, logo: String?, now: Long, onClick:
 @Composable
 private fun StatusBadge(r: RecordingEntity, now: Long, modifier: Modifier) {
     val (text, bg, fg) = when (r.status) {
-        RecordingStatus.RECORDING -> Triple("● REC", SokoulColors.Live, Color.White)
-        RecordingStatus.SCHEDULED -> Triple("${dayLabel(r.startAt, now)} · ${formatClock(r.startAt)}", SokoulColors.Accent, Color.White)
+        RecordingStatus.RECORDING -> Triple("● REC", SokoulColors.Live, SokoulColors.OnVideo)
+        RecordingStatus.SCHEDULED -> Triple("${dayLabel(r.startAt, now)} · ${formatClock(r.startAt)}", SokoulColors.Accent, SokoulColors.OnVideo)
         RecordingStatus.COMPLETED -> return
         RecordingStatus.FAILED -> Triple("Échec", SokoulColors.black(0.7f), SokoulColors.Live)
         RecordingStatus.CANCELLED -> Triple("Annulé", SokoulColors.black(0.7f), SokoulColors.TextMuted)

@@ -166,7 +166,7 @@ private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
                         Icon(d.icon, d.label, Modifier.size(22.dp), tint = if (selected || focused) SokoulColors.Accent else SokoulColors.TextSecondary)
                     }
                     Text(
-                        d.label, fontSize = 10.5.sp, maxLines = 1, textAlign = TextAlign.Center,
+                        d.label, style = com.sokoul.iptv.ui.theme.Type.NavLabel, maxLines = 1, textAlign = TextAlign.Center,
                         color = if (selected || focused) SokoulColors.TextPrimary else SokoulColors.TextMuted,
                     )
                 }
@@ -192,13 +192,13 @@ private fun PhoneShell(nav: NavHostController, current: Dest, edgeToEdge: Boolea
                 NavigationBarItem(
                     selected = d == current, onClick = { nav.goTo(d) },
                     icon = { Icon(d.icon, d.label, Modifier.size(22.dp)) },
-                    label = { Text(d.label, fontSize = 10.5.sp, maxLines = 1) }, colors = colors,
+                    label = { Text(d.label, style = com.sokoul.iptv.ui.theme.Type.NavLabel, maxLines = 1) }, colors = colors,
                 )
             }
             NavigationBarItem(
                 selected = current !in main, onClick = { more = true },
                 icon = { Icon(Icons.Default.MoreHoriz, "Plus", Modifier.size(22.dp)) },
-                label = { Text("Plus", fontSize = 10.5.sp) }, colors = colors,
+                label = { Text("Plus", style = com.sokoul.iptv.ui.theme.Type.NavLabel) }, colors = colors,
             )
         }
     }

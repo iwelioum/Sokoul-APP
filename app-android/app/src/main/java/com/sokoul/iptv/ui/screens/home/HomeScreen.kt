@@ -66,9 +66,7 @@ fun ChannelCard(c: ChannelEntity, now: ProgramEntity?, onClick: () -> Unit) {
                 if (now != null) {
                     val t = System.currentTimeMillis()
                     val f = ((t - now.start).toFloat() / (now.end - now.start).coerceAtLeast(1)).coerceIn(0f, 1f)
-                    Box(Modifier.fillMaxWidth().height(3.dp).background(SokoulColors.white(0.2f))) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(SokoulColors.Live))
-                    }
+                    com.sokoul.iptv.ui.components.ProgressLine(f, tone = com.sokoul.iptv.ui.components.ProgressTone.Live, thickness = 3.dp, track = SokoulColors.white(0.2f))
                 }
             }
         }

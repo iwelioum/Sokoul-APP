@@ -64,7 +64,7 @@ fun ZapBanner(c: ChannelEntity, number: String?, modifier: Modifier = Modifier) 
             Row(Modifier.padding(horizontal = Space.l, vertical = Space.m), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     number ?: c.number.toString(), Modifier.widthIn(min = 64.dp),
-                    fontSize = 34.sp, fontWeight = FontWeight.Bold, color = if (number != null) SokoulColors.Accent else SokoulColors.TextPrimary,
+                    style = com.sokoul.iptv.ui.theme.Type.ChannelNumberMedium, color = if (number != null) SokoulColors.Accent else SokoulColors.TextPrimary,
                 )
                 ChannelLogo(c.logo, c.name, Modifier.padding(start = Space.s).size(84.dp, 50.dp))
                 Text(

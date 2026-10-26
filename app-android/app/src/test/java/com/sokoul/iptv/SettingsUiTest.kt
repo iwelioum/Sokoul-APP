@@ -16,7 +16,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
 import com.sokoul.iptv.ui.screens.settings.SETTINGS_FOLLOW_MS
 import com.sokoul.iptv.ui.screens.settings.SettingsCategory
 import com.sokoul.iptv.ui.screens.settings.SettingsPanes
@@ -43,8 +43,8 @@ class SettingsUiTest {
                 // chaque volet : deux lignes nommées d'après la rubrique
                 SettingsPanes { cat, modifier ->
                     Column(modifier) {
-                        AppButton("Ligne 1 ${cat.name}", {})
-                        AppButton("Ligne 2 ${cat.name}", {})
+                        SokoulButton("Ligne 1 ${cat.name}", {})
+                        SokoulButton("Ligne 2 ${cat.name}", {})
                     }
                 }
             }

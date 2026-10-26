@@ -29,7 +29,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.sokoul.iptv.player.StreamState
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
 import com.sokoul.iptv.ui.components.FocusMemory
 import com.sokoul.iptv.ui.components.focusMemory
 import com.sokoul.iptv.ui.components.rememberFocusMemory
@@ -222,8 +222,8 @@ class ParcoursUiTest {
         restorer.setContent {
             val m = rememberFocusMemory().also { memory = it }
             if (visible) Column {
-                AppButton("Lecture", {}, Modifier.focusMemory(m, "play"))
-                AppButton("Épisode 3", {}, Modifier.focusMemory(m, "ep:1:3"))
+                SokoulButton("Lecture", {}, Modifier.focusMemory(m, "play"))
+                SokoulButton("Épisode 3", {}, Modifier.focusMemory(m, "ep:1:3"))
             }
         }
         rule.runOnIdle { memory!!.requester("ep:1:3").requestFocus() }
@@ -244,8 +244,8 @@ class ParcoursUiTest {
         rule.setContent {
             val m = rememberFocusMemory().also { memory = it }
             Column {
-                AppButton("Menu", {}) // menu latéral : hors mémoire, comme dans l'app
-                if (visible) keys.forEach { k -> androidx.compose.runtime.key(k) { AppButton("Carte $k", {}, Modifier.focusMemory(m, "continue|$k")) } }
+                SokoulButton("Menu", {}) // menu latéral : hors mémoire, comme dans l'app
+                if (visible) keys.forEach { k -> androidx.compose.runtime.key(k) { SokoulButton("Carte $k", {}, Modifier.focusMemory(m, "continue|$k")) } }
             }
         }
         rule.runOnIdle { memory!!.requester("continue|A").requestFocus() }

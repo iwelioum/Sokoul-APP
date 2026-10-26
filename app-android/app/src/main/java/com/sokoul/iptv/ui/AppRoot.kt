@@ -22,7 +22,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.sokoul.iptv.PlayIntent
 import com.sokoul.iptv.data.repo.PlaylistRepository
-import com.sokoul.iptv.ui.components.LoadingBox
 import com.sokoul.iptv.ui.nav.AllCategoriesRoute
 import com.sokoul.iptv.ui.nav.BrowseGridRoute
 import com.sokoul.iptv.ui.nav.GuideRoute
@@ -101,7 +100,7 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
         },
     ) {
         when (hasPlaylist) {
-            null -> LoadingBox()
+            null -> com.sokoul.iptv.ui.components.BrandSplash()
             else -> {
                 val nav = rememberNavController()
                 // destination de départ figée : l'ajout de la 1re playlist ne doit pas réinitialiser la navigation

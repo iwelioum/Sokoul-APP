@@ -353,7 +353,7 @@ private fun SearchField(query: String, placeholder: String, focusable: Boolean, 
             Spacer(Modifier.width(14.dp))
             Text(
                 query.ifEmpty { placeholder }, Modifier.weight(1f, fill = false),
-                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
+                style = com.sokoul.iptv.ui.theme.Type.SearchQuery,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = if (query.isEmpty()) SokoulColors.TextMuted else SokoulColors.TextPrimary,
             )

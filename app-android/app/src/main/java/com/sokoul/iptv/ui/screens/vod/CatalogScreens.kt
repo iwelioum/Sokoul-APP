@@ -57,12 +57,12 @@ import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SpecialCategory
 import com.sokoul.iptv.data.repo.VodRepository
 import com.sokoul.iptv.ui.ParentalGate
-import com.sokoul.iptv.ui.components.AppButton
+import com.sokoul.iptv.ui.components.SokoulButton
+import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.CategoryChips
 import com.sokoul.iptv.ui.components.CategoryColumn
 import com.sokoul.iptv.ui.components.CategoryItem
 import com.sokoul.iptv.ui.components.EmptyState
-import com.sokoul.iptv.ui.components.LoadingBox
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.components.PinDialog
@@ -214,10 +214,10 @@ private fun CatalogGrid(vm: CatalogViewModel, title: String, onOpen: (GridItem) 
                 categories.firstOrNull { it.id == selected }?.name ?: title,
                 Modifier.padding(horizontal = LocalLayout.current.margin),
                 subtitle = items?.let { if (it.size <= 1) "${it.size} titre" else "${it.size} titres" },
-            ) { AppButton(sort.label, { sortMenu = true }, icon = Icons.AutoMirrored.Filled.Sort) }
+            ) { SokoulButton(sort.label, { sortMenu = true }, icon = Icons.AutoMirrored.Filled.Sort) }
             val list = items
             when {
-                list == null -> LoadingBox()
+                list == null -> com.sokoul.iptv.ui.components.PosterGridSkeleton()
                 list.isEmpty() -> EmptyState(Icons.Default.Movie, "Rien ici pour le moment", if (selected == SpecialCategory.FAVORITES) "Ajoutez des titres à « Ma liste » depuis leur fiche." else null)
                 else -> {
                     val state = rememberLazyGridState(vm.gridIndex, vm.gridOffset)
