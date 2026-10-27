@@ -115,8 +115,8 @@ class RealDebridClient @Inject constructor(
         return RdLink(o.str("download") ?: throw RdException(0, "Lien indisponible"), o.str("filename").orEmpty(), o.long("filesize") ?: 0, o.str("mimeType"))
     }
 
-    suspend fun torrents(limit: Int = 50): List<RdTorrent> =
-        (call("GET", "torrents?limit=$limit") as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::parseTorrent) }
+    suspend fun torrents(limit: Int = 50, page: Int = 1): List<RdTorrent> =
+        (call("GET", "torrents?limit=$limit" + (if (page > 1) "&page=$page" else "")) as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::parseTorrent) }
 
     suspend fun downloads(limit: Int = 50): List<RdDownload> =
         (call("GET", "downloads?limit=$limit") as? JsonArray).orEmpty().mapNotNull { e ->

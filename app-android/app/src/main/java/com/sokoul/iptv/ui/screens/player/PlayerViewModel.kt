@@ -945,10 +945,12 @@ class PlayerViewModel @Inject constructor(
             // essai automatique : seulement ce qui peut démarrer tout de suite (une version à télécharger ne l'est pas)
             val ranked = com.sokoul.iptv.data.debrid.SourceRanker.rank(emptyList(), streams.filter { it.key !in failedDebrid && it.readyNow != false }, prefs)
                 .mapNotNull { (it as? com.sokoul.iptv.data.debrid.Candidate.Debrid)?.stream }
-            (wanted + ranked).distinctBy { it.key }.take(4)
+            // chaque essai est court (~5 s au plus) : 6 versions avant d'abandonner
+            (wanted + ranked).distinctBy { it.key }.take(6)
         }
         val rdName = com.sokoul.iptv.ui.components.SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID)
         var preparing: Pair<String, Int>? = null
+        var notCached = 0
         for (s in order) {
             val label = com.sokoul.iptv.ui.components.SourceLabels.text(s.toSource())
             _ui.update { it.copy(notice = "Préparation de la version $label sur $rdName…") }
@@ -963,6 +965,7 @@ class PlayerViewModel @Inject constructor(
                 null
             } catch (e: com.sokoul.iptv.data.debrid.DebridNotCached) {
                 Timber.i("Version Real-Debrid pas en cache, écartée pour ce lancement")
+                notCached++
                 null
             } catch (e: Exception) {
                 Timber.w("Version Real-Debrid écartée : ${e.message}")
@@ -984,6 +987,8 @@ class PlayerViewModel @Inject constructor(
                 notice = when {
                     p != null -> "$rdName télécharge la version ${p.first} (${p.second} %). Elle sera lisible une fois prête, marquée « dans votre compte »."
                     order.isEmpty() -> null
+                    notCached == order.size ->
+                        "Aucune de ces versions n'est encore en cache sur $rdName : choisissez-en une dans « Langue et qualité » pour la faire télécharger"
                     else -> "Aucune version $rdName prête pour le moment" + (lastRdError?.let { " (dernière erreur : $it)" } ?: "")
                 },
             )

@@ -75,7 +75,7 @@ class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
         val episode = q.episode.takeIf { q.series }
 
         // déjà dans le compte : prêt avec le bon fichier choisi → aucun ajout ; en cours de téléchargement → on attend
-        val existing = rd.torrents(100).filter { it.hash == hash && it.status !in DEAD }
+        val existing = inAccount(hash)
         existing.firstOrNull { it.ready }?.let { t ->
             val info = rd.torrentInfo(t.id)
             val file = pick(info.files.filter { it.selected }, s, season, episode) ?: pick(info.files, s, season, episode)
@@ -85,16 +85,25 @@ class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
 
         val id = rd.addMagnet("magnet:?xt=urn:btih:$hash")
         try {
+            // Après addMagnet, Real-Debrid convertit le magnet. En cache : liste des fichiers presque tout de suite.
+            // Toujours vide après quelques secondes : la release n'est pas en cache (ce n'est pas une panne).
             var info = rd.torrentInfo(id)
-            // Après addMagnet, Real-Debrid peut encore convertir le magnet : les fichiers
-            // n'apparaissent pas forcément dans la première réponse.
-            repeat(METADATA_POLLS - 1) {
-                if (info.files.isEmpty() && info.status !in DEAD) {
-                    delay(pollDelayMs)
-                    info = rd.torrentInfo(id)
-                }
+            var waits = 0
+            while (info.files.isEmpty() && info.status !in DEAD && waits < METADATA_POLLS) {
+                delay(pollDelayMs)
+                info = rd.torrentInfo(id)
+                waits++
             }
-            val file = pick(info.files, s, season, episode) ?: throw DebridNotReady("Aucun fichier vidéo correspondant dans cette version")
+            if (info.status in DEAD) throw DebridNotReady("Version indisponible sur Real-Debrid")
+            if (info.files.isEmpty()) {
+                if (keep) {
+                    // choisie à la main : tout est gardé, le bon fichier sera choisi une fois prêt
+                    runCatching { rd.selectFiles(id, emptyList()) }
+                    throw DebridPreparing(info.progress.coerceIn(0, 100))
+                }
+                throw DebridNotCached()
+            }
+            val file = pick(info.files, s, season, episode) ?: throw DebridNotReady(noVideo(info.files, season, episode))
             rd.selectFiles(id, listOf(file.id))
             repeat(POLLS) { attempt ->
                 info = rd.torrentInfo(id)
@@ -110,6 +119,34 @@ class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
             rd.deleteTorrent(id)
             throw e
         }
+    }
+
+    /**
+     * Pourquoi aucun fichier n'est lisible, avec ce que contient la version (« archives RAR (23 fichiers) » :
+     * une release « scène » emballée en RAR ne se lit pas en streaming).
+     */
+    private fun noVideo(files: List<RdFile>, season: Int?, episode: Int?): String {
+        val kinds = files.groupingBy { it.path.substringAfterLast('.', "?").lowercase().let { e -> if (Regex("r\\d{2}").matches(e)) "rar" else e } }
+            .eachCount().entries.sortedByDescending { it.value }.take(3).joinToString(", ") { "${it.key} ×${it.value}" }
+        val program = files.firstOrNull { it.path.substringAfterLast('.', "").lowercase() in PROGRAMS }
+        return when {
+            // piège courant des films récents : un « 1080p WEB » qui ne contient qu'un programme
+            program != null && files.none { ReleaseName.isVideo(it.path) } ->
+                "Fausse version : contient un programme (.${program.path.substringAfterLast('.').lowercase()}), pas de vidéo"
+            files.any { ReleaseName.isVideo(it.path) } && season != null ->
+                "L'épisode S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')} n'est pas dans cette version"
+            files.any { it.path.lowercase().let { p -> p.endsWith(".rar") || p.endsWith(".zip") || p.endsWith(".iso") } } ->
+                "Version en archives, illisible en streaming ($kinds)"
+            else -> "Aucun fichier vidéo dans cette version ($kinds)"
+        }
+    }
+
+    /** Torrents du compte avec cette empreinte (deux pages : 200 derniers), hors torrents morts. */
+    private suspend fun inAccount(hash: String): List<RdTorrent> {
+        val first = rd.torrents(100)
+        val match = first.filter { it.hash.equals(hash, ignoreCase = true) && it.status !in DEAD }
+        if (match.isNotEmpty() || first.size < 100) return match
+        return rd.torrents(100, page = 2).filter { it.hash.equals(hash, ignoreCase = true) && it.status !in DEAD }
     }
 
     /** Fichier voulu : l'épisode demandé, sinon celui indiqué par l'extension, sinon la plus grosse vidéo. */
@@ -133,8 +170,11 @@ class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
     }
 
     companion object {
-        const val METADATA_POLLS = 8
-        const val POLLS = 8
+        /** Attentes de la conversion du magnet (~4 s) : au-delà, la release n'est pas en cache. */
+        const val METADATA_POLLS = 4
+        /** Après le choix du fichier : une release en cache passe « downloaded » en 1 à 2 s. */
+        const val POLLS = 3
+        private val PROGRAMS = setOf("exe", "msi", "scr", "bat", "cmd", "com", "lnk", "apk", "jar", "vbs", "js")
         private val DEAD = setOf("error", "magnet_error", "virus", "dead")
     }
 }

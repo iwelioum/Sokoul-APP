@@ -1053,3 +1053,29 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
   - release sans langue → VO ou VF ;
   - Dolby Vision et ordre stable ;
   - messages de refus.
+
+### 19.1 Pourquoi Real-Debrid échouait encore (27/10/2026, après d8a892d et 24f11ac)
+- **Déjà corrigé par les deux commits précédents :**
+  - une expression régulière (`[^]]`) acceptée par Java mais refusée par Android faisait tomber toute la recherche Real-Debrid ;
+  - le magnet n'était pas encore converti quand on lisait la liste des fichiers.
+- **Cause trouvée sur la box :** le journal affiche maintenant le contenu réel de la version refusée. Sur Clayface, « Clayface 2026 1080p WEB H264-CAKES » ne contient **qu'un fichier `.exe`** : c'est une fausse release (piège courant pour les films récents), pas une panne. Elle est refusée et retirée du compte, même choisie à la main ; l'IPTV prend le relais.
+- **Corrigé dans `DebridResolver` :**
+  - le message dit ce qu'il y a dans la version : « Fausse version : contient un programme (.exe), pas de vidéo », « Version en archives, illisible en streaming (rar ×23) », « L'épisode S02E05 n'est pas dans cette version » ;
+  - **pas en cache** (liste de fichiers toujours vide après environ 4 s) : la version est écartée sans être notée « a échoué ». Choisie à la main, elle reste dans le compte pour se télécharger (« en préparation ») au lieu d'être supprimée ;
+  - attentes raccourcies : environ 4 s de conversion, puis 3 essais après le choix du fichier (avant : jusqu'à 16 s par version). Le secours essaie jusqu'à 6 versions ;
+  - un torrent déjà présent est cherché dans les 200 derniers torrents du compte (100 avant), sans doublon.
+- **Affichage :** « instantanée » n'apparaît plus que pour un fichier déjà dans le compte. Le repère « ⚡ / [RD+] » des extensions ne sert plus que d'indice de classement, car Real-Debrid ne publie plus ce qu'il a en cache.
+- **Garde-fou :** un test interdit les expressions `[]…]` et `[^]…]` refusées par Android.
+- **Box :**
+  - Lupin S1E1 est lu par le compte (« lien direct obtenu par le compte », 4K) ;
+  - Clayface : la fausse version `.exe` est refusée avec sa raison, et la lecture bascule sur l'IPTV ;
+  - la fiche Clayface classe sa release sans langue en VO (« IPTV 2 · RD 2 »).
+- **Tests :** 380 tests, 0 échec ; lint : 0 erreur, 23 avertissements (comme avant). Nouveaux tests :
+  - pas en cache, en automatique ;
+  - pas en cache, choisie à la main ;
+  - fausse version `.exe` ;
+  - torrent trouvé en page 2 ;
+  - expressions compatibles Android.
+- **À savoir :**
+  - pendant les essais, un torrent « Lupin Zero » (anime renvoyé à tort par Torrentio) a été ajouté au compte Real-Debrid. Ces releases d'une autre œuvre sont maintenant écartées. Ce torrent peut être supprimé dans « Mes torrents » ;
+  - The Dog Stars a une reprise à environ 3 min, causée par mes essais.

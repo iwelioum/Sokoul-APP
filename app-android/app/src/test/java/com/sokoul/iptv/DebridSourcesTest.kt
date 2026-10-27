@@ -81,7 +81,10 @@ class DebridSourcesTest {
         assertEquals("abcdef0123456789abcdef0123456789abcdef01:2", s[1].key)
         assertEquals("magnet:?xt=urn:btih:abcdef0123456789abcdef0123456789abcdef01", s[1].magnet)
         assertEquals(VideoQuality.UHD_4K, s[0].toSource().quality)
-        assertEquals(com.sokoul.iptv.domain.SourceState.CACHED_INSTANT, s[0].toSource().state)
+        // « [RD+] » de l'extension : indice de classement, jamais affiché « instantanée » (pas vérifiable)
+        assertEquals(true, s[0].readyNow)
+        assertEquals(com.sokoul.iptv.domain.SourceState.AVAILABLE, s[0].toSource().state)
+        assertEquals(com.sokoul.iptv.domain.SourceState.CACHED_INSTANT, s[0].copy(inAccount = true).toSource().state)
         assertTrue(DebridSources.parse("pas du json").isEmpty())
     }
 

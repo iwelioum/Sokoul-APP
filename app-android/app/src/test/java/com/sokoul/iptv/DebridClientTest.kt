@@ -153,6 +153,69 @@ class DebridClientTest {
         assertTrue(calls.any { it.url.endsWith("/torrents/selectFiles/META") })
     }
 
+    private fun neverConverted(): (Call) -> Triple<Int, String, Map<String, String>> = { c ->
+        when {
+            c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+            c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"NC"}""", emptyMap())
+            c.url.endsWith("/torrents/info/NC") -> Triple(200, """{"id":"NC","status":"magnet_conversion","progress":0,"files":[],"links":[]}""", emptyMap())
+            else -> Triple(204, "", emptyMap())
+        }
+    }
+
+    @Test fun `magnet jamais converti - pas en cache, torrent supprime, pas une erreur`() = runBlocking {
+        withKey()
+        reply = neverConverted()
+        val r = com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }
+        try { r.resolve(movieStream(addonLink), movie); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridNotCached) {}
+        assertTrue(calls.none { it.url.contains("selectFiles") })
+        assertTrue(calls.any { it.method == "DELETE" && it.url.endsWith("/torrents/delete/NC") })
+        assertEquals("~4 s au plus", 1 + com.sokoul.iptv.data.debrid.DebridResolver.METADATA_POLLS, calls.count { it.url.endsWith("/torrents/info/NC") })
+    }
+
+    @Test fun `magnet jamais converti, choisi a la main - garde pour se telecharger`() = runBlocking {
+        withKey()
+        reply = neverConverted()
+        val r = com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }
+        try { r.resolve(movieStream(addonLink), movie, keep = true); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridPreparing) {
+            assertEquals(0, e.progress)
+        }
+        assertTrue(calls.none { it.method == "DELETE" })
+        assertEquals("files=all", calls.single { it.url.contains("selectFiles") }.body)
+    }
+
+    @Test fun `fausse version qui ne contient qu un programme - refusee et supprimee, meme choisie a la main`() = runBlocking {
+        withKey()
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+                c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"FAKE"}""", emptyMap())
+                c.url.endsWith("/torrents/info/FAKE") -> Triple(200, """{"id":"FAKE","status":"waiting_files_selection","files":[{"id":1,"path":"/Clayface 2026 1080p WEB H264-CAKES.exe","bytes":2000000,"selected":0}],"links":[]}""", emptyMap())
+                else -> Triple(204, "", emptyMap())
+            }
+        }
+        try { com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }.resolve(movieStream(addonLink), movie, keep = true); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridNotReady) {
+            assertEquals("Fausse version : contient un programme (.exe), pas de vidéo", e.message)
+        }
+        assertTrue("jamais gardé dans le compte", calls.any { it.method == "DELETE" && it.url.endsWith("/torrents/delete/FAKE") })
+        assertTrue(calls.none { it.url.contains("selectFiles") })
+    }
+
+    @Test fun `empreinte deja dans le compte en page 2 - aucun nouvel ajout`() = runBlocking {
+        withKey()
+        val filler = (1..100).joinToString(",", "[", "]") { """{"id":"F$it","hash":"${"%040x".format(it)}","status":"downloaded","files":[]}""" }
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") && c.url.contains("page=2") -> Triple(200, """[{"id":"OLD","hash":"$hash","status":"downloaded","files":[]}]""", emptyMap())
+                c.url.contains("/torrents?") -> Triple(200, filler, emptyMap())
+                c.url.endsWith("/torrents/info/OLD") -> Triple(200, """{"id":"OLD","status":"downloaded","files":[{"id":1,"path":"/Film.mkv","bytes":9,"selected":1}],"links":["https://real-debrid.com/d/OLD"]}""", emptyMap())
+                c.url.endsWith("/unrestrict/link") -> Triple(200, """{"download":"https://dl.rd/old-film.mkv"}""", emptyMap())
+                else -> Triple(204, "", emptyMap())
+            }
+        }
+        assertEquals("https://dl.rd/old-film.mkv", com.sokoul.iptv.data.debrid.DebridResolver(rd).resolve(movieStream(addonLink), movie))
+        assertTrue(calls.none { it.url.contains("addMagnet") })
+    }
+
     @Test fun `version pas prete torrent supprime et version suivante`() = runBlocking {
         withKey()
         reply = { c ->
@@ -273,7 +336,7 @@ class DebridClientTest {
             }
         }
         try { com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }.resolve(packStream(), episode); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridNotReady) {
-            assertEquals("Aucun fichier vidéo correspondant dans cette version", e.message)
+            assertEquals("L'épisode S02E05 n'est pas dans cette version", e.message)
         }
         assertTrue("rien choisi, torrent supprimé", calls.none { it.url.contains("selectFiles") } && calls.any { it.method == "DELETE" })
     }

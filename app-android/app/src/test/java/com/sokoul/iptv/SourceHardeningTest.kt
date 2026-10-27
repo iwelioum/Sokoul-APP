@@ -95,6 +95,16 @@ class SourceHardeningTest {
         assertFalse("nom sans repère : rien n'est affirmé", DebridSources.otherWork("Lupin Zero", lupin, series = true))
     }
 
+    @Test fun `expressions regulieres compatibles Android (ICU)`() {
+        // Java accepte « []] » et « [^]] » (crochet fermant en tête de classe), Android (ICU) les refuse :
+        // l'app plantait à l'ouverture des sources alors que les tests passaient.
+        val bad = Regex("""\[\^?]""")
+        val offenders = java.io.File("src/main/java").walkTopDown().filter { it.isFile && it.extension == "kt" }.flatMap { f ->
+            f.readLines().withIndex().filter { (_, l) -> ("Regex(" in l || "toRegex" in l) && bad.containsMatchIn(l) }.map { "${f.name}:${it.index + 1}" }
+        }.toList()
+        assertEquals(emptyList<String>(), offenders)
+    }
+
     @Test fun `refus d un lien Real-Debrid - message par code`() {
         assertTrue(ErrorPolicy.linkRefusal(403).contains("403"))
         assertTrue(ErrorPolicy.linkRefusal(404).startsWith("Fichier introuvable"))

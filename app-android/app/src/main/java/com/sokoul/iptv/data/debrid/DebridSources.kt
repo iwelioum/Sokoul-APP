@@ -46,12 +46,16 @@ data class DebridStream(
 ) {
     val magnet get() = infoHash?.let { "magnet:?xt=urn:btih:$it" }
 
-    /** Prête tout de suite : dans le compte, ou annoncée en cache par l'extension. */
+    /** Sans doute prête : dans le compte, ou annoncée en cache par l'extension (indice pour le classement seulement). */
     val readyNow: Boolean? get() = if (inAccount) true else if (preparing != null) false else release.cached
 
+    /**
+     * Affichée « instantanée » seulement quand c'est sûr (dans le compte) : depuis que Real-Debrid ne dit plus ce qu'il
+     * a en cache, le repère « ⚡ / [RD+] » des extensions peut se tromper.
+     */
     fun toSource(): PlaybackSource = PlaybackSource(
         id = key, origin = SourceOrigin.DEBRID, quality = release.quality, hdr = release.hdr, language = release.language,
-        state = if (readyNow == true) SourceState.CACHED_INSTANT else SourceState.AVAILABLE,
+        state = if (inAccount) SourceState.CACHED_INSTANT else SourceState.AVAILABLE,
         sizeBytes = release.sizeBytes, rip = release.source?.label,
     )
 }
