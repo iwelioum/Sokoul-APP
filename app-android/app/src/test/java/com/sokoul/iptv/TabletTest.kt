@@ -9,6 +9,12 @@ import androidx.compose.ui.test.performClick
 import com.sokoul.iptv.player.timeshift.LiveTimeshift
 import com.sokoul.iptv.ui.screens.player.SwipeZapDistance
 import com.sokoul.iptv.ui.screens.player.TimeshiftBar
+import com.sokoul.iptv.ui.screens.player.effectiveResizeMode
+import com.sokoul.iptv.ui.screens.vod.DetailActionButton
+import com.sokoul.iptv.ui.screens.vod.SecondaryAction
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.media3.ui.AspectRatioFrameLayout
 import com.sokoul.iptv.ui.screens.player.swipeZapDelta
 import com.sokoul.iptv.ui.screens.player.timeshiftTapDelta
 import com.sokoul.iptv.ui.screens.tv.DrawerWidths
@@ -84,5 +90,18 @@ class TabletTest {
         rule.onNodeWithText("Reprendre").performClick()
         rule.onNodeWithText("Retour au direct").performClick()
         assertEquals(listOf("seek 30000", "seek -10000", "toggle", "live"), calls)
+    }
+
+    @Test fun `portrait - la video n est jamais rognee, le reglage de cadrage vaut en paysage`() {
+        for (i in 0..4) assertEquals(AspectRatioFrameLayout.RESIZE_MODE_FIT, effectiveResizeMode(i, portrait = true))
+        assertEquals(AspectRatioFrameLayout.RESIZE_MODE_FIT, effectiveResizeMode(0, portrait = false))
+        assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, effectiveResizeMode(1, portrait = false))
+    }
+
+    @Test fun `fiche - au doigt, les boutons ronds montrent leur libelle`() {
+        var clicked = 0
+        rule.setContent { Tablet { DetailActionButton(SecondaryAction("fav", "Ma liste", Icons.Default.Add) { clicked++ }) } }
+        rule.onNodeWithText("Ma liste").performClick()
+        assertEquals(1, clicked)
     }
 }

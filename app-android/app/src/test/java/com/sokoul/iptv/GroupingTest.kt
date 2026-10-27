@@ -136,4 +136,13 @@ class GroupingTest {
         val all = listOf(ep("vf", "a1", 1, 0), ep("vf", "a2", 1, 0), ep("vost", "b1", 1, 0))
         assertEquals(listOf("a1", "a2"), VodRepository.mergeEpisodes(all, listOf("vf", "vost")).map { it.id })
     }
+
+    @Test fun `sans version dans les langues reglees - l anglais avant les autres doublages`() {
+        val it = VodVersion("it", "IT| Lupin", null, "FHD", "c")
+        val pl = VodVersion("pl", "PL| Lupin", null, "FHD", "c")
+        val en = VodVersion("en", "EN| Lupin", null, "HD", "c")
+        assertEquals(listOf("en", "it", "pl"), VersionPicker.order(listOf(it, pl, en)).map { v -> v.id })
+        // une langue réglée passe toujours devant
+        assertEquals("vf", VersionPicker.order(listOf(en, vf)).first().id)
+    }
 }

@@ -144,6 +144,13 @@ private val resizeModes = listOf(
     AspectRatioFrameLayout.RESIZE_MODE_FILL to "Étirer",
 )
 
+/**
+ * Format d'image appliqué : celui choisi, sauf écran en portrait (tablette ou téléphone tenus debout) où la vidéo
+ * s'adapte toujours à la largeur : « Remplir » y rognerait les deux tiers de l'image.
+ */
+internal fun effectiveResizeMode(index: Int, portrait: Boolean): Int =
+    if (portrait) AspectRatioFrameLayout.RESIZE_MODE_FIT else resizeModes[index.coerceIn(0, resizeModes.lastIndex)].first
+
 private fun isSelect(code: Int) = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
 private fun isDpad(code: Int) = isSelect(code) || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
     code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
@@ -578,7 +585,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 update = { view ->
                     view.player = exo
                     view.subtitleView?.visibility = if (streamDelay > 0) android.view.View.INVISIBLE else android.view.View.VISIBLE
-                    view.resizeMode = resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].first
+                    view.resizeMode = effectiveResizeMode(resizeIndex, portrait = l.heightDp > l.widthDp)
                 },
                 modifier = Modifier.fillMaxSize(),
             )

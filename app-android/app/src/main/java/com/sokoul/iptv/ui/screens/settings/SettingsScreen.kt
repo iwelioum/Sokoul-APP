@@ -24,6 +24,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -358,6 +361,11 @@ class SettingsViewModel @Inject constructor(
     }
 }
 
+/** Demande ponctuelle à l'ouverture des Réglages (ex. « Restaurer » au premier lancement). */
+object SettingsLaunch {
+    @Volatile var openRestore = false
+}
+
 @Composable
 fun SettingsScreen(nav: NavHostController) {
     val vm: SettingsViewModel = hiltViewModel()
@@ -417,6 +425,7 @@ fun SettingsScreen(nav: NavHostController) {
     // Android TV : pas de sélecteur de fichiers → dossier de l'app ou adresse web
     val hasPicker = remember { context.hasDocumentPicker() }
     var restoreMenu by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (SettingsLaunch.openRestore) { SettingsLaunch.openRestore = false; restoreMenu = true } }
     val doExport: (String?) -> Unit = { pass ->
         if (hasPicker) { exportPass = pass; exportLauncher.launch(if (pass != null) "sokoul-sauvegarde-chiffree.json" else "sokoul-sauvegarde.json") }
         else vm.exportToFolder(pass, toast)
@@ -433,7 +442,7 @@ fun SettingsScreen(nav: NavHostController) {
         pin = { pinStep = it },
         sourceMenu = { sourceMenu = it },
         exportMenu = { exportMenu = true },
-        restore = { if (hasPicker) importLauncher.launch(arrayOf("application/json", "*/*")) else restoreMenu = true },
+        restore = { restoreMenu = true },
         toast = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
         debridLinked = debridLinked,
         pairDebrid = { vm.startPairing() },
@@ -515,9 +524,12 @@ fun SettingsScreen(nav: NavHostController) {
         val files = remember { vm.localBackups() }
         OptionsDialog(
             "Restaurer une sauvegarde",
-            files.take(20).map { f ->
-                MenuOption(f.name) { runImport { pass, need -> vm.importFile(f, pass, need, toast) } }
-            } + MenuOption("Depuis une adresse web…") {
+            // sélecteur système (tablette, téléphone), puis le dossier de l'app (seul accès sur la TV) et une adresse web
+            listOfNotNull(
+                if (hasPicker) MenuOption("Choisir un fichier…", Icons.Default.FolderOpen) { importLauncher.launch(arrayOf("application/json", "*/*")) } else null,
+            ) + files.take(20).map { f ->
+                MenuOption(f.name, Icons.Default.Description) { runImport { pass, need -> vm.importFile(f, pass, need, toast) } }
+            } + MenuOption("Depuis une adresse web…", Icons.Default.Link) {
                 textEdit = TextEdit("Adresse de la sauvegarde (http/https)", "http://",
                     validate = { if (com.sokoul.iptv.data.repo.BackupRules.isHttpUrl(it)) null else "Adresse invalide" }) { url ->
                     runImport { pass, need -> vm.importUrl(url, pass, need, toast) }

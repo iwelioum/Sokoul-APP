@@ -18,7 +18,7 @@ import com.sokoul.iptv.ui.screens.settings.sourceStatus
 
 /** Sources de données : un service par ligne (OK = tester, saisir ou effacer la clé). */
 internal fun LazyListScope.sourcesSection(c: SettingsCtx) {
-    note("sources", "Sans clé, un service est simplement ignoré. OK sur un service pour le tester ou saisir sa clé.")
+    note("sources", "Sans clé, un service est simplement ignoré. " + (if (c.isTv) "OK sur" else "Touchez") + " un service pour le tester ou saisir sa clé.")
     items(ApiService.entries.filter { it != ApiService.WATCHMODE && it != ApiService.REALDEBRID }, key = { "src-" + it.id }) { svc ->
         val key = ApiKeys.resolve(svc, c.s.apiKeys)
         SettingRow(

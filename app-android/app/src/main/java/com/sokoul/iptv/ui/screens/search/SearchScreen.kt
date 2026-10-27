@@ -444,7 +444,7 @@ private fun SearchResults(
             val series = r.series.filterNot { it.uid in bestIds }
             if (movies.isNotEmpty()) landscapeRow("Films", null, movies, "movies", memory, open)
             if (series.isNotEmpty()) landscapeRow("Séries", null, series, "series", memory, open)
-            if (r.debrid.isNotEmpty()) landscapeRow("Aussi disponible via Real-Debrid", "Hors abonnement · OK pour lancer la meilleure version", r.debrid, "rd", memory, openRd)
+            if (r.debrid.isNotEmpty()) landscapeRow("Aussi disponible via Real-Debrid", if (l.isTouch) "Hors abonnement · touchez pour lancer la meilleure version" else "Hors abonnement · OK pour lancer la meilleure version", r.debrid, "rd", memory, openRd)
             if (r.channels.isNotEmpty()) item("channels") {
                 Column(Modifier.padding(bottom = l.rowSpacing)) {
                     RowHeader("Chaînes", count(r.channels.size))

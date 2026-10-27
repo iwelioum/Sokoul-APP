@@ -268,6 +268,7 @@ fun DetailScaffold(
                 sections()
             }
         }
+        if (l.isTouch) com.sokoul.iptv.ui.components.TouchTopBar(onBack = { nav.popBackStack() }, scrimProvider = { (depth * 6f).coerceAtMost(1f) })
     }
 }
 
@@ -325,6 +326,7 @@ private fun DetailBackdrop(hero: DetailHeroData, kb: Animatable<Float, *>, depth
 
 /** Logo/titre, infos, résumé et boutons, avec une apparition décalée élément par élément. */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun HeroBlock(
     hero: DetailHeroData,
     primary: PrimaryAction?,
@@ -371,17 +373,27 @@ private fun HeroBlock(
             if (!s.french) Text("Résumé disponible en anglais uniquement", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextMuted)
         }
     }
-    // une seule rangée : action principale, puis actions secondaires
-    Row(
-        Modifier.padding(top = 22.dp).entrance(4, entered).then(if (l.isCompact) Modifier.fillMaxWidth() else Modifier),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+    // tablette (libellés toujours visibles) : la rangée passe à la ligne en portrait au lieu de sortir de l'écran
+    if (l.isTouch && !l.isCompact) FlowRow(
+        Modifier.padding(top = 22.dp).entrance(4, entered),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (primary != null) {
-            DetailPrimaryButton(primary, Modifier.focusMemory(memory, "play").then(if (l.isCompact) Modifier.weight(1f) else Modifier))
-        } else if (primaryLoading) {
-            Box(Modifier.size(if (l.isCompact) 160.dp else 220.dp, 52.dp).shimmer(Radius.Card).semantics { contentDescription = "Chargement" })
+        if (primary != null) DetailPrimaryButton(primary, Modifier.focusMemory(memory, "play"))
+        else if (primaryLoading) Box(Modifier.size(220.dp, 52.dp).shimmer(Radius.Card).semantics { contentDescription = "Chargement" })
+        actions.forEach { a -> DetailActionButton(a, Modifier.focusMemory(memory, a.key)) }
+    } else {
+        // une seule rangée : action principale, puis actions secondaires
+        Row(
+            Modifier.padding(top = 22.dp).entrance(4, entered).then(if (l.isCompact) Modifier.fillMaxWidth() else Modifier),
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (primary != null) {
+                DetailPrimaryButton(primary, Modifier.focusMemory(memory, "play").then(if (l.isCompact) Modifier.weight(1f) else Modifier))
+            } else if (primaryLoading) {
+                Box(Modifier.size(if (l.isCompact) 160.dp else 220.dp, 52.dp).shimmer(Radius.Card).semantics { contentDescription = "Chargement" })
+            }
+            if (!l.isCompact) actions.forEach { a -> DetailActionButton(a, Modifier.focusMemory(memory, a.key)) }
         }
-        if (!l.isCompact) actions.forEach { a -> DetailActionButton(a, Modifier.focusMemory(memory, a.key)) }
     }
     if (l.isCompact && actions.isNotEmpty()) {
         Row(Modifier.padding(top = 16.dp).fillMaxWidth().entrance(5, entered), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -526,7 +538,8 @@ fun DetailActionButton(a: SecondaryAction, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
         ) {
             MorphIcon(a.icon, c, 22)
-            AnimatedVisibility(focused, enter = fadeIn(Motion.enter()) + expandHorizontally(Motion.enter()), exit = fadeOut(Motion.exit()) + shrinkHorizontally(Motion.exit())) {
+            // au doigt pas de focus : le libellé reste affiché
+            AnimatedVisibility(focused || LocalLayout.current.isTouch, enter = fadeIn(Motion.enter()) + expandHorizontally(Motion.enter()), exit = fadeOut(Motion.exit()) + shrinkHorizontally(Motion.exit())) {
                 Text(a.label, Modifier.padding(start = 8.dp), color = c, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }

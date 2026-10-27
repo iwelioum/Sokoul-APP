@@ -130,7 +130,9 @@ fun PersonScreen(nav: NavHostController, personId: Int, name: String) {
             }
             else -> {
                 val open: (Work) -> Unit = { w -> if (w.available) nav.openWork(w) else rdPlay?.invoke(w) }
-                LazyColumn(Modifier.fillMaxSize(), rememberLazyListState(), contentPadding = PaddingValues(bottom = 56.dp)) {
+                val listState = rememberLazyListState()
+                // tablette : place pour le bouton Retour au-dessus de la photo
+                LazyColumn(Modifier.fillMaxSize(), listState, contentPadding = PaddingValues(top = if (l.isTouch) 40.dp else 0.dp, bottom = 56.dp)) {
                     item("head") { PersonHeader(page, memory) }
                     if (page.movies.isEmpty() && page.series.isEmpty()) item("none") {
                         Text(
@@ -142,6 +144,10 @@ fun PersonScreen(nav: NavHostController, personId: Int, name: String) {
                     workRow("Séries", "DANS VOTRE CATALOGUE", null, page.series, "s", memory, open)
                     workRow(alsoKnownFor(page.role), "FILMOGRAPHIE", "Pas dans votre catalogue", page.elsewhere, "x", memory, open)
                 }
+                if (l.isTouch) com.sokoul.iptv.ui.components.TouchTopBar(
+                    onBack = { nav.popBackStack() },
+                    scrimProvider = { if (listState.firstVisibleItemIndex > 0) 1f else (listState.firstVisibleItemScrollOffset / 60f).coerceIn(0f, 1f) },
+                )
                 // arrivée : la biographie (ou la première œuvre), jamais rien de focalisé
                 LaunchedEffect(page.id) {
                     delay(120)

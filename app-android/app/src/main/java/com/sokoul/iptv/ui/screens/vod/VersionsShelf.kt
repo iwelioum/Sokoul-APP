@@ -172,7 +172,7 @@ private fun OthersCard(groups: List<VersionGroup>, modifier: Modifier, onClick: 
             Text(if (groups.size == 1) "1 version" else "${groups.size} versions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = ink, maxLines = 1)
             Text(names.joinToString(", "), Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = soft, maxLines = 2, overflow = TextOverflow.Ellipsis)
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-            Text("OK : voir la liste", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft)
+            Text(if (LocalLayout.current.isTouch) "Touchez pour voir la liste" else "OK : voir la liste", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft)
         }
     }
 }

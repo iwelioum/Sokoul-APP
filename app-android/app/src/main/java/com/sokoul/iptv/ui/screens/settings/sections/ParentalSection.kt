@@ -27,8 +27,8 @@ internal fun LazyListScope.parentalSection(c: SettingsCtx) {
         item("pa-remove") { SettingRow("Supprimer le code", null, icon = Icons.Default.Delete) { c.pin(PinStep.REMOVE) } }
     }
     subsection("Groupes masqués et verrouillés")
-    if (c.flagged.isEmpty()) note("flagged", "Aucun. Appui long (ou touche Menu) sur un groupe pour le masquer ou le verrouiller.")
-    else note("flagged", "OK sur un groupe pour le rétablir.")
+    if (c.flagged.isEmpty()) note("flagged", if (!c.isTv) "Aucun. Appui long sur un groupe pour le masquer ou le verrouiller." else "Aucun. Appui long (ou touche Menu) sur un groupe pour le masquer ou le verrouiller.")
+    else note("flagged", if (!c.isTv) "Touchez un groupe pour le rétablir." else "OK sur un groupe pour le rétablir.")
     items(c.flagged, key = { "pa-${it.type}|${it.categoryId}" }) { g ->
         SettingRow(
             g.name,

@@ -39,7 +39,7 @@ internal fun LazyListScope.debridSection(c: SettingsCtx) {
         SettingRow(
             "Compte Real-Debrid",
             sourceStatus(svc, key.ifEmpty { if (c.debridLinked) "code" else "" }, c.serviceState(svc), c.testResult(svc), c.testing == svc),
-            "OK pour tester à nouveau",
+            if (c.isTv) "OK pour tester à nouveau" else "Touchez pour tester à nouveau",
             icon = Icons.Default.AccountCircle,
         ) { c.vm.test(svc) }
     }

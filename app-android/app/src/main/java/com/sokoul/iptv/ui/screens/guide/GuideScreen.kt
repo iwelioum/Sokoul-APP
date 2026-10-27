@@ -670,7 +670,7 @@ private fun GuideRow(
                         .tap(onLongPress = { onProgramLongClick(null) }) { onProgramClick(null) }
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.CenterStart,
-                ) { Text("Pas d'information · OK pour regarder", color = if (rowFocused) SokoulColors.OnLight else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
+                ) { Text(if (LocalLayout.current.isTouch) "Pas d'information · touchez pour regarder" else "Pas d'information · OK pour regarder", color = if (rowFocused) SokoulColors.OnLight else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
             }
             visible.forEach { p ->
                 val start = maxOf(p.start, windowStart)

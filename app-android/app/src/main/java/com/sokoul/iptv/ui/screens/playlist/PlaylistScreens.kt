@@ -276,7 +276,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
                     SokoulButton("Supprimer", { confirmDelete = true }, icon = Icons.Default.Delete)
                 }
                 if (!firstRun && p == null) SokoulButton("Annuler", { nav.popBackStack() })
-                if (firstRun && p == null) SokoulButton("Restaurer", { restoring = true; nav.navigate(com.sokoul.iptv.ui.nav.SettingsRoute) }, icon = Icons.Default.Restore)
+                if (firstRun && p == null) SokoulButton("Restaurer", { restoring = true; com.sokoul.iptv.ui.screens.settings.SettingsLaunch.openRestore = true; nav.navigate(com.sokoul.iptv.ui.nav.SettingsRoute) }, icon = Icons.Default.Restore)
             }
             Text(
                 "Vos identifiants restent sur cet appareil. Une seule connexion est utilisée à la fois.",

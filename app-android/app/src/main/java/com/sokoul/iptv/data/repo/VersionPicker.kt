@@ -57,6 +57,8 @@ object VersionPicker {
         fun langRank(v: VodVersion) = languages.indexOf(v.spokenLanguage).let { if (it < 0) languages.size else it }
         // MULTI contient le français et la VO : même rang que la meilleure des deux, la qualité départage, puis la langue exacte
         fun audioRank(v: VodVersion) = langRank(v).let { r -> if (v.spokenLanguage != "MULTI") r else listOf("VF", "VO").map(languages::indexOf).filter { it >= 0 }.fold(r) { a, b -> minOf(a, b) } }
+        // langue hors réglages (doublages étrangers « IT », « PL »…) : l'anglais d'abord, le plus souvent compris
+        fun foreignRank(v: VodVersion) = if (v.spokenLanguage in setOf("VF", "MULTI", "VOSTFR")) 0 else region(v.name).let { r -> if (r == null || r in ENGLISH) 0 else 1 }
         fun qualityRank(v: VodVersion) = when (v.measured?.resolution?.let { r -> mapOf("4K" to "4K", "1080p" to "FHD", "720p" to "HD", "SD" to "SD")[r] } ?: v.quality) {
             "4K" -> if (supports4k) 0 else 4
             "FHD" -> 1
@@ -70,6 +72,7 @@ object VersionPicker {
                 { if (it.value.id in failed) 1 else 0 },
                 { if (it.value.id == preferredId) 0 else 1 },
                 { audioRank(it.value) },
+                { foreignRank(it.value) },
                 { qualityRank(it.value) },
                 { langRank(it.value) },
                 { -(it.value.measured?.imageScore ?: 0) },
@@ -77,6 +80,8 @@ object VersionPicker {
             )
         ).map { it.value }
     }
+
+    private val ENGLISH = setOf("EN", "UK", "US", "ENG")
 
     private val NOT_REGION = setOf("VOD", "4K", "UHD", "FHD", "HD", "SD")
 

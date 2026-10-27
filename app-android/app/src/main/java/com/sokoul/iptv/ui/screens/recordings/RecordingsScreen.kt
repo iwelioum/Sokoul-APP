@@ -141,7 +141,8 @@ fun RecordingsScreen(nav: NavHostController) {
     if (recordings.isEmpty() && reminders.isEmpty()) {
         EmptyState(
             Icons.Default.FiberManualRecord, "Aucun enregistrement",
-            "Depuis le guide TV, ouvrez un programme à venir pour le programmer, ou utilisez Menu › Enregistrer pendant la lecture d'une chaîne.",
+            if (com.sokoul.iptv.ui.theme.LocalLayout.current.isTouch) "Depuis le guide TV, appui long sur un programme à venir pour le programmer, ou touchez « Enregistrer » pendant la lecture d'une chaîne."
+            else "Depuis le guide TV, ouvrez un programme à venir pour le programmer, ou utilisez Menu › Enregistrer pendant la lecture d'une chaîne.",
         )
         return
     }

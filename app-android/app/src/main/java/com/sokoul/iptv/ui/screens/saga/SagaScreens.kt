@@ -458,13 +458,10 @@ fun SagaScreen(nav: NavHostController, collectionId: Int) {
                 }
             }
         }
-        if (l.isTouch) {
-            Box(
-                Modifier.statusBarsPadding().padding(8.dp).size(44.dp).clip(Radius.Round).background(SokoulColors.black(0.5f))
-                    .dpadClickable({ nav.popBackStack() }),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = SokoulColors.OnVideo) }
-        }
+        if (l.isTouch) com.sokoul.iptv.ui.components.TouchTopBar(
+            onBack = { nav.popBackStack() },
+            scrimProvider = { if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / 60f).coerceIn(0f, 1f) },
+        )
     }
 
     offFor?.let { w ->
@@ -540,7 +537,7 @@ private fun SagaHeader(
 ) {
     val l = LocalLayout.current
     Column(
-        Modifier.statusBarsPadding().padding(start = l.margin, end = l.margin, top = l.safeTop + 28.dp),
+        Modifier.statusBarsPadding().padding(start = l.margin, end = l.margin, top = l.safeTop + if (l.isTouch) 48.dp else 28.dp),
     ) {
         Text("SAGA", Modifier.entrance(0, entered), style = Type.Overline, color = SokoulColors.Gold)
         SagaTitle(page.name, page.logo, Modifier.padding(top = 6.dp).entrance(0, entered), maxLogo = 110.dp)

@@ -219,8 +219,8 @@ fun LiveScreen(nav: NavHostController) {
 
     if (wide) {
         val l = com.sokoul.iptv.ui.theme.LocalLayout.current
-        // panneau de détails seulement s'il reste au moins ~360 dp pour la liste des chaînes
-        val showDetails = l.isTv || l.widthDp >= 1000
+        // panneau de détails : suit le focus de la télécommande ; au doigt un tap lance la chaîne, il resterait vide
+        val showDetails = l.isTv
         val catWidth = if (l.widthDp < 840) 180.dp else 210.dp
         Row(Modifier.fillMaxSize()) {
             Column(Modifier.width(catWidth).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f))) {
@@ -313,7 +313,7 @@ private fun ChannelList(
 ) {
     when {
         channels == null -> com.sokoul.iptv.ui.components.ChannelListSkeleton()
-        channels.isEmpty() -> EmptyState(Icons.Default.LiveTv, "Aucune chaîne", "Ce groupe est vide. Ajoutez des favoris avec un appui long (ou la touche Menu) sur une chaîne.")
+        channels.isEmpty() -> EmptyState(Icons.Default.LiveTv, "Aucune chaîne", if (com.sokoul.iptv.ui.theme.LocalLayout.current.isTouch) "Ce groupe est vide. Ajoutez des favoris avec un appui long sur une chaîne." else "Ce groupe est vide. Ajoutez des favoris avec un appui long (ou la touche Menu) sur une chaîne.")
         else -> {
             val now = rememberNow()
             val state = rememberLazyListState()

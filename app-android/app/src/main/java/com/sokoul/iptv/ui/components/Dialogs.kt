@@ -73,8 +73,10 @@ fun SokoulDialog(
                 )
             }
         } else {
+            // tactile : largeur bornée (sinon la fenêtre occupe 92 % d'une tablette) ; TV inchangée
+            val touch = LocalLayout.current.isTouch
             Column(
-                Modifier.fillMaxWidth(0.92f).widthIn(max = maxWidth)
+                (if (touch) Modifier.padding(horizontal = 16.dp).widthIn(max = maxWidth).fillMaxWidth() else Modifier.fillMaxWidth(0.92f).widthIn(max = maxWidth))
                     .graphicsLayer { alpha = shown.value; val s = 0.96f + 0.04f * shown.value; scaleX = s; scaleY = s }
                     .clip(Radius.Panel).background(SokoulColors.SurfaceHigh).padding(Space.l),
                 content = content,
