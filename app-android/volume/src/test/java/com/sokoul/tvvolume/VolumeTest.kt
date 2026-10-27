@@ -79,3 +79,19 @@ class VolumeTest {
         assertTrue(TvFinder.candidates("8.8.8.8").isEmpty())
     }
 }
+
+class VolumeMirrorTest {
+    @org.junit.Test fun `un cran de la box - une touche pour la TV`() {
+        val a = VolumeMirror.anchor(15)
+        org.junit.Assert.assertEquals(14, a)
+        org.junit.Assert.assertEquals(listOf(TvKey.VOL_UP), VolumeMirror.keysFor(a, a + 1, a))
+        org.junit.Assert.assertEquals(listOf(TvKey.VOL_DOWN), VolumeMirror.keysFor(a, a - 1, a))
+    }
+
+    @org.junit.Test fun `retour a l ancrage ignore, rafale limitee`() {
+        val a = 14
+        org.junit.Assert.assertEquals(emptyList<TvKey>(), VolumeMirror.keysFor(15, a, a))
+        org.junit.Assert.assertEquals(emptyList<TvKey>(), VolumeMirror.keysFor(a, a, a))
+        org.junit.Assert.assertEquals(3, VolumeMirror.keysFor(a, 2, a).size)
+    }
+}

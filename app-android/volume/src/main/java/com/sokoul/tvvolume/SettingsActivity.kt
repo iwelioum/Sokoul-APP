@@ -125,7 +125,7 @@ private fun SettingsScreen(prefs: Prefs, serviceEnabled: () -> Boolean, openAcce
         Text("Volume TCL", fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
         Text(
             "Les touches Volume +, Volume − et Muet de la télécommande règlent le son de la TV TCL par le Wi-Fi. " +
-                "Appui long sur Muet : mettre la TV en veille.",
+                "Pour mettre la TV en veille : bouton « Veille » ci-dessous.",
             color = Soft, fontSize = 16.sp,
         )
 
@@ -172,7 +172,7 @@ private fun SettingsScreen(prefs: Prefs, serviceEnabled: () -> Boolean, openAcce
         Section("Allumage par le réseau (facultatif)") {
             Text(
                 "Une TV éteinte coupe souvent son Wi-Fi. Si la vôtre a une « veille réseau », indiquez son adresse MAC : " +
-                    "l'appui long sur Muet essaiera de l'allumer quand elle ne répond pas.",
+                    "le bouton « Allumer » essaiera de la réveiller.",
                 color = Soft, fontSize = 14.sp,
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
