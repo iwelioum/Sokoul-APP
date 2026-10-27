@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La TV ne parle qu'en TCP brut sur le réseau local : aucun HTTP en clair n'est utilisé. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

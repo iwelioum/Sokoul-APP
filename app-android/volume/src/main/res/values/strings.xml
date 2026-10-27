@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Volume TCL</string>
+    <string name="service_name">Volume TCL</string>
+    <string name="service_description">Envoie les touches Volume +, Volume − et Muet de la télécommande à la TV TCL par le Wi-Fi. Appui long sur Muet : éteindre la TV. Aucune autre touche ni aucun contenu de l\'écran n\'est lu.</string>
+</resources>
