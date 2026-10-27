@@ -106,7 +106,7 @@ object PlayerSources {
         AudioLanguage.MULTI -> "Plusieurs langues (MULTI)"
         AudioLanguage.VOSTFR -> "VO sous-titrée français (VOSTFR)"
         AudioLanguage.VO -> "Version originale (VO)"
-        null -> region?.let { "Langue : $it" } ?: "Langue non indiquée"
+        null -> region?.let { r -> trackLanguageName(r.lowercase())?.let { "$it ($r)" } ?: "Langue : $r" } ?: "Langue non indiquée"
     }
 
     /** Puces d'une source : langue, définition, HDR, codec. */

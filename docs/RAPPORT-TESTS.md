@@ -810,3 +810,51 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
 - **Filtre d'âge du profil Enfant** : il s'applique à l'accueil et aux pages Films et Séries. Les grilles de catégories et la recherche filtrent seulement par groupe.
 - **Langues audio et « Passer l'intro »** restent communs à tous les profils.
 - **Guide** : il reste au-dessus de 5 % (une image lente par appui), sans saccade visible.
+
+## 17. Phase 15 — Lecteur clair : Audio, Sous-titres, Sources et qualité réelle (27/10/2026)
+
+### Ce qui change
+- **Barre du lecteur (films, séries)** : quatre pastilles séparées, chacune dit ce qui est choisi.
+  - **Audio : Français**
+  - **Sous-titres : Désactivés**
+  - **Source : VF · 1080p**
+  - **⋯ Plus d'options**
+  - Épisodes et Épisode suivant deviennent des boutons ronds à côté de Pause ; leur nom s'affiche au focus.
+- **Bandeau « Vous regardez »** en haut à droite, mesuré sur le flux en cours : définition · codec · HDR · langue · origine (ex. « 1080p · H.264 · EN · IPTV »).
+- **Panneau Audio** :
+  - « Dans ce fichier » : toutes les pistes, même s'il n'y en a qu'une ; le changement est immédiat.
+  - « Autres langues · autre fichier » : la meilleure source de chaque langue absente du fichier, avec l'avertissement « le lecteur ouvre un autre fichier et reprend à … : l'image peut changer ». Si la qualité change, un repère l'indique : « Image moins bonne : 720p » ou « Image meilleure : 4K ».
+- **Panneau Sous-titres** : Désactivés, les pistes du fichier, les sous-titres en ligne, puis le décalage ±0,25 s.
+- **Panneau Sources** : toutes les sources trouvées, groupées « Abonnement IPTV (n) » puis « Real-Debrid (n) ». Chaque ligne montre :
+  - les puces langue, définition, HDR et codec ;
+  - l'origine en clair (catégorie IPTV, ou type de release, taille et état prête / à télécharger) ;
+  - « qualité mesurée » ou « qualité d'après le nom » ;
+  - le nom exact du fichier.
+- **Épisodes** : le même épisode (saison et numéro) trouvé dans les séries en double est proposé comme source.
+- **Fichiers Real-Debrid perso** : décrits d'après leur nom (langue, définition).
+- **Langue inconnue** : affichée par le pays du fournisseur, ex. « Italien (IT) ».
+- **Direct** : le menu a désormais deux entrées séparées, « Audio » et « Sous-titres ». La ligne « Version » du menu Plus disparaît, remplacée par la pastille Source.
+- **Au retour d'un panneau**, le focus revient sur la pastille qui l'a ouvert.
+
+### Vérifié sur la box (un flux à la fois, 30 s entre deux, lecteur fermé à la fin)
+- **Æon Flux (IPTV)** : bandeau « 1080p · H.264 · EN · IPTV », pastilles visibles. La piste sans langue affiche maintenant la langue de la source.
+- **Interview with the Vampire (Mes fichiers RD)** : le panneau Audio affiche « Anglais · 5.1 · Dolby Digital » ; la pastille Source est renseignée.
+- **Resident Evil (IPTV)** :
+  - panneau Sources : « ABONNEMENT IPTV (1) », catégorie « [IT] FILM 4K », qualité mesurée, nom du fichier ;
+  - panneau Audio : « Italien · stéréo · AAC » ;
+  - au retour, le focus revient sur la pastille Source.
+
+### Tests
+- `:app:testDebugUnitTest` : **333 tests, 0 échec**. `:parser:test` : OK. `lintRelease` : 0 erreur.
+- Nouveau : `PlayerSourcesTest`. Il couvre :
+  - la mesure qui prime sur le nom ;
+  - l'origine et la catégorie ;
+  - les autres langues ;
+  - le bandeau ;
+  - les identifiants d'épisode ;
+  - les textes des pastilles.
+- `PlayerUiTest` mis à jour : ordre des boutons au D-pad, panneau Audio, panneau Sources.
+
+### Limites connues
+- **Langue et qualité des autres fichiers** : une seule connexion IPTV, donc on ne peut pas ouvrir les autres fichiers pour les lire. Ces informations viennent du nom ou d'une mesure faite lors d'une lecture précédente, et c'est écrit sur la ligne (« d'après le nom » / « mesurée »).
+- **Changer de source par le panneau Audio** (autre fichier, reprise à la même position) n'a pas été rejoué sur la box : Resident Evil n'avait qu'une source IPTV et aucune source Real-Debrid chargée. Ce choix passe par la même fonction que l'ancien menu Version, qui avait déjà été vérifiée.
