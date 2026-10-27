@@ -197,7 +197,7 @@ class DebridSources @Inject constructor(
          * Version sans aucune langue dans son nom : c'est la langue d'origine du film (les releases étrangères ne
          * l'indiquent pas). VO, ou VF si l'œuvre est française ; rangée dans sa section au lieu de « Autres ».
          */
-        private val tagStart = Regex("^\\s*(\\[[^]]*]|\\([^)]*\\)|\\{[^}]*})\\s*")
+        private val tagStart = Regex("""^\s*(\[[^\]]*\]|\([^)]*\)|\{[^}]*\})\s*""")
         private val titleEnd = Regex(
             "\\b(s\\d{1,2}(e\\d{1,3})?|e\\d{2,3}|season|saison|integrale|complete|(19|20)\\d{2}|\\d{3,4}p|4k|uhd|multi|truefrench|french|vff|vfq|vostfr|bluray|web|webrip|hdtv)\\b",
         )
