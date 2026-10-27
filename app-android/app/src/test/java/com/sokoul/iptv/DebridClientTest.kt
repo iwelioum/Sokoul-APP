@@ -131,6 +131,28 @@ class DebridClientTest {
         assertTrue("lien de l'épisode demandé", calls.single { it.url.endsWith("unrestrict/link") }.body.contains("E05"))
     }
 
+    @Test fun `attend la conversion du magnet avant de choisir le fichier`() = runBlocking {
+        withKey()
+        var infoCalls = 0
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+                c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"META"}""", emptyMap())
+                c.url.endsWith("/torrents/info/META") -> {
+                    infoCalls++
+                    if (infoCalls < 3) Triple(200, """{"id":"META","status":"magnet_conversion","files":[],"links":[]}""", emptyMap())
+                    else Triple(200, """{"id":"META","status":"downloaded","files":[{"id":1,"path":"/Film.2024.mkv","bytes":1000,"selected":1}],"links":["https://real-debrid.com/d/META"]}""", emptyMap())
+                }
+                c.url.endsWith("/unrestrict/link") -> Triple(200, """{"download":"https://dl.rd/meta.mkv"}""", emptyMap())
+                else -> Triple(204, "", emptyMap())
+            }
+        }
+        val r = com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }
+        assertEquals("https://dl.rd/meta.mkv", r.resolve(movieStream(addonLink), movie))
+        assertEquals(4, infoCalls)
+        assertTrue(calls.any { it.url.endsWith("/torrents/selectFiles/META") })
+    }
+
     @Test fun `version pas prete torrent supprime et version suivante`() = runBlocking {
         withKey()
         reply = { c ->

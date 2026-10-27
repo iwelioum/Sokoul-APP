@@ -86,6 +86,14 @@ class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
         val id = rd.addMagnet("magnet:?xt=urn:btih:$hash")
         try {
             var info = rd.torrentInfo(id)
+            // Après addMagnet, Real-Debrid peut encore convertir le magnet : les fichiers
+            // n'apparaissent pas forcément dans la première réponse.
+            repeat(METADATA_POLLS - 1) {
+                if (info.files.isEmpty() && info.status !in DEAD) {
+                    delay(pollDelayMs)
+                    info = rd.torrentInfo(id)
+                }
+            }
             val file = pick(info.files, s, season, episode) ?: throw DebridNotReady("Aucun fichier vidéo correspondant dans cette version")
             rd.selectFiles(id, listOf(file.id))
             repeat(POLLS) { attempt ->
@@ -125,7 +133,8 @@ class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
     }
 
     companion object {
-        const val POLLS = 3
+        const val METADATA_POLLS = 8
+        const val POLLS = 8
         private val DEAD = setOf("error", "magnet_error", "virus", "dead")
     }
 }
