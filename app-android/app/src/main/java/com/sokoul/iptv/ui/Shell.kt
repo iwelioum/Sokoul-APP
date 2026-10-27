@@ -83,7 +83,7 @@ import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.WindowClass
 
 /** Rubriques principales, dans l'ordre du menu (recherche en tête, comme sur les plateformes). */
-enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
+enum class Dest(val label: String, val icon: ImageVector, val route: Any, /** Libellé du rail tablette (76 dp). */ val short: String = label) {
     SEARCH("Recherche", Icons.Default.Search, SearchRoute()),
     HOME("Accueil", Icons.Default.Home, HomeRoute),
     MOVIES("Films", Icons.Default.Movie, MoviesRoute),
@@ -92,7 +92,7 @@ enum class Dest(val label: String, val icon: ImageVector, val route: Any) {
     SAGAS("Sagas", Icons.Default.CollectionsBookmark, SagasRoute),
     LIVE("Direct", Icons.Default.LiveTv, LiveRoute),
     GUIDE("Guide TV", Icons.Default.CalendarViewWeek, GuideRoute),
-    RECORDINGS("Enregistrements", Icons.Default.FiberManualRecord, RecordingsRoute),
+    RECORDINGS("Enregistrements", Icons.Default.FiberManualRecord, RecordingsRoute, short = "Enreg."),
     SETTINGS("Réglages", Icons.Default.Settings, SettingsRoute),
 }
 
@@ -165,7 +165,7 @@ private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
                         Icon(d.icon, d.label, Modifier.size(22.dp), tint = if (selected || focused) SokoulColors.Accent else SokoulColors.TextSecondary)
                     }
                     Text(
-                        d.label, style = com.sokoul.iptv.ui.theme.Type.NavLabel, maxLines = 1, textAlign = TextAlign.Center,
+                        d.short, style = com.sokoul.iptv.ui.theme.Type.NavLabel, maxLines = 1, textAlign = TextAlign.Center,
                         color = if (selected || focused) SokoulColors.TextPrimary else SokoulColors.TextMuted,
                     )
                 }

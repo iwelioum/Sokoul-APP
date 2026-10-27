@@ -44,4 +44,6 @@ internal class SettingsCtx(
     val profiles: List<com.sokoul.iptv.data.db.ProfileEntity> = emptyList(),
     val currentProfileId: Long = 0,
     val trakt: SettingsViewModel.TraktState = SettingsViewModel.TraktState(),
+    /** Box Android TV : réglages propres à la TV (fréquence de l'écran, son vers l'ampli). */
+    val isTv: Boolean = true,
 )

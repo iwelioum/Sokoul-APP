@@ -204,7 +204,7 @@ fun LiveScreen(nav: NavHostController) {
     var pinFor by remember { mutableStateOf<CategoryItem?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
 
-    val pid = playlist?.id ?: return
+    val pid = playlist?.id ?: run { com.sokoul.iptv.ui.screens.browse.NoPlaylistState(nav); return }
     val selectCategory: (CategoryItem) -> Unit = { c ->
         if (c.locked && !vm.isUnlocked()) pinFor = c else vm.selected.value = c.id
     }

@@ -39,12 +39,13 @@ internal fun LazyListScope.playbackSection(c: SettingsCtx) {
             c.vm.update { it.copy(autoplayNextEpisode = !s.autoplayNextEpisode) }
         }
     }
-    item("pb-rate") {
+    // TV seulement : une tablette ne change pas de fréquence et n'a pas d'ampli HDMI
+    if (c.isTv) item("pb-rate") {
         SettingRow("Adapter la fréquence de l'écran", null, "Films et séries : la TV passe en 24 ou 25 Hz pour des mouvements sans saccade", icon = Icons.Default.Tv, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(s.frameRateMatch) }) {
             c.vm.update { it.copy(frameRateMatch = !s.frameRateMatch) }
         }
     }
-    item("pb-passthrough") {
+    if (c.isTv) item("pb-passthrough") {
         SettingRow("Son vers l'ampli (passthrough)", null, "Dolby et DTS envoyés tels quels à l'ampli ou à la barre de son. Désactivez si le son est absent.", icon = Icons.Default.Speaker, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(s.audioPassthrough) }) {
             c.vm.update { it.copy(audioPassthrough = !s.audioPassthrough) }
         }

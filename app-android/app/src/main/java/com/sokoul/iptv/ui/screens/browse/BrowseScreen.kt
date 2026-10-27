@@ -672,3 +672,13 @@ private fun SpotDetails(text: String) {
         style = com.sokoul.iptv.ui.theme.Type.Meta, color = SokoulColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
     )
 }
+
+/** Direct et Guide sans abonnement : même invitation que l'accueil (après 0,6 s, le temps que la playlist arrive). */
+@Composable
+fun NoPlaylistState(nav: NavHostController) {
+    val show by androidx.compose.runtime.produceState(false) { kotlinx.coroutines.delay(600); value = true }
+    if (!show) return
+    EmptyState(Icons.Default.LiveTv, "Aucune playlist", "Ajoutez un abonnement dans les réglages pour commencer.") {
+        SokoulButton("Réglages", { nav.navigate(SettingsRoute) }, kind = ButtonKind.Primary)
+    }
+}

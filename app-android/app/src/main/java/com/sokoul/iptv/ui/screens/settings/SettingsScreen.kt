@@ -440,6 +440,7 @@ fun SettingsScreen(nav: NavHostController) {
         trakt = traktState,
         profiles = profiles,
         currentProfileId = currentProfile?.id ?: com.sokoul.iptv.data.db.ProfileEntity.MAIN,
+        isTv = com.sokoul.iptv.ui.theme.LocalLayout.current.isTv,
     )
 
     SettingsPanes { cat, modifier ->
@@ -447,7 +448,7 @@ fun SettingsScreen(nav: NavHostController) {
         androidx.compose.runtime.key(cat) {
             LazyColumn(
                 modifier,
-                contentPadding = PaddingValues(start = if (LocalLayout.current.isTouch) LocalLayout.current.margin else 0.dp, end = if (LocalLayout.current.isTouch) LocalLayout.current.margin else 0.dp, top = 4.dp, bottom = 32.dp),
+                contentPadding = PaddingValues(start = settingsPageMargin(), end = settingsPageMargin(), top = 4.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 when (cat) {

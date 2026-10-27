@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Backup
@@ -94,6 +95,25 @@ fun SettingsPanes(
     val cats = SettingsCategory.entries
     val requesters = remember { cats.associateWith { FocusRequester() } }
 
+    // tablette paysage : rubriques à gauche, contenu à droite, au doigt
+    if (l.isTouch && l.window == com.sokoul.iptv.ui.theme.WindowClass.EXPANDED) {
+        Row(Modifier.fillMaxSize().statusBarsPadding()) {
+            Column(
+                Modifier.width(300.dp).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.55f))
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(title, Modifier.padding(start = 16.dp, top = 28.dp, bottom = 18.dp), style = Type.ScreenTitle)
+                cats.forEach { c -> CategoryRow(c, selected = c == selected, chevron = false, modifier = Modifier) { selected = c } }
+            }
+            Column(Modifier.weight(1f).fillMaxHeight().padding(start = 28.dp, end = l.margin)) {
+                PaneHeader(selected, Modifier.padding(top = 28.dp))
+                pane(selected, Modifier.weight(1f).fillMaxWidth())
+            }
+        }
+        return
+    }
+
     if (l.isTouch) {
         var open by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
         BackHandler(enabled = open != null) { open = null }
@@ -105,7 +125,12 @@ fun SettingsPanes(
             }
         } else {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                PaneHeader(o, Modifier.padding(start = l.margin, end = l.margin, top = 16.dp))
+                Row(Modifier.padding(start = l.margin - 12.dp, end = l.margin, top = 16.dp), verticalAlignment = Alignment.Top) {
+                    androidx.compose.material3.IconButton(onClick = { open = null }, Modifier.padding(end = 4.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = SokoulColors.TextPrimary)
+                    }
+                    PaneHeader(o, Modifier.padding(top = 4.dp))
+                }
                 pane(o, Modifier.weight(1f).fillMaxWidth())
             }
         }
@@ -194,4 +219,11 @@ private fun CategoryRow(
             if (chevron) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = SokoulColors.TextMuted)
         }
     }
+}
+
+/** Marge du contenu d'une rubrique : seulement en page seule (téléphone, tablette portrait), le volet a la sienne. */
+@Composable
+fun settingsPageMargin(): androidx.compose.ui.unit.Dp {
+    val l = LocalLayout.current
+    return if (l.isTouch && l.window != com.sokoul.iptv.ui.theme.WindowClass.EXPANDED) l.margin else 0.dp
 }

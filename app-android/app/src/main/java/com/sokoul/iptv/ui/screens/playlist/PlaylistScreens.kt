@@ -190,7 +190,8 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
     }
 
     val l = com.sokoul.iptv.ui.theme.LocalLayout.current
-    val wide = !l.isCompact
+    // deux colonnes en paysage (TV, tablette couchée) ; empilé en portrait, sinon le formulaire est écrasé
+    val wide = l.isTv || (!l.isCompact && l.widthDp > l.heightDp)
     val welcome = firstRun || existing == null
     val intro: @Composable () -> Unit = {
         if (firstRun) {
@@ -296,7 +297,7 @@ fun PlaylistEditScreen(nav: NavHostController, id: Long, firstRun: Boolean) {
             }
         } else {
             Column(
-                Modifier.fillMaxSize().statusBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
+                Modifier.align(Alignment.TopCenter).widthIn(max = 640.dp).fillMaxSize().statusBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 intro()

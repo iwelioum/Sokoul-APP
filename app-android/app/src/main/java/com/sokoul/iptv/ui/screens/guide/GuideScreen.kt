@@ -254,7 +254,7 @@ fun GuideScreen(nav: NavHostController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val now = rememberNow()
-    val pid = playlist?.id ?: return
+    val pid = playlist?.id ?: run { com.sokoul.iptv.ui.screens.browse.NoPlaylistState(nav); return }
 
     var windowStart by remember { mutableStateOf(vm.windowStart) }
     var row by remember { mutableStateOf(vm.row) }
