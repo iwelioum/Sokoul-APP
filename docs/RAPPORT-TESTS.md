@@ -930,3 +930,15 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
 - **Les sources Real-Debrid des fiches et du lecteur n'apparaissent pas sur la box.** L'extension de recherche de sources (Réglages › Real-Debrid › Extension) n'est toujours pas renseignée, volontairement : l'app n'impose aucun service de ce type. Le panneau le dit (« Real-Debrid : recherche de sources non activée »). Le classement commun, la fusion, le dépliage et le secours sont couverts par les tests, mais pas encore joués de bout en bout sur la box.
 - **Fiche série :** « Lecture » compare Real-Debrid à la version IPTV que ce bouton lance. Le lecteur, lui, compare toutes les versions de l'épisode.
 - **Échecs IPTV :** gardés pour la séance seulement. L'ordre des versions IPTV (`VersionPicker`) gère déjà les échecs répétés.
+
+### 18.1 Toutes les langues des sources (27/10/2026)
+- **Problème trouvé :** le nom d'une release Real-Debrid n'était lu que pour le français (VF, MULTI, VOSTFR). Une release italienne, allemande, espagnole, anglaise… tombait dans « Langue non indiquée », et un MULTI ne disait pas quelles langues il contenait.
+- **Corrigé (`ReleaseName`) :**
+  - mots d'étiquette (ITA, GERMAN, ENG, SPANISH, Latino, JPN… une quarantaine de langues), lus seulement après l'année ou le numéro d'épisode, pour que « The Italian Job » ne soit pas classé italien ;
+  - drapeaux des extensions (🇫🇷 / 🇬🇧 / 🇮🇹) ;
+  - « FRENCH.ENG » sans le mot MULTI devient MULTI ; « VO » est reconnu.
+- **Affichage :**
+  - une release italienne a sa section « Italien (IT) », la même que les versions IPTV « IT - … » ;
+  - les préfixes IPTV « UK » / « US » vont dans Anglais (EN) ;
+  - le détail de chaque source donne « langues : Français, Anglais, Italien » (lecteur, dépliage, fiche film).
+- **Tests :** 343 tests, 0 échec ; lint 0 erreur. APK installé sur la box. Pas de vérification Real-Debrid sur la box, l'extension de recherche n'y étant pas configurée.

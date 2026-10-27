@@ -43,6 +43,8 @@ data class PlayerSource(
     /** Empreinte « même fichier » (nom normalisé, langue, qualité ou taille) : deux sources de même empreinte et même origine sont un doublon. */
     val sameFile: String? = null,
     val sizeBytes: Long? = null,
+    /** Langues audio annoncées par le nom (« FR », « EN »…), affichées en clair dans le détail. */
+    val audio: List<String> = emptyList(),
     /** Real-Debrid : prête tout de suite (true), à télécharger (false), inconnu (null). */
     val ready: Boolean? = null,
     /** A échoué récemment : gardée et affichée, mais essayée en dernier. */
@@ -66,7 +68,7 @@ object PlayerSources {
             id = id,
             origin = SourceOrigin.IPTV,
             language = v.language?.let { runCatching { AudioLanguage.valueOf(it) }.getOrNull() },
-            region = if (v.language == null) VersionPicker.region(v.name) else null,
+            region = if (v.language == null) VersionPicker.region(v.name)?.let { COUNTRY_LANG[it] ?: it } else null,
             quality = if (m != null) qualityOf(m.resolution) else com.sokoul.iptv.domain.PlaybackSources.quality(v.quality),
             hdr = m?.hdr ?: if (v.quality == "HDR") "HDR10" else null,
             codec = m?.videoCodec?.let(MediaInfo::codec) ?: nameCodec,
@@ -92,6 +94,8 @@ object PlayerSources {
             id = id,
             origin = SourceOrigin.DEBRID,
             language = r.language,
+            region = if (r.language == null) r.audio.firstOrNull() else null,
+            audio = r.audio,
             quality = r.quality,
             hdr = r.hdr?.let(SourceLabels::hdr)?.let { if (it == "HDR") "HDR10" else it },
             codec = r.codec,
@@ -109,13 +113,17 @@ object PlayerSources {
     fun fromCloud(item: com.sokoul.iptv.data.debrid.CloudItem?, title: String?): PlayerSource {
         val r = item?.release
         return PlayerSource(
-            id = "cloud", origin = SourceOrigin.DEBRID, language = r?.language, quality = r?.quality,
+            id = "cloud", origin = SourceOrigin.DEBRID, language = r?.language,
+            region = if (r?.language == null) r?.audio?.firstOrNull() else null, audio = r?.audio.orEmpty(), quality = r?.quality,
             hdr = r?.hdr?.let(SourceLabels::hdr)?.let { if (it == "HDR") "HDR10" else it }, codec = r?.codec,
             where = listOfNotNull(SourceLabels.originName(SourceOrigin.DEBRID) + " · Mes fichiers", item?.sizeBytes?.takeIf { it > 0 }?.let(SourceLabels::size)).joinToString(" · "),
             sizeBytes = item?.sizeBytes?.takeIf { it > 0 }, ready = true,
             fileName = item?.title ?: title, basis = if (r?.quality != null) QualityBasis.NAME else QualityBasis.UNKNOWN, current = true,
         )
     }
+
+    /** Préfixes IPTV qui sont des pays et pas des langues : « UK », « US » → anglais (même section que les releases « ENG »). */
+    private val COUNTRY_LANG = mapOf("UK" to "EN", "US" to "EN", "USA" to "EN", "GB" to "EN", "LAT" to "ES", "LATINO" to "ES")
 
     fun qualityOf(resolution: String?): VideoQuality? = VideoQuality.entries.firstOrNull { SourceLabels.quality(it) == resolution }
 
@@ -129,6 +137,16 @@ object PlayerSources {
         AudioLanguage.VOSTFR -> "VO sous-titrée français (VOSTFR)"
         AudioLanguage.VO -> "Version originale (VO)"
         null -> region?.let { r -> trackLanguageName(r.lowercase())?.let { "$it ($r)" } ?: "Langue : $r" } ?: "Langue non indiquée"
+    }
+
+    /** « Langues : Français, Anglais, Italien » quand le nom en annonce plusieurs, ou une seule qui n'est pas déjà le titre de la section. */
+    fun audioLine(s: PlayerSource): String? {
+        val names = s.audio.map { trackLanguageName(it.lowercase()) ?: it }
+        return when {
+            names.size > 1 -> "langues : " + names.joinToString(", ")
+            names.size == 1 && s.language != null && s.language != AudioLanguage.VF -> "audio : " + names[0]
+            else -> null
+        }
     }
 
     /** Puces d'une source : langue, définition, HDR, codec. */

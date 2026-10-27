@@ -198,6 +198,7 @@ internal fun versionTitle(g: VersionGroup): String =
 /** Détail d'une source : « Abonnement IPTV · « FILMS 4K » · aussi dans « FR 4K » · qualité mesurée ». */
 internal fun sourceDetail(s: PlayerSource): String = listOfNotNull(
     s.where,
+    PlayerSources.audioLine(s),
     s.alsoIn.takeIf { it.isNotEmpty() }?.joinToString(", ") { "« $it »" }?.let { "aussi dans $it" },
     PlayerSources.basisLabel(s.basis),
     if (s.failed) "a échoué récemment" else null,

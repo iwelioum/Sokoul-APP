@@ -133,7 +133,7 @@ private fun VersionCard(g: VersionGroup, first: Boolean, preferred: Boolean, mod
             }
             Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Layers, null, Modifier.size(18.dp), tint = soft)
-                Text(s.where, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall, color = soft, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(s.where, com.sokoul.iptv.ui.screens.player.PlayerSources.audioLine(s)).joinToString(" · "), Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall, color = soft, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

@@ -161,4 +161,39 @@ class DebridSourcesTest {
         assertEquals(DebridQuery(1396, true, 2, 5), DebridQuery.decode(DebridQuery(1396, true, 2, 5).encode()))
         assertEquals(DebridQuery(157336, false), DebridQuery.decode("m:157336"))
     }
+
+    @Test fun `toutes les langues lues - mots d etiquette, drapeaux, MULTI detaille, titre ignore`() {
+        // langue seule autre que le français : plus « non indiquée »
+        ReleaseName.parse("Dune.2021.ITA.1080p.BluRay.x264").let { assertNull(it.language); assertEquals(listOf("IT"), it.audio) }
+        assertEquals(listOf("DE"), ReleaseName.parse("Dune.2021.German.DL.2160p.WEB.h265").audio)
+        assertEquals(listOf("ES"), ReleaseName.parse("Dune 2021 1080p Latino WEB-DL").audio)
+        assertEquals(listOf("EN"), ReleaseName.parse("Dune.2021.1080p.WEB.ENG.x264").audio)
+        // MULTI : on dit lesquelles (drapeaux Torrentio), le français en premier
+        ReleaseName.parse("Dune.2021.MULTi.2160p.UHD.BluRay.REMUX", "👤 12 💾 60 GB ⚙️ x\n🇫🇷 / 🇬🇧 / 🇮🇹").let {
+            assertEquals(AudioLanguage.MULTI, it.language)
+            assertEquals(listOf("FR", "EN", "IT"), it.audio)
+        }
+        // « FRENCH » + « ENG » sans le mot MULTI : deux pistes, donc MULTI
+        assertEquals(AudioLanguage.MULTI, ReleaseName.parse("Dune.2021.FRENCH.ENG.1080p.WEB").language)
+        // VO explicite
+        assertEquals(AudioLanguage.VO, ReleaseName.parse("Dune.2021.VO.1080p.WEB").language)
+        // un mot du titre n'est pas une langue (« The Italian Job », « Johnny English »)
+        assertEquals(emptyList<String>(), ReleaseName.parse("The.Italian.Job.2003.1080p.BluRay").audio)
+        assertEquals(listOf("FR"), ReleaseName.parse("Johnny.English.2003.FRENCH.720p").audio)
+        assertEquals(AudioLanguage.VF, ReleaseName.parse("Johnny.English.2003.FRENCH.720p").language)
+        assertEquals(listOf("IT", "GB"), ReleaseName.flags("🇮🇹 x 🇬🇧"))
+
+        // dans le lecteur : une release italienne a sa section « Italien (IT) », avec l'IPTV « IT »
+        val ita = com.sokoul.iptv.ui.screens.player.PlayerSources.fromDebrid(stream("Dune.2021.ITA.1080p.BluRay.x264"), current = false, id = "rd:i")
+        assertEquals("IT", ita.region)
+        assertEquals("Italien (IT)", com.sokoul.iptv.ui.screens.player.PlayerSources.languageName(ita.language, ita.region))
+        val iptvIt = com.sokoul.iptv.ui.screens.player.PlayerSources.fromIptv(VodVersion("7", "IT - Dune (2021)", null, "FHD", "c"), current = true)
+        assertEquals(com.sokoul.iptv.ui.screens.player.SourceCatalog.languageKey(iptvIt), com.sokoul.iptv.ui.screens.player.SourceCatalog.languageKey(ita))
+        // préfixe IPTV « UK » : anglais, comme les releases « ENG »
+        assertEquals("EN", com.sokoul.iptv.ui.screens.player.PlayerSources.fromIptv(VodVersion("8", "UK - Dune (2021)", null, "FHD", "c"), current = false).region)
+        // MULTI : langues écrites en clair dans le détail de la source
+        val multi = com.sokoul.iptv.ui.screens.player.PlayerSources.fromDebrid(stream("Dune.2021.MULTi.FRENCH.ENG.ITA.1080p.WEB"), current = false, id = "rd:m")
+        assertEquals("langues : Français, Anglais, Italien", com.sokoul.iptv.ui.screens.player.PlayerSources.audioLine(multi))
+        assertTrue(com.sokoul.iptv.ui.screens.player.sourceDetail(multi).contains("langues : Français, Anglais, Italien"))
+    }
 }

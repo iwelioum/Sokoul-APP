@@ -25,6 +25,8 @@ data class Release(
     /** Épisodes contenus (pack de saison) : S02E05 → (2, 5) ; vide = inconnu ou film. */
     val season: Int? = null,
     val episode: Int? = null,
+    /** Langues audio lues dans le nom (codes ISO : « FR », « EN », « IT »…), dans l'ordre trouvé ; vide = non indiqué. */
+    val audio: List<String> = emptyList(),
 )
 
 /**
@@ -42,7 +44,7 @@ object ReleaseName {
         return Release(
             quality = quality(up, tokens),
             hdr = hdr(up, tokens),
-            language = language(all, up, tokens),
+            language = language(all, up, tokens, audio(all)),
             frenchVariant = listOf("TRUEFRENCH", "VFF", "VFQ", "VFI", "VF2", "VFB").firstOrNull { it in tokens },
             source = source(up, tokens),
             codec = when {
@@ -58,6 +60,7 @@ object ReleaseName {
             cached = cached(all, up),
             season = episodeTag(all)?.first,
             episode = episodeTag(all)?.second,
+            audio = audioCodes(all, tokens),
         )
     }
 
@@ -86,17 +89,75 @@ object ReleaseName {
         else -> null
     }
 
-    private fun language(all: String, up: String, t: Set<String>): AudioLanguage? {
+    private fun language(all: String, up: String, t: Set<String>, others: List<String>): AudioLanguage? {
         val french = t.any { it in setOf("FRENCH", "TRUEFRENCH", "VFF", "VFQ", "VFI", "VF", "VF2", "VFB", "FR") } || "🇫🇷" in all
         val multi = "MULTI" in t || "MULTI AUDIO" in up || Regex("(?i)\\bdual\\b").containsMatchIn(all)
         return when {
             t.any { it in setOf("VOSTFR", "SUBFRENCH", "STFR") } -> AudioLanguage.VOSTFR
             multi && french -> AudioLanguage.MULTI
+            // « FRENCH.ENG » : deux pistes, dont le français
+            french && others.any { it != "FR" } -> AudioLanguage.MULTI
             french -> AudioLanguage.VF
             multi -> AudioLanguage.MULTI
+            "VO" in t -> AudioLanguage.VO
             else -> null
         }
     }
+
+    /**
+     * Langues autres que le français : mots d'étiquette (« ITA », « GERMAN », « Latino ») lus seulement après l'année
+     * ou le numéro d'épisode (« The.Italian.Job.2003 » n'est pas italien), et drapeaux (« 🇮🇹 / 🇬🇧 ») partout.
+     */
+    private fun audio(all: String): List<String> {
+        val out = LinkedHashSet<String>()
+        val marker = Regex("(?i)\\b(19\\d{2}|20\\d{2})\\b|\\bS\\d{1,2}[ ._-]?E\\d{1,3}\\b")
+        all.lineSequence().forEach { line ->
+            val tags = marker.find(line)?.let { line.substring(it.range.last + 1) } ?: line
+            tags.split(tokenSep).forEach { w -> LANG_WORDS[w.uppercase()]?.let(out::add) }
+        }
+        flags(all).forEach { c -> FLAG_LANG[c]?.takeIf { it != "FR" }?.let(out::add) }
+        return out.toList()
+    }
+
+    /** Langues du fichier : le français d'abord s'il est annoncé, puis les autres. */
+    private fun audioCodes(all: String, t: Set<String>): List<String> {
+        val french = t.any { it in setOf("FRENCH", "TRUEFRENCH", "VFF", "VFQ", "VFI", "VF", "VF2", "VFB", "FR") } || "🇫🇷" in all
+        return (if (french) listOf("FR") else emptyList()) + audio(all)
+    }
+
+    /** Drapeaux emoji (deux indicateurs régionaux) : « 🇮🇹 » → « IT ». */
+    fun flags(text: String): List<String> {
+        val cps = text.codePoints().toArray()
+        val out = mutableListOf<String>()
+        var i = 0
+        while (i < cps.size - 1) {
+            val a = cps[i]
+            val b = cps[i + 1]
+            if (a in 0x1F1E6..0x1F1FF && b in 0x1F1E6..0x1F1FF) {
+                out += "" + ('A' + (a - 0x1F1E6)) + ('A' + (b - 0x1F1E6))
+                i += 2
+            } else i++
+        }
+        return out
+    }
+
+    private val FLAG_LANG = mapOf(
+        "FR" to "FR", "GB" to "EN", "US" to "EN", "IT" to "IT", "DE" to "DE", "ES" to "ES", "MX" to "ES", "PT" to "PT", "BR" to "PT",
+        "RU" to "RU", "JP" to "JA", "KR" to "KO", "CN" to "ZH", "TW" to "ZH", "HK" to "ZH", "SA" to "AR", "AE" to "AR", "EG" to "AR",
+        "IN" to "HI", "TR" to "TR", "PL" to "PL", "NL" to "NL", "SE" to "SV", "DK" to "DA", "NO" to "NO", "FI" to "FI", "UA" to "UK",
+        "IL" to "HE", "CZ" to "CS", "GR" to "EL", "TH" to "TH", "VN" to "VI", "HU" to "HU", "RO" to "RO", "IR" to "FA", "ID" to "ID",
+    )
+
+    /** Mots d'étiquette sans ambiguïté (pas « FIN », « DAN », « IT », qui sont aussi des mots de titre). */
+    private val LANG_WORDS = mapOf(
+        "ENG" to "EN", "ENGLISH" to "EN", "ITA" to "IT", "ITALIAN" to "IT", "GER" to "DE", "DEU" to "DE", "GERMAN" to "DE",
+        "SPA" to "ES", "ESP" to "ES", "SPANISH" to "ES", "CASTELLANO" to "ES", "LATINO" to "ES", "POR" to "PT", "PORTUGUESE" to "PT",
+        "RUS" to "RU", "RUSSIAN" to "RU", "JPN" to "JA", "JAPANESE" to "JA", "KOR" to "KO", "KOREAN" to "KO", "CHINESE" to "ZH",
+        "MANDARIN" to "ZH", "CANTONESE" to "ZH", "ARA" to "AR", "ARABIC" to "AR", "HIN" to "HI", "HINDI" to "HI", "TURKISH" to "TR",
+        "POLISH" to "PL", "DUT" to "NL", "NLD" to "NL", "DUTCH" to "NL", "SWE" to "SV", "SWEDISH" to "SV", "DANISH" to "DA",
+        "NORWEGIAN" to "NO", "FINNISH" to "FI", "UKR" to "UK", "UKRAINIAN" to "UK", "HEB" to "HE", "HEBREW" to "HE", "CZE" to "CS",
+        "CZECH" to "CS", "GREEK" to "EL", "THAI" to "TH", "VIETNAMESE" to "VI", "HUNGARIAN" to "HU", "ROMANIAN" to "RO", "PERSIAN" to "FA",
+    )
 
     /** « 💾 18.3 GB », « 4.7 Go », « 700 MB ». */
     fun size(text: String): Long? {
