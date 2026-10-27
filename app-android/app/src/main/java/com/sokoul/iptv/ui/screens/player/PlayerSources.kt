@@ -34,6 +34,19 @@ data class PlayerSource(
     val fileName: String? = null,
     val basis: QualityBasis = QualityBasis.UNKNOWN,
     val current: Boolean = false,
+    /** Rubrique du fournisseur (IPTV) : « FILMS 4K FR ». */
+    val category: String? = null,
+    /** Autres rubriques où se trouve le même fichier (doublons fusionnés). */
+    val alsoIn: List<String> = emptyList(),
+    /** Identifiants des doublons fusionnés dans cette ligne : gardés comme secours. */
+    val mergedIds: List<String> = emptyList(),
+    /** Empreinte « même fichier » (nom normalisé, langue, qualité ou taille) : deux sources de même empreinte et même origine sont un doublon. */
+    val sameFile: String? = null,
+    val sizeBytes: Long? = null,
+    /** Real-Debrid : prête tout de suite (true), à télécharger (false), inconnu (null). */
+    val ready: Boolean? = null,
+    /** A échoué récemment : gardée et affichée, mais essayée en dernier. */
+    val failed: Boolean = false,
 )
 
 object PlayerSources {
@@ -57,8 +70,10 @@ object PlayerSources {
             quality = if (m != null) qualityOf(m.resolution) else com.sokoul.iptv.domain.PlaybackSources.quality(v.quality),
             hdr = m?.hdr ?: if (v.quality == "HDR") "HDR10" else null,
             codec = m?.videoCodec?.let(MediaInfo::codec) ?: nameCodec,
-            where = "Abonnement IPTV" + (v.categoryName?.takeIf { it.isNotBlank() }?.let { " · « ${it.trim()} »" } ?: ""),
+            where = SourceLabels.originName(SourceOrigin.IPTV) + (v.categoryName?.takeIf { it.isNotBlank() }?.let { " · « ${it.trim()} »" } ?: ""),
             fileName = v.name,
+            category = v.categoryName?.trim()?.takeIf { it.isNotEmpty() },
+            sameFile = listOf(normalize(v.name), v.language.orEmpty(), v.quality.orEmpty()).joinToString("|"),
             basis = when {
                 m != null -> QualityBasis.MEASURED
                 v.quality != null -> QualityBasis.NAME
@@ -72,6 +87,7 @@ object PlayerSources {
     fun fromDebrid(s: DebridStream, current: Boolean, id: String): PlayerSource {
         val r = s.release
         val state = when (r.cached) { true -> "prête"; false -> "à télécharger"; null -> null }
+        val name = (s.filename ?: s.title.lineSequence().firstOrNull())?.trim()?.takeIf { it.isNotEmpty() }
         return PlayerSource(
             id = id,
             origin = SourceOrigin.DEBRID,
@@ -79,26 +95,32 @@ object PlayerSources {
             quality = r.quality,
             hdr = r.hdr?.let(SourceLabels::hdr)?.let { if (it == "HDR") "HDR10" else it },
             codec = r.codec,
-            where = listOfNotNull("Real-Debrid", r.source?.label, r.sizeBytes?.let(SourceLabels::size), state).joinToString(" · "),
-            fileName = (s.filename ?: s.title.lineSequence().firstOrNull())?.trim()?.takeIf { it.isNotEmpty() },
+            where = listOfNotNull(SourceLabels.originName(SourceOrigin.DEBRID), r.source?.label, r.sizeBytes?.let(SourceLabels::size), state).joinToString(" · "),
+            fileName = name,
+            sameFile = if (name != null && r.sizeBytes != null) normalize(name) + "|" + r.sizeBytes else s.infoHash?.let { it.lowercase() + ":" + (s.fileIdx ?: 0) },
+            sizeBytes = r.sizeBytes,
+            ready = r.cached,
             basis = if (r.quality != null) QualityBasis.NAME else QualityBasis.UNKNOWN,
             current = current,
         )
     }
 
-    /** « 4K », « 1080p »… (mesure) → définition ; mêmes libellés que les badges. */
     /** Fichier de « Mes fichiers Real-Debrid » : décrit par le nom du fichier. */
     fun fromCloud(item: com.sokoul.iptv.data.debrid.CloudItem?, title: String?): PlayerSource {
         val r = item?.release
         return PlayerSource(
             id = "cloud", origin = SourceOrigin.DEBRID, language = r?.language, quality = r?.quality,
             hdr = r?.hdr?.let(SourceLabels::hdr)?.let { if (it == "HDR") "HDR10" else it }, codec = r?.codec,
-            where = listOfNotNull("Real-Debrid · Mes fichiers", item?.sizeBytes?.takeIf { it > 0 }?.let(SourceLabels::size)).joinToString(" · "),
+            where = listOfNotNull(SourceLabels.originName(SourceOrigin.DEBRID) + " · Mes fichiers", item?.sizeBytes?.takeIf { it > 0 }?.let(SourceLabels::size)).joinToString(" · "),
+            sizeBytes = item?.sizeBytes?.takeIf { it > 0 }, ready = true,
             fileName = item?.title ?: title, basis = if (r?.quality != null) QualityBasis.NAME else QualityBasis.UNKNOWN, current = true,
         )
     }
 
     fun qualityOf(resolution: String?): VideoQuality? = VideoQuality.entries.firstOrNull { SourceLabels.quality(it) == resolution }
+
+    /** Nom comparable : minuscules, lettres et chiffres seulement (« FR - Dune (2021) » = « fr dune 2021 »). */
+    fun normalize(name: String): String = name.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
 
     /** Nom de langue lisible : « Français (VF) », « Version originale (VO) ». */
     fun languageName(lang: AudioLanguage?, region: String? = null): String = when (lang) {
@@ -127,25 +149,6 @@ object PlayerSources {
         QualityBasis.UNKNOWN -> null
     }
 
-    /** Clé de langue : deux sources de même clé ont le même son. */
-    private fun langKey(s: PlayerSource): String? = s.language?.name ?: s.region?.let { "R:$it" }
-
-    private val best = compareBy<PlayerSource>({ it.quality?.ordinal ?: 9 }, { if (it.hdr != null) 0 else 1 }, { it.origin.ordinal }, { if (it.basis == QualityBasis.MEASURED) 0 else 1 })
-
-    /**
-     * Section « Autres langues » du panneau Audio : la meilleure source de chaque langue absente du fichier en cours
-     * (définition, puis HDR, puis IPTV avant Real-Debrid). Langue inconnue : pas de ligne (rien à promettre).
-     */
-    fun otherLanguages(sources: List<PlayerSource>): List<PlayerSource> {
-        val current = sources.firstOrNull { it.current }
-        val currentKey = current?.let(::langKey)
-        return sources.filter { !it.current && langKey(it) != null && langKey(it) != currentKey }
-            .groupBy { langKey(it)!! }.values.map { group -> group.sortedWith(best).first() }
-            .sortedWith(compareBy { langOrder(it) })
-    }
-
-    private fun langOrder(s: PlayerSource) = s.language?.ordinal ?: 10
-
     /** La source [other] a une image moins bonne que [current] (les deux connues). */
     fun qualityDrop(other: PlayerSource, current: PlayerSource?): Boolean {
         val a = other.quality ?: return false
@@ -171,7 +174,7 @@ object PlayerSources {
             if (res != null) codec else source?.codec,
             if (res != null) hdr else source?.hdr,
             source?.let { it.language?.name ?: it.region },
-            source?.origin?.let { if (it == SourceOrigin.IPTV) "IPTV" else "Real-Debrid" },
+            source?.origin?.let(SourceLabels::originShort),
         )
         return parts.joinToString(" · ").ifEmpty { null }
     }

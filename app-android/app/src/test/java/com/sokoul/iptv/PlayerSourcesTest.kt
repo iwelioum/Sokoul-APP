@@ -56,21 +56,22 @@ class PlayerSourcesTest {
         assertEquals(QualityBasis.NAME, s.basis)
     }
 
-    @Test fun `autres langues - la meilleure source de chaque langue absente du fichier en cours`() {
-        val list = listOf(
-            src("a", AudioLanguage.VF, VideoQuality.HD_720, current = true),
-            src("b", AudioLanguage.VF, VideoQuality.UHD_4K),
-            src("c", AudioLanguage.VO, VideoQuality.FHD_1080),
-            src("rd:d", AudioLanguage.VO, VideoQuality.UHD_4K, SourceOrigin.DEBRID, hdr = "HDR10"),
-            src("e", AudioLanguage.VOSTFR, VideoQuality.SD),
-            src("f", null, VideoQuality.UHD_4K),
-        )
-        val others = PlayerSources.otherLanguages(list)
-        assertEquals("VF déjà dans le fichier en cours ; langue inconnue ignorée", listOf("e", "rd:d"), others.map { it.id })
-        val cur = list.first()
-        assertTrue(PlayerSources.qualityDrop(list[4], cur))
-        assertTrue(PlayerSources.qualityGain(list[3], cur))
-        assertFalse(PlayerSources.qualityDrop(list[5].copy(quality = null), cur))
+    @Test fun `repere de qualite par rapport a la source en cours`() {
+        val cur = src("a", AudioLanguage.VF, VideoQuality.HD_720, current = true)
+        assertTrue(PlayerSources.qualityDrop(src("e", AudioLanguage.VOSTFR, VideoQuality.SD), cur))
+        assertTrue(PlayerSources.qualityGain(src("rd:d", AudioLanguage.VO, VideoQuality.UHD_4K, SourceOrigin.DEBRID), cur))
+        assertFalse(PlayerSources.qualityDrop(src("f", null, null), cur))
+    }
+
+    @Test fun `empreinte meme fichier, taille et etat prets pour fusionner les doublons`() {
+        val a = PlayerSources.fromIptv(VodVersion("m1", "FR - Dune (2021) 4K", "VF", "4K", "c1"), current = false)
+        val b = PlayerSources.fromIptv(VodVersion("m2", "fr dune 2021 4k", "VF", "4K", "c2"), current = false)
+        assertEquals(a.sameFile, b.sameFile)
+        val r = Release(quality = VideoQuality.UHD_4K, sizeBytes = 61_200_000_000, cached = false)
+        val s = PlayerSources.fromDebrid(DebridStream("k", "Dune.2160p", null, "h", 0, "Dune.2021.2160p.mkv", r), current = false, id = "rd:k")
+        assertEquals(61_200_000_000, s.sizeBytes)
+        assertEquals(false, s.ready)
+        assertEquals("dune 2021 2160p mkv|61200000000", s.sameFile)
     }
 
     @Test fun `bandeau - mesure du flux puis langue et origine`() {

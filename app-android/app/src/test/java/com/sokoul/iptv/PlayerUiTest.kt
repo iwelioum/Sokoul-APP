@@ -21,9 +21,8 @@ import com.sokoul.iptv.ui.screens.player.NextUpCard
 import com.sokoul.iptv.ui.screens.player.PlayerAction
 import com.sokoul.iptv.ui.screens.player.PlayerUi
 import com.sokoul.iptv.ui.screens.player.TrackOption
-import com.sokoul.iptv.ui.screens.player.AudioPanel
+import com.sokoul.iptv.ui.screens.player.VersionPanel
 import com.sokoul.iptv.ui.screens.player.PlayerSource
-import com.sokoul.iptv.ui.screens.player.SourcesPanel
 import com.sokoul.iptv.ui.screens.player.vodTools
 import com.sokoul.iptv.ui.screens.player.VodControls
 import com.sokoul.iptv.ui.screens.player.clampSeek
@@ -59,9 +58,14 @@ class PlayerUiTest {
     }
 
     @Test fun `ordre des pastilles identique pour tous les titres`() {
-        val pills = vodPills(PlayerUi(), audio = "Français", subtitles = null, {}, {}, {}, {})
-        assertEquals(listOf("Audio", "Sous-titres", "Source", "Plus d'options"), pills.map { it.label })
-        assertEquals(listOf("Français", "Désactivés", "Source", null), pills.map { it.text })
+        val pills = vodPills("Français · 1080p · IPTV", subtitles = null, {}, {}, {})
+        assertEquals(listOf("Langue et qualité", "Sous-titres", "Plus d'options"), pills.map { it.label })
+        assertEquals(listOf("Français · 1080p · IPTV", "Désactivés", null), pills.map { it.text })
+        // la pastille dit ce qu'on entend (piste choisie), la qualité et l'origine ; piste sans langue : langue de la source
+        val cur = PlayerSource("rd:k", com.sokoul.iptv.domain.SourceOrigin.DEBRID, com.sokoul.iptv.domain.AudioLanguage.MULTI, quality = com.sokoul.iptv.domain.VideoQuality.UHD_4K, where = "x", current = true)
+        assertEquals("Anglais · 4K · RD", com.sokoul.iptv.ui.screens.player.versionPillText(cur, "Anglais"))
+        assertEquals("MULTI · 4K · RD", com.sokoul.iptv.ui.screens.player.versionPillText(cur, "Piste principale"))
+        assertEquals("Langue et qualité", com.sokoul.iptv.ui.screens.player.versionPillText(null, null))
         assertEquals(listOf("Épisodes", "Épisode suivant"), vodTools(PlayerUi(nextEpisode = next), hasEpisodes = true, {}, {}).map { it.label })
         assertEquals(emptyList<String>(), vodTools(PlayerUi(), hasEpisodes = false, {}, {}).map { it.label })
     }
@@ -115,9 +119,8 @@ class PlayerUiTest {
                 PlayerAction("Épisode suivant", Icons.Default.ClosedCaption) { clicks += "next" },
             ),
             pills = listOf(
-                PlayerAction("Audio", Icons.Default.ClosedCaption, text = "Français") { clicks += "audio" },
+                PlayerAction("Langue et qualité", Icons.Default.ClosedCaption, text = "Français · 1080p · IPTV") { clicks += "versions" },
                 PlayerAction("Sous-titres", Icons.Default.ClosedCaption, text = "Désactivés") { clicks += "subs" },
-                PlayerAction("Source", Icons.Default.ClosedCaption, text = "VOSTFR · 1080p") { clicks += "sources" },
                 PlayerAction("Plus d'options", Icons.Default.ClosedCaption, iconOnly = true) { clicks += "more" },
             ),
             onSeekStep = { clicks += "seek:$it" }, onSeekTo = {}, onInteract = {},
@@ -148,13 +151,11 @@ class PlayerUiTest {
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
         rule.onNodeWithContentDescription("Épisode suivant").assertIsFocused()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
-        rule.onNodeWithContentDescription("Audio : Français").assertIsFocused()
+        rule.onNodeWithContentDescription("Langue et qualité : Français · 1080p · IPTV").assertIsFocused()
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.runOnIdle { assertTrue(clicks.toString(), "versions" in clicks) }
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
         rule.onNodeWithContentDescription("Sous-titres : Désactivés").assertIsFocused()
-        rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
-        rule.onNodeWithContentDescription("Source : VOSTFR · 1080p").assertIsFocused()
-        rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.runOnIdle { assertTrue(clicks.toString(), "sources" in clicks) }
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
         rule.onNodeWithContentDescription("Plus d'options").assertIsFocused()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionUp) }
@@ -167,7 +168,7 @@ class PlayerUiTest {
         rule.setContent { Tv { Controls(mutableListOf(), remember { FocusRequester() }, remember { FocusRequester() }) } }
         rule.waitForIdle()
         val play = rule.onNodeWithContentDescription("Pause").fetchSemanticsNode().boundsInRoot
-        listOf("Épisodes", "Épisode suivant", "Audio : Français", "Sous-titres : Désactivés", "Source : VOSTFR · 1080p", "Plus d'options").forEach { label ->
+        listOf("Épisodes", "Épisode suivant", "Langue et qualité : Français · 1080p · IPTV", "Sous-titres : Désactivés", "Plus d'options").forEach { label ->
             val b = rule.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot
             with(rule.density) {
                 assertTrue("$label dans l'écran : ${b.right.toDp()}", b.right.toDp() <= 960.dp)
@@ -177,48 +178,62 @@ class PlayerUiTest {
         }
     }
 
-    @Test fun `panneau audio pistes du fichier puis autres langues avec qualite`() {
+    @Test fun `panneau langue et qualite - une ligne par version, sources depliables, origine et qualite visibles`() {
         val picks = mutableListOf<String>()
-        val vf = PlayerSource("m1", com.sokoul.iptv.domain.SourceOrigin.IPTV, com.sokoul.iptv.domain.AudioLanguage.VF, quality = com.sokoul.iptv.domain.VideoQuality.HD_720, where = "Abonnement IPTV", current = true)
-        val vo = PlayerSource("rd:x", com.sokoul.iptv.domain.SourceOrigin.DEBRID, com.sokoul.iptv.domain.AudioLanguage.VO, quality = com.sokoul.iptv.domain.VideoQuality.UHD_4K, where = "Real-Debrid · Remux")
+        val iptv = PlayerSource(
+            "m1", com.sokoul.iptv.domain.SourceOrigin.IPTV, com.sokoul.iptv.domain.AudioLanguage.VF, quality = com.sokoul.iptv.domain.VideoQuality.FHD_1080,
+            where = "Abonnement IPTV · « FILMS FR »", basis = com.sokoul.iptv.ui.screens.player.QualityBasis.MEASURED, current = true,
+        )
+        val rdVf = PlayerSource("rd:a", com.sokoul.iptv.domain.SourceOrigin.DEBRID, com.sokoul.iptv.domain.AudioLanguage.VF, quality = com.sokoul.iptv.domain.VideoQuality.FHD_1080, where = "Real-Debrid · Remux · 60 Go · prête", fileName = "Dune.2021.1080p.REMUX")
+        val rdVo = PlayerSource("rd:b", com.sokoul.iptv.domain.SourceOrigin.DEBRID, com.sokoul.iptv.domain.AudioLanguage.VO, quality = com.sokoul.iptv.domain.VideoQuality.UHD_4K, where = "Real-Debrid · WEB · 18 Go")
         rule.setContent {
             Tv {
-                AudioPanel(
-                    tracks = listOf(TrackOption("Français · 5.1", null, 0, true), TrackOption("Anglais · stéréo", null, 1, false)),
-                    sources = listOf(vf, vo), resumeAt = "42:10",
-                    onTrack = { picks += "track:" + it.label }, onSource = { picks += "source:" + it.id },
+                VersionPanel(
+                    tracks = listOf(TrackOption("Français · 5.1", null, 0, true)), sources = listOf(rdVf, iptv, rdVo),
+                    languages = listOf("VF", "MULTI", "VOSTFR", "VO"), search = com.sokoul.iptv.ui.screens.player.SourceSearch.DONE, resumeAt = "42:10",
+                    onTrack = { picks += "track:" + it.label }, onSource = { picks += it.id },
                 )
             }
         }
         rule.mainClock.advanceTimeBy(200)
-        rule.onNodeWithContentDescription("Français · 5.1, sélectionné").assertIsFocused()
-        rule.onNodeWithText("Le lecteur ouvre un autre fichier et reprend à 42:10 : l'image peut changer").assertExists()
+        rule.onNodeWithText("Vous regardez : Français (VF) · 1080p (mesurée) · Abonnement IPTV · « FILMS FR »").assertExists()
+        rule.onNodeWithText("Son : Français · 5.1").assertExists()
+        rule.onNodeWithText("3 sources trouvées : IPTV 1 · RD 2 · changer reprend à 42:10").assertExists()
+        // focus sur la version en cours ; la source Real-Debrid de la même version est repliée dessous
+        val vf = "En cours, Français (VF) · 1080p, Abonnement IPTV · « FILMS FR », 1 autre source, sélectionné"
+        rule.onNodeWithContentDescription(vf).assertIsFocused()
+        rule.onNodeWithText("1 autre source : RD 1").assertExists()
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+        rule.mainClock.advanceTimeBy(100)
+        rule.onNodeWithText("Dune.2021.1080p.REMUX").assertExists()
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        rule.onNodeWithContentDescription("Real-Debrid, Real-Debrid · Remux · 60 Go · prête").assertIsFocused()
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        // GAUCHE replie et revient sur la version
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.mainClock.advanceTimeBy(100)
+        rule.onNodeWithContentDescription(vf).assertIsFocused()
+        rule.onNodeWithText("Dune.2021.1080p.REMUX").assertDoesNotExist()
+        // autre langue : qualité et origine visibles avant de choisir
         rule.onNodeWithText("Image meilleure : 4K").assertExists()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
-        rule.onNodeWithContentDescription("Anglais · stéréo").assertIsFocused()
+        rule.onNodeWithContentDescription("Version originale (VO) · 4K, Real-Debrid · WEB · 18 Go").assertIsFocused()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
-        rule.onNodeWithContentDescription("Version originale (VO), autre fichier, VO · 4K").assertIsFocused()
-        rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.runOnIdle { assertEquals(listOf("track:Anglais · stéréo", "source:rd:x"), picks) }
+        rule.runOnIdle { assertEquals(listOf("rd:a", "rd:b"), picks) }
     }
 
-    @Test fun `panneau sources focus sur la source en cours et origine lisible`() {
-        val picks = mutableListOf<String>()
-        val a = PlayerSource("m1", com.sokoul.iptv.domain.SourceOrigin.IPTV, com.sokoul.iptv.domain.AudioLanguage.VF, quality = com.sokoul.iptv.domain.VideoQuality.FHD_1080, where = "Abonnement IPTV · « FILMS FR »", fileName = "FR - Dune (2021) FHD", basis = com.sokoul.iptv.ui.screens.player.QualityBasis.MEASURED)
-        val b = a.copy(id = "m2", quality = com.sokoul.iptv.domain.VideoQuality.UHD_4K, where = "Abonnement IPTV · « FILMS 4K »", fileName = "Dune 4K", basis = com.sokoul.iptv.ui.screens.player.QualityBasis.NAME, current = true)
-        val c = PlayerSource("rd:k", com.sokoul.iptv.domain.SourceOrigin.DEBRID, com.sokoul.iptv.domain.AudioLanguage.MULTI, quality = com.sokoul.iptv.domain.VideoQuality.UHD_4K, where = "Real-Debrid · Remux · 60 Go · prête")
-        rule.setContent { Tv { SourcesPanel(listOf(a, b, c), resumeAt = "1:02:00") { picks += it.id } } }
+    @Test fun `panneau audio du direct - seulement les pistes`() {
+        rule.setContent {
+            Tv {
+                VersionPanel(
+                    tracks = listOf(TrackOption("Français", null, 0, true), TrackOption("Anglais", null, 1, false)), sources = emptyList(),
+                    languages = listOf("VF"), search = com.sokoul.iptv.ui.screens.player.SourceSearch.DONE, resumeAt = "0:00", onTrack = {}, onSource = {},
+                )
+            }
+        }
         rule.mainClock.advanceTimeBy(200)
-        rule.onNodeWithText("3 sources trouvées · changer reprend à 1:02:00").assertExists()
-        rule.onNodeWithText("ABONNEMENT IPTV (2)").assertExists()
-        rule.onNodeWithText("Abonnement IPTV · « FILMS FR » · qualité mesurée").assertExists()
-        rule.onNodeWithText("Image moins bonne : 1080p").assertExists()
-        rule.onNodeWithContentDescription("En cours, Français (VF) · 4K, Abonnement IPTV · « FILMS 4K », sélectionné").assertIsFocused()
-        rule.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
-        rule.onNodeWithContentDescription("Plusieurs langues (MULTI) · 4K, Real-Debrid · Remux · 60 Go · prête").assertIsFocused()
-        rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.runOnIdle { assertEquals(listOf("rd:k"), picks) }
+        rule.onNodeWithText("Audio").assertExists()
+        rule.onNodeWithContentDescription("Français, sélectionné").assertIsFocused()
     }
 
     @Test fun `carte episode suivant compte a rebours et focus sur lire maintenant`() {

@@ -189,6 +189,8 @@ class MovieDetailViewModel @Inject constructor(
     val debridStreams = MutableStateFlow<List<com.sokoul.iptv.data.debrid.DebridStream>>(emptyList())
     /** Toutes les sources, IPTV et Real-Debrid, dans l'ordre de lancement (la première = « Lecture »). */
     val ranked = MutableStateFlow<List<com.sokoul.iptv.data.debrid.Candidate>>(emptyList())
+    /** Ordre des langues des Réglages (sections de l'étagère des versions). */
+    val languages = MutableStateFlow(com.sokoul.iptv.data.repo.VersionPicker.DEFAULT_LANGUAGES)
     var debridQuery: com.sokoul.iptv.data.debrid.DebridQuery? = null
         private set
 
@@ -196,7 +198,9 @@ class MovieDetailViewModel @Inject constructor(
         val q = qualities.value
         val iptv = versions.value.map { it.toVersion().copy(measured = q[it.id]) }
         val iptvBlocked = gate.recording.value != null || gate.remainingMs() > 0
-        ranked.value = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, debridStreams.value, debrid.prefs(iptvBlocked))
+        val prefs = debrid.prefs(iptvBlocked)
+        languages.value = prefs.languages
+        ranked.value = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, debridStreams.value, prefs)
     }
 
     private fun loadDebrid(tmdbId: Int) = viewModelScope.launch {
@@ -313,6 +317,8 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val similar by vm.similar.collectAsStateWithLifecycle()
     val saga by vm.saga.collectAsStateWithLifecycle()
     val ranked by vm.ranked.collectAsStateWithLifecycle()
+    val languages by vm.languages.collectAsStateWithLifecycle()
+    var groupMenu by remember { mutableStateOf<com.sokoul.iptv.ui.screens.player.VersionGroup?>(null) }
     val extras by vm.extras.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
@@ -350,7 +356,20 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val top = ranked.firstOrNull()
     val topRd = top as? com.sokoul.iptv.data.debrid.Candidate.Debrid
     val playBest = { fromStart: Boolean -> if (topRd != null) playRd(topRd.stream.key, fromStart) else play(best, fromStart) }
-    val sourceCount = ranked.size
+    // sources affichées : mêmes lignes que dans le lecteur (origine en clair, qualité mesurée ou d'après le nom)
+    val detailSources = remember(ranked) {
+        ranked.map { c ->
+            when (c) {
+                is com.sokoul.iptv.data.debrid.Candidate.Iptv -> com.sokoul.iptv.ui.screens.player.PlayerSources.fromIptv(
+                    c.version.copy(categoryName = c.version.categoryName ?: vm.categoryNames[c.version.categoryId]), current = false,
+                )
+                is com.sokoul.iptv.data.debrid.Candidate.Debrid -> com.sokoul.iptv.ui.screens.player.PlayerSources.fromDebrid(c.stream, current = false, id = RD_ITEM + c.stream.key)
+            }
+        }
+    }
+    val groups = remember(detailSources, languages) { com.sokoul.iptv.ui.screens.player.SourceCatalog.group(detailSources, languages) }
+    val playSource = { id: String -> if (id.startsWith(RD_ITEM)) playRd(id.removePrefix(RD_ITEM), false) else versions.firstOrNull { it.id == id }?.let { play(it, false) } ?: Unit }
+    val sourceCount = com.sokoul.iptv.ui.screens.player.SourceCatalog.merge(detailSources).size.coerceAtLeast(if (multi) 2 else 1)
     val trailer = (tm?.trailerYoutubeKey ?: xt?.trailer)?.takeIf { it.isNotBlank() }
     val director = (tm?.director ?: xt?.director)?.takeIf { it.isNotBlank() }
 
@@ -358,7 +377,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         title = title, logo = tm?.logo ?: extras.art?.logo, backdrop = tm?.backdrop ?: xt?.backdrop ?: extras.art?.background, poster = tm?.poster ?: xt?.poster ?: m.poster,
         rating = tm?.rating ?: xt?.rating ?: m.rating,
         facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), durationMin?.takeIf { it > 0 }?.let { com.sokoul.iptv.ui.util.endsAt(it) }, best.language),
-        certification = tm?.certification, quality = topRd?.let { (listOfNotNull(it.source.quality?.let(SourceLabels::quality), it.source.hdr?.let(SourceLabels::hdr)) + "Real-Debrid").joinToString(" · ") } ?: qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
+        certification = tm?.certification, quality = topRd?.let { (listOfNotNull(it.source.quality?.let(SourceLabels::quality), it.source.hdr?.let(SourceLabels::hdr)) + SourceLabels.originName(it.source.origin)).joinToString(" · ") } ?: qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
         genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
         tagline = tm?.tagline, synopsis = synopsis,
         credit = director?.let { "Réalisation : $it" } ?: xt?.cast?.takeIf { tm?.cast.isNullOrEmpty() && it.isNotBlank() }?.let { "Avec : $it" },
@@ -366,7 +385,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     )
     val primary = PrimaryAction(
         label = (when { resume != null -> "Reprendre"; watched -> "Revoir"; else -> "Lecture" }) + when {
-            topRd != null -> " · ${SourceLabels.text(topRd.source)} · RD"
+            topRd != null -> " · ${SourceLabels.text(topRd.source)} · " + SourceLabels.originShort(topRd.source.origin)
             multi || sourceCount > 1 -> " · ${versionLabel(best)}"
             else -> ""
         },
@@ -388,27 +407,17 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     ) {
         // ▼ depuis les versions : première carte de la section suivante (évite le saut en bout de rangée de Compose)
         val belowVersions = (saga?.second?.firstOrNull()?.let { "saga:${it.uid}" } ?: similar.firstOrNull()?.let { "sim:${it.uid}" })?.let { memory.requester(it) }
-        if (multi || sourceCount > 1) {
-            // abonnement et Real-Debrid mêlés, dans l'ordre de lancement ; au plus 12 versions RD (les meilleures)
-            val shown = ranked.filter { it is com.sokoul.iptv.data.debrid.Candidate.Iptv } +
-                ranked.filterIsInstance<com.sokoul.iptv.data.debrid.Candidate.Debrid>().take(12)
-            val items = ranked.filter { it in shown }.mapIndexed { i, c ->
-                when (c) {
-                    is com.sokoul.iptv.data.debrid.Candidate.Iptv -> VersionItem(c.version.id, c.source, qualities[c.version.id], first = i == 0, preferred = c.version.id == preferredId)
-                    is com.sokoul.iptv.data.debrid.Candidate.Debrid -> VersionItem(RD_ITEM + c.stream.key, c.source, null, first = i == 0, preferred = false)
-                }
-            }.ifEmpty { versions.map { v -> VersionItem(v.id, versionSource(v), qualities[v.id], first = v.id == best.id, preferred = v.id == preferredId) } }
+        if (sourceCount > 1) {
+            // toutes les sources, toutes origines classées ensemble, rangées par version (langue + qualité), doublons fusionnés
             detailSection(
-                "versions", if (sourceCount > versions.size) "Sources disponibles ($sourceCount)" else "Versions disponibles",
-                if (l.isTouch) "Touchez pour lire · appui long pour la lancer toujours en premier" else "OK pour lire · appui long pour la lancer toujours en premier",
+                "versions", "Versions disponibles (${groups.size})",
+                com.sokoul.iptv.ui.screens.player.sourceCountLine(detailSources, com.sokoul.iptv.ui.screens.player.SourceSearch.DONE) + " · " +
+                    if (l.isTouch) "touchez pour lire, appui long : toutes les sources" else "OK pour lire, appui long : toutes les sources",
             ) {
                 VersionsShelf(
-                    items, memory, belowVersions,
-                    onPlay = { id ->
-                        if (id.startsWith(RD_ITEM)) playRd(id.removePrefix(RD_ITEM), false)
-                        else versions.firstOrNull { it.id == id }?.let { play(it, false) }
-                    },
-                    onMenu = { id -> versionMenu = versions.firstOrNull { it.id == id } },
+                    groups, firstId = detailSources.firstOrNull()?.id, preferredId = preferredId, memory = memory, below = belowVersions,
+                    onPlay = { g -> playSource(g.best.id) },
+                    onMenu = { g -> groupMenu = g },
                 )
             }
         }
@@ -455,6 +464,24 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
             onDismiss = { versionPicker = 0 },
         )
     }
+    groupMenu?.let { g ->
+        val lang = com.sokoul.iptv.ui.screens.player.PlayerSources.languageName(g.language, g.region)
+        OptionsDialog(
+            "$lang · ${com.sokoul.iptv.ui.screens.player.versionTitle(g)}",
+            buildList {
+                g.sources.forEach { s ->
+                    add(MenuOption("Lire : " + com.sokoul.iptv.ui.screens.player.sourceDetail(s), Icons.Default.PlayArrow, selected = s.id == detailSources.firstOrNull()?.id) { playSource(s.id) })
+                }
+                g.sources.filter { it.origin == com.sokoul.iptv.domain.SourceOrigin.IPTV }.forEach { s ->
+                    versions.firstOrNull { it.id == s.id }?.let { v ->
+                        add(MenuOption("Toujours lancer en premier : " + s.where, Icons.Default.Star, selected = v.id == preferredId) { vm.prefer(v) })
+                    }
+                }
+            },
+            subtitle = if (g.sources.size == 1) "Une seule source pour cette version" else "${g.sources.size} sources pour cette version, la première est lue par défaut",
+            onDismiss = { groupMenu = null },
+        )
+    }
     versionMenu?.let { v ->
         OptionsDialog(
             versionLabel(v),
@@ -494,6 +521,8 @@ class SeriesDetailViewModel @Inject constructor(
     private val rdAsked = HashSet<Pair<Int, Int>>()
     /** Épisodes dont la meilleure version est sur Real-Debrid (mieux que l'IPTV). */
     val rdFirst = MutableStateFlow<Set<Pair<Int, Int>>>(emptySet())
+    /** Préférences du classement (langues, réseau, origine à égalité), pour classer ensemble IPTV et Real-Debrid à l'écran. */
+    val rankPrefs = MutableStateFlow(com.sokoul.iptv.data.debrid.SourceRanker.Prefs())
 
     /** Cherche les versions Real-Debrid d'un épisode (une fois ; rien sans compte ou en profil Enfant). */
     fun loadEpisodeRd(season: Int, episode: Int) = viewModelScope.launch {
@@ -505,7 +534,9 @@ class SeriesDetailViewModel @Inject constructor(
         val found = runCatching { debrid.find(q) }.getOrDefault(emptyList())
         // classé avec la version IPTV affichée : si une version RD passe devant, « Lecture » la lance
         val iptv = versions.value.firstOrNull { it.id == primaryId.value }?.let { listOf(it.toVersion().copy(measured = qualities.value[it.id])) }.orEmpty()
-        val ranked = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, found, debrid.prefs())
+        val prefs = debrid.prefs()
+        rankPrefs.value = prefs
+        val ranked = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, found, prefs)
         if (ranked.firstOrNull() is com.sokoul.iptv.data.debrid.Candidate.Debrid) rdFirst.value = rdFirst.value + k
         episodeRd.value = episodeRd.value + (k to ranked.filterIsInstance<com.sokoul.iptv.data.debrid.Candidate.Debrid>().map { it.stream })
     }
@@ -671,6 +702,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val allEpisodes by vm.allEpisodes.collectAsStateWithLifecycle()
     val episodeRd by vm.episodeRd.collectAsStateWithLifecycle()
     val rdFirst by vm.rdFirst.collectAsStateWithLifecycle()
+    val rankPrefs by vm.rankPrefs.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
     val memory = rememberFocusMemory()
@@ -738,7 +770,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
         val rd = episodeRd[a.episode.season to a.episode.episode]?.firstOrNull()?.takeIf { (a.episode.season to a.episode.episode) in rdFirst }
         PrimaryAction(
             label = EpisodeResolver.label(a),
-            detail = listOfNotNull(EpisodeResolver.hint(a), rd?.let { "Real-Debrid · " + com.sokoul.iptv.ui.components.SourceLabels.text(it.toSource()) }).joinToString(" · ").ifEmpty { null },
+            detail = listOfNotNull(EpisodeResolver.hint(a), rd?.let { com.sokoul.iptv.ui.components.SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID) + " · " + com.sokoul.iptv.ui.components.SourceLabels.text(it.toSource()) }).joinToString(" · ").ifEmpty { null },
             progress = p?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
             onClick = { if (rd != null) playEpisodeRd(a.episode, rd.key, a is SeriesAction.Rewatch) else playEpisode(a.episode, a is SeriesAction.Rewatch) },
         )
@@ -869,9 +901,22 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
             buildList {
                 add(MenuOption(if (resumable) "Reprendre" else "Lecture", Icons.Default.PlayArrow) { playEpisode(e, false) })
                 if (resumable) add(MenuOption("Depuis le début", Icons.Default.Replay) { playEpisode(e, true) })
-                // versions Real-Debrid de l'épisode (au plus 6, les meilleures d'abord)
-                rdList.take(6).forEach { st ->
-                    add(MenuOption("Real-Debrid · " + com.sokoul.iptv.ui.components.SourceLabels.text(st.toSource()), Icons.Default.PlayArrow) { playEpisodeRd(e, st.key, false) })
+                // toutes les versions de l'épisode (abonnement et Real-Debrid classés ensemble), une ligne par langue et qualité
+                if (rdList.isNotEmpty()) {
+                    val iptvSrc = shownVersion?.let { v -> com.sokoul.iptv.ui.screens.player.PlayerSources.fromIptv(v.toVersion().copy(id = EP_IPTV, measured = vm.qualities.value[v.id]), current = false) }
+                    val rdSrc = rdList.map { com.sokoul.iptv.ui.screens.player.PlayerSources.fromDebrid(it, current = false, id = RD_ITEM + it.key) }
+                    val ranked = com.sokoul.iptv.data.debrid.SourceRanker.rank(
+                        listOfNotNull(shownVersion?.let { v -> v.toVersion().copy(id = EP_IPTV, measured = vm.qualities.value[v.id]) }), rdList, rankPrefs,
+                    ).mapNotNull { c -> if (c is com.sokoul.iptv.data.debrid.Candidate.Iptv) iptvSrc else rdSrc.firstOrNull { it.id == RD_ITEM + (c as com.sokoul.iptv.data.debrid.Candidate.Debrid).stream.key } }
+                    com.sokoul.iptv.ui.screens.player.SourceCatalog.group(ranked, rankPrefs.languages).forEach { g ->
+                        val s = g.best
+                        val more = g.sources.size - 1
+                        add(MenuOption(
+                            "Lire en " + com.sokoul.iptv.ui.screens.player.PlayerSources.languageName(g.language, g.region) + " · " + com.sokoul.iptv.ui.screens.player.versionTitle(g) +
+                                " · " + com.sokoul.iptv.ui.components.SourceLabels.originShort(s.origin) + if (more > 0) " (+$more)" else "",
+                            Icons.Default.PlayArrow,
+                        ) { if (s.id == EP_IPTV) playEpisode(e, false) else playEpisodeRd(e, s.id.removePrefix(RD_ITEM), false) })
+                    }
                 }
                 add(MenuOption(if (watched) "Marquer comme non vu" else "Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(e, !watched) })
             },
@@ -1008,6 +1053,8 @@ private fun DetailError(message: String, onRetry: () -> Unit, onBack: () -> Unit
 
 /** Identifiant d'une version Real-Debrid dans l'étagère des versions. */
 internal const val RD_ITEM = "rd:"
+/** Version IPTV de l'épisode dans le menu d'épisode. */
+private const val EP_IPTV = "iptv-episode"
 
 fun versionSource(m: MovieEntity) = com.sokoul.iptv.domain.PlaybackSources.fromIptv(m.toVersion())
 fun versionLabel(m: MovieEntity): String = com.sokoul.iptv.ui.components.SourceLabels.text(versionSource(m))

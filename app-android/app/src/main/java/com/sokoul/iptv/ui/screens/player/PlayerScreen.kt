@@ -624,9 +624,10 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     onPlayPause = ::playPause,
                     onFwd30 = { seekBy(30_000L) },
                     pills = vodPills(
-                        ui, audio = remember(tracks, ui.sources) { audioPillText(vm.audioOptions(), ui.sources.firstOrNull { it.current }?.let { it.language?.name ?: it.region }) }, subtitles = remember(tracks, onlineState) { subtitlePillText(vm.textOptions()) },
-                        onAudio = { panel = PlayerPanel.AUDIO; returnTo = PlayerPanel.AUDIO }, onSubtitles = { panel = PlayerPanel.SUBTITLES; returnTo = PlayerPanel.SUBTITLES },
-                        onSources = { panel = PlayerPanel.SOURCES; returnTo = PlayerPanel.SOURCES }, onMore = { menu = Menu.MAIN }, focus = pillFocus,
+                        version = remember(tracks, ui.sources) { versionPillText(ui.sources.firstOrNull { it.current }, audioPillText(vm.audioOptions())) },
+                        subtitles = remember(tracks, onlineState) { subtitlePillText(vm.textOptions()) },
+                        onVersions = { panel = PlayerPanel.VERSIONS; returnTo = PlayerPanel.VERSIONS }, onSubtitles = { panel = PlayerPanel.SUBTITLES; returnTo = PlayerPanel.SUBTITLES },
+                        onMore = { menu = Menu.MAIN }, focus = pillFocus,
                     ),
                     tools = vodTools(ui, hasEpisodes = episodes.size > 1, onEpisodes = { episodesVisible = true }, onNext = { vm.playNextEpisode() }),
                     onSeekStep = { seekBy(it) },
@@ -706,9 +707,12 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 if (panel != null) shown = panel
                 val resumeAt = formatDuration(position)
                 when (shown) {
-                    PlayerPanel.AUDIO -> {
+                    PlayerPanel.VERSIONS -> {
                         val audioOpts = remember(tracks) { vm.audioOptions() }
-                        AudioPanel(audioOpts, ui.sources, resumeAt, onTrack = { vm.selectTrack(C.TRACK_TYPE_AUDIO, it) }, onSource = { panel = null; vm.switchVersion(it.id) })
+                        VersionPanel(
+                            audioOpts, if (ui.isLive) emptyList() else ui.sources, ui.languages, if (ui.isLive) SourceSearch.DONE else ui.searchState, resumeAt,
+                            onTrack = { vm.selectTrack(C.TRACK_TYPE_AUDIO, it) }, onSource = { panel = null; vm.switchVersion(it.id) },
+                        )
                     }
                     PlayerPanel.SUBTITLES -> {
                         val online by vm.onlineSubs.collectAsStateWithLifecycle()
@@ -717,7 +721,6 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                         val on = textOpts.firstOrNull()?.selected == false
                         SubtitlePanel(textOpts, offsetMs = if (on) subOffset else null, delayOnly = online.activeRef == null, onShift = vm::shiftSubtitles) { vm.selectTrack(C.TRACK_TYPE_TEXT, it) }
                     }
-                    PlayerPanel.SOURCES -> SourcesPanel(ui.sources, resumeAt) { panel = null; vm.switchVersion(it.id) }
                     null -> Unit
                 }
             }
@@ -763,7 +766,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             buildList {
                 // direct : d'abord le lecteur (son, image, décodage, statistiques), puis ce que propose une box TV
                 if (ui.isLive) {
-                    add(MenuOption("Audio", Icons.Default.Audiotrack) { panel = PlayerPanel.AUDIO })
+                    add(MenuOption("Audio", Icons.Default.Audiotrack) { panel = PlayerPanel.VERSIONS })
                     add(MenuOption("Sous-titres", Icons.Default.ClosedCaption) { panel = PlayerPanel.SUBTITLES })
                     add(MenuOption("Format d'image : ${resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
                     add(MenuOption("Décodage : ${(vm.sessionDecoder ?: vm.defaultDecoder).label}", Icons.Default.Memory) { scope.launch { delay(50); menu = Menu.DECODER } })
@@ -833,17 +836,16 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
 }
 
 /**
- * Pastilles du lecteur à la demande, toujours dans le même ordre : Audio, Sous-titres, Source (chacune montre
- * son choix en cours : « Français », « Désactivés », « VF · 1080p »), puis Plus (icône).
+ * Pastilles du lecteur à la demande, toujours dans le même ordre : Version (langue, qualité et origine de ce qu'on regarde :
+ * « Français · 1080p · IPTV », un seul choix puisque changer de langue change souvent de fichier), Sous-titres, puis Plus (icône).
  */
 internal fun vodPills(
-    ui: PlayerUi, audio: String?, subtitles: String?,
-    onAudio: () -> Unit, onSubtitles: () -> Unit, onSources: () -> Unit, onMore: () -> Unit,
+    version: String, subtitles: String?,
+    onVersions: () -> Unit, onSubtitles: () -> Unit, onMore: () -> Unit,
     focus: Map<PlayerPanel, FocusRequester> = emptyMap(),
 ): List<PlayerAction> = listOf(
-    PlayerAction("Audio", Icons.Default.Audiotrack, text = audio ?: "Audio", focus = focus[PlayerPanel.AUDIO], onClick = onAudio),
+    PlayerAction("Langue et qualité", Icons.Default.Audiotrack, text = version, focus = focus[PlayerPanel.VERSIONS], onClick = onVersions),
     PlayerAction("Sous-titres", Icons.Default.ClosedCaption, text = subtitles ?: "Désactivés", focus = focus[PlayerPanel.SUBTITLES], onClick = onSubtitles),
-    PlayerAction("Source", Icons.Default.Layers, text = PlayerSources.short(ui.sources.firstOrNull { it.current }), focus = focus[PlayerPanel.SOURCES], onClick = onSources),
     PlayerAction("Plus d'options", Icons.Default.MoreHoriz, iconOnly = true, onClick = onMore),
 )
 
@@ -859,6 +861,13 @@ internal fun audioPillText(options: List<TrackOption>, fallback: String? = null)
     // piste sans langue déclarée (« Piste principale ») : la langue annoncée par la source
     return if (label == null || label.startsWith("Piste")) fallback ?: label else label
 }
+
+/** Pastille Version : langue entendue (piste choisie, sinon langue de la source), qualité, origine : « Français · 1080p · IPTV ». */
+internal fun versionPillText(current: PlayerSource?, trackLanguage: String?): String = listOfNotNull(
+    trackLanguage?.takeUnless { it.startsWith("Piste") } ?: current?.let { it.language?.name ?: it.region },
+    current?.quality?.let(com.sokoul.iptv.ui.components.SourceLabels::quality),
+    current?.origin?.let(com.sokoul.iptv.ui.components.SourceLabels::originShort),
+).joinToString(" · ").ifEmpty { "Langue et qualité" }
 
 /** Pastille Sous-titres : « Désactivés » ou la langue choisie. */
 internal fun subtitlePillText(options: List<TrackOption>): String =

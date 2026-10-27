@@ -53,6 +53,19 @@ internal fun LazyListScope.librarySection(c: SettingsCtx) {
             })
         }
     }
+    item("lib-tie") {
+        val tie = com.sokoul.iptv.domain.SourceOrigin.entries.firstOrNull { it.name == s.sourceTie }
+        SettingRow(
+            "Source à égalité", tie?.let(com.sokoul.iptv.ui.components.SourceLabels::originName) ?: "Aucune préférence",
+            "Toutes les sources sont classées ensemble (langue, qualité, fiabilité) ; ce choix ne départage que deux sources identiques",
+            icon = Icons.Default.MergeType,
+        ) {
+            c.choose("Source à égalité", listOf(MenuOption("Aucune préférence", selected = tie == null) { c.vm.update { it.copy(sourceTie = "") } }) +
+                com.sokoul.iptv.domain.SourceOrigin.entries.map { o ->
+                    MenuOption(com.sokoul.iptv.ui.components.SourceLabels.originName(o), selected = o == tie) { c.vm.update { it.copy(sourceTie = o.name) } }
+                })
+        }
+    }
     item("lib-stats") {
         SettingRow("Statistiques du catalogue", null, "Doublons regroupés, versions par œuvre, plus gros regroupements", icon = Icons.Default.BarChart) {
             c.vm.stats { st ->

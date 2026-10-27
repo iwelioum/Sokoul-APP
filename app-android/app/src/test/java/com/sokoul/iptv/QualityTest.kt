@@ -8,7 +8,6 @@ import com.sokoul.iptv.domain.AudioLanguage
 import com.sokoul.iptv.domain.PlaybackSource
 import com.sokoul.iptv.domain.SourceOrigin
 import com.sokoul.iptv.ui.screens.vod.VersionGroups
-import com.sokoul.iptv.ui.screens.vod.VersionItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -42,16 +41,8 @@ class QualityTest {
         assertNull(BestVersions.image(mapOf("u" to uhd, "v" to uhd)))
     }
 
-    @Test fun `groupes par langue, meilleure image en tete du groupe`() {
-        fun src(id: String, lang: AudioLanguage?) = PlaybackSource(id, SourceOrigin.IPTV, language = lang)
-        val items = listOf(
-            VersionItem("vf-hd", src("vf-hd", AudioLanguage.VF), fhd, first = true, preferred = false),
-            VersionItem("vost", src("vost", AudioLanguage.VOSTFR), null, first = false, preferred = false),
-            VersionItem("vf-4k", src("vf-4k", AudioLanguage.VF), uhd, first = false, preferred = false),
-        )
-        val g = VersionGroups.group(items)
-        assertEquals(listOf("VF", "VOSTFR"), g.map { it.key })
-        assertEquals(listOf("vf-4k", "vf-hd"), g[0].items.map { it.id })
-        assertEquals("VO + sous-titres français intégrés", g[1].explain)
+    @Test fun `explication des langues sous le titre de section`() {
+        assertEquals("VO + sous-titres français intégrés", VersionGroups.explain("VOSTFR"))
+        assertEquals("Version italienne, sans sous-titres français", VersionGroups.explain("IT"))
     }
 }

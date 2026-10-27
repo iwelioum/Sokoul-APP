@@ -858,3 +858,75 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
 ### Limites connues
 - **Langue et qualité des autres fichiers** : une seule connexion IPTV, donc on ne peut pas ouvrir les autres fichiers pour les lire. Ces informations viennent du nom ou d'une mesure faite lors d'une lecture précédente, et c'est écrit sur la ligne (« d'après le nom » / « mesurée »).
 - **Changer de source par le panneau Audio** (autre fichier, reprise à la même position) n'a pas été rejoué sur la box : Resident Evil n'avait qu'une source IPTV et aucune source Real-Debrid chargée. Ce choix passe par la même fonction que l'ancien menu Version, qui avait déjà été vérifiée.
+
+## 18. Phase 16 — Une seule liste de versions, IPTV et Real-Debrid à égalité (27/10/2026)
+
+### Ce qui change
+- **Plus de doublon Audio / Source.** Dans le lecteur, une seule pastille, **« Langue et qualité »**. Elle affiche ce qu'on entend, la qualité et l'origine, par exemple « EN · 1080p · IPTV ». Sous-titres reste séparé.
+- **Panneau « Langue et qualité »** :
+  - **En tête :**
+    - « Vous regardez : Anglais (EN) · 1080p (mesurée) · H.264 · Abonnement IPTV · « [EN] SCI-FI/FANTASY » » ;
+    - le son ;
+    - le nombre de sources par origine (« 9 sources trouvées : IPTV 4 · RD 5 ») ;
+    - l'état de la recherche Real-Debrid : recherche en cours, ou recherche de sources non activée.
+  - **« Dans ce fichier · même image »** : affiché seulement s'il y a plusieurs pistes ; le changement est immédiat.
+  - **Une section par langue**, dans l'ordre des Réglages, et **une ligne par version** (langue + qualité). Chaque ligne montre :
+    - la source qui sera lue, avec son origine en clair ;
+    - si la qualité est mesurée ou lue dans le nom ;
+    - les repères « Image meilleure / moins bonne » par rapport à ce qu'on regarde.
+  - **DROITE** déplie les autres sources de la même version (origine, rubrique ou release, taille, prête ou non, nom du fichier) ; **GAUCHE** les replie.
+- **Classement sans origine favorite** (`SourceRanker`). L'ancienne règle « IPTV devant Real-Debrid à égalité » est supprimée. Ordre appliqué :
+  1. lisible ;
+  2. langue ;
+  3. définition (mesurée si connue) ;
+  4. HDR ;
+  5. prête ;
+  6. qualité mesurée ;
+  7. pas d'échec récent ;
+  8. réglage **Réglages › Bibliothèque › Source à égalité** (par défaut : aucune préférence).
+
+  Le lecteur classe toutes les sources ensemble, avec le vrai réseau, au lieu de mettre l'IPTV d'abord.
+- **Doublons fusionnés sans rien perdre** (`SourceCatalog`) :
+  - le même fichier IPTV présent dans deux rubriques devient une seule ligne « aussi dans « … » » ;
+  - la même release Real-Debrid renvoyée deux fois devient une seule ligne ;
+  - les identifiants fusionnés restent des secours ;
+  - une source IPTV et une source Real-Debrid ne sont jamais fusionnées (ce sont deux fichiers différents), elles sont rangées sous la même version.
+- **Secours identique pour toutes les origines.** Quand une source tombe, le lecteur essaie dans l'ordre :
+  1. le même fichier ailleurs ;
+  2. les autres sources de la même version ;
+  3. les autres qualités de la même langue.
+
+  Il ne change jamais de langue tout seul : il le signale et l'utilisateur choisit. Si la connexion IPTV est prise ou refusée, il ne fait aucune requête IPTV.
+- **Rien ne se perd :**
+  - la qualité mesurée d'une lecture Real-Debrid est enregistrée et affichée « mesurée » la fois suivante ;
+  - les échecs Real-Debrid sont gardés 24 h, même après fermeture du lecteur ;
+  - le tout est stocké dans la table `vod_probe` existante, sans migration.
+- **Fiche film :** une carte par version, avec la source lue, son origine, la qualité (estimée ou mesurée) et « +n sources ». Un appui long liste toutes les sources de la version, et pour l'IPTV « Toujours lancer en premier ».
+- **Fiche série :** le menu d'un épisode liste les versions groupées, abonnement et Real-Debrid classés ensemble. L'ancienne liste « Real-Debrid · … » limitée à 6 disparaît.
+- **Sources futures :** le nom d'une origine n'est écrit qu'à un seul endroit (`SourceLabels.originName` / `originShort`). Un test interdit de l'écrire ailleurs dans le lecteur et les fiches. Le regroupement ne regarde jamais l'origine, donc une nouvelle source n'aura qu'à fournir ses lignes.
+
+### Vérifié sur la box (un flux, lecteur fermé à la fin)
+- **Æon Flux (IPTV) :**
+  - la pastille affiche « EN · 1080p · IPTV » ;
+  - le panneau affiche « Vous regardez : Anglais (EN) · 1080p (mesurée) · H.264 · Abonnement IPTV · « [EN] SCI-FI/FANTASY » », « Son : Piste principale · 5.1 · AAC », « 1 source trouvée » ;
+  - la ligne « 1080p EN COURS [IPTV] [H.264] » porte « qualité mesurée » ;
+  - après Retour, le focus revient sur la pastille.
+
+### Tests
+- `:app:testDebugUnitTest` : **342 tests, 0 échec**. `:parser:test` : OK. `lintRelease` : 0 erreur.
+- Nouveau `SourceCatalogTest`, qui couvre :
+  - la fusion IPTV entre rubriques ;
+  - la fusion des releases RD en double, et l'absence de fusion entre IPTV et RD ;
+  - l'ordre des versions ;
+  - les compteurs ;
+  - l'ordre de secours (y compris quand l'IPTV est prise) ;
+  - les lignes du panneau ;
+  - la relecture des mesures et échecs Real-Debrid.
+- `DebridSourcesTest` : aucune origine favorite. La mesure passe avant le nom dans les deux sens, le réglage d'égalité joue dans les deux sens, une source en échec passe après, et un « 4K » mesuré 720p descend.
+- `PlayerUiTest` : la pastille, le panneau (dépliage DROITE / GAUCHE, choix d'une source, autre langue) et le panneau Audio du direct.
+- `PlaybackSourceTest` : les noms d'origine ne sont écrits que dans `SourceBadges.kt`.
+
+### Limites connues
+- **Les sources Real-Debrid des fiches et du lecteur n'apparaissent pas sur la box.** L'extension de recherche de sources (Réglages › Real-Debrid › Extension) n'est toujours pas renseignée, volontairement : l'app n'impose aucun service de ce type. Le panneau le dit (« Real-Debrid : recherche de sources non activée »). Le classement commun, la fusion, le dépliage et le secours sont couverts par les tests, mais pas encore joués de bout en bout sur la box.
+- **Fiche série :** « Lecture » compare Real-Debrid à la version IPTV que ce bouton lance. Le lecteur, lui, compare toutes les versions de l'épisode.
+- **Échecs IPTV :** gardés pour la séance seulement. L'ordre des versions IPTV (`VersionPicker`) gère déjà les échecs répétés.

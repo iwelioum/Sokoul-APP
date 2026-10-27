@@ -66,6 +66,8 @@ data class AppSettings(
     val debridAddon: String = "",
     /** Taille maximale d'un fichier Real-Debrid en Go (0 = automatique : 25 Go en Wi-Fi, sans limite en câble). */
     val debridMaxGb: Int = 0,
+    /** Origine qui passe devant quand deux sources sont à égalité parfaite : "" (aucune), "IPTV", "DEBRID". */
+    val sourceTie: String = "",
     /** Adapter la fréquence de l'écran à celle du film (24, 25, 50 Hz) : plus de saccades sur les travellings. */
     val frameRateMatch: Boolean = true,
     /** Son Dolby / DTS envoyé tel quel à l'ampli ou la barre de son (sinon décodé par la box). */
@@ -87,6 +89,7 @@ data class AppSettings(
         resizeMode = resizeMode.coerceIn(0, 2),
         debridAddon = cleanAddon(debridAddon),
         debridMaxGb = debridMaxGb.coerceIn(0, 200),
+        sourceTie = sourceTie.takeIf { t -> com.sokoul.iptv.domain.SourceOrigin.entries.any { it.name == t } } ?: "",
     )
 
     companion object {
@@ -136,6 +139,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val xmltvFr = booleanPreferencesKey("epg_xmltv_fr")
         val debridAddon = stringPreferencesKey("debrid_addon")
         val debridMaxGb = intPreferencesKey("debrid_max_gb")
+        val sourceTie = stringPreferencesKey("source_tie")
         val frameRate = booleanPreferencesKey("frame_rate_match")
         val passthrough = booleanPreferencesKey("audio_passthrough")
     }
@@ -175,6 +179,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         epgXmltvFr = this[K.xmltvFr] ?: false,
         debridAddon = this[K.debridAddon] ?: "",
         debridMaxGb = this[K.debridMaxGb] ?: 0,
+        sourceTie = this[K.sourceTie] ?: "",
         frameRateMatch = this[K.frameRate] ?: true,
         audioPassthrough = this[K.passthrough] ?: true,
     )
@@ -275,6 +280,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.xmltvFr] = s.epgXmltvFr
             prefs[K.debridAddon] = s.debridAddon
             prefs[K.debridMaxGb] = s.debridMaxGb
+            prefs[K.sourceTie] = s.sourceTie
             prefs[K.frameRate] = s.frameRateMatch
             prefs[K.passthrough] = s.audioPassthrough
             // clés des services : une préférence par service ; clé effacée → préférence retirée

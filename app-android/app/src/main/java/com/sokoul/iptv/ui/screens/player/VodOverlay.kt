@@ -231,7 +231,7 @@ fun VodControls(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     pills.forEach { p ->
                         if (p.iconOnly) RoundButton(p.label, 48.dp, up, if (p.focus != null) Modifier.focusRequester(p.focus) else Modifier, onHint = onHint, onClick = p.onClick) { tint -> Icon(p.icon, null, Modifier.size(24.dp), tint = tint) }
-                        else PillButton(p, Modifier.widthIn(max = 168.dp), upFocus = up)
+                        else PillButton(p, Modifier.widthIn(max = 220.dp), upFocus = up)
                     }
                 }
             }

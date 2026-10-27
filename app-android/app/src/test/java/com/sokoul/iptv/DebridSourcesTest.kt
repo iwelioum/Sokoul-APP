@@ -89,7 +89,7 @@ class DebridSourcesTest {
         """{"streams":[{"name":"${if (cached == true) "[RD+] " else if (cached == false) "[RD download] " else ""}x","title":"$name${size?.let { "\\n💾 ${it / 1_000_000_000} GB" } ?: ""}","infoHash":"${name.hashCode().toUInt().toString(16).padStart(8, '0').repeat(5)}"}]}"""
     ).single()
 
-    @Test fun `classement langue puis definition, IPTV devant a egalite, limite de taille`() {
+    @Test fun `classement langue puis definition, limite de taille`() {
         val iptvVf1080 = VodVersion("101", "Film FHD", "VF", "FHD", "c")
         val rdVf4k = stream("Film.2024.FRENCH.2160p.WEB.DV.HEVC", size = 18_000_000_000)
         val rdVo4k = stream("Film.2024.2160p.BluRay.REMUX.HEVC", size = 60_000_000_000)
@@ -97,7 +97,7 @@ class DebridSourcesTest {
 
         val wifi = SourceRanker.Prefs(maxBytes = 25_000_000_000)
         val r = SourceRanker.rank(listOf(iptvVf1080), listOf(rdVo4k, rdVf1080, rdVf4k), wifi).map { it.source.id }
-        // VF 4K d'abord, puis la VF 1080p de l'abonnement (rien à préparer) avant la même chose sur RD, VO 60 Go en dernier (Wi-Fi)
+        // VF 4K d'abord, puis les deux VF 1080p (égalité parfaite : ordre stable), VO 60 Go en dernier (Wi-Fi)
         assertEquals(listOf(rdVf4k.key, "101", rdVf1080.key, rdVo4k.key), r)
 
         // connexion IPTV prise par un enregistrement : l'IPTV passe en dernier
@@ -107,6 +107,26 @@ class DebridSourcesTest {
         // box sans 4K : la 4K n'est plus proposée en premier
         val no4k = SourceRanker.rank(listOf(iptvVf1080), listOf(rdVf4k), wifi.copy(supports4k = false))
         assertTrue(no4k.first() is Candidate.Iptv)
+    }
+
+    @Test fun `aucune origine favorisee - la fiabilite puis le reglage departagent`() {
+        val rd = stream("Film.2024.FRENCH.1080p.WEB.x264", size = 4_000_000_000)
+        val iptv = VodVersion("101", "Film FHD", "VF", "FHD", "c")
+        val measured1080 = com.sokoul.iptv.data.repo.VodQuality(width = 1920, height = 1080, videoCodec = "h264")
+        // IPTV déjà lue (qualité mesurée) : passe devant Real-Debrid annoncé 1080p
+        assertTrue(SourceRanker.rank(listOf(iptv.copy(measured = measured1080)), listOf(rd), SourceRanker.Prefs()).first() is Candidate.Iptv)
+        // Real-Debrid déjà lu (mesure gardée en base) : passe devant l'IPTV annoncée 1080p
+        val rdMeasured = SourceRanker.Prefs(debridMeasured = mapOf(rd.key to measured1080))
+        assertTrue(SourceRanker.rank(listOf(iptv), listOf(rd), rdMeasured).first() is Candidate.Debrid)
+        // égalité parfaite : le réglage « Source à égalité » décide, dans les deux sens
+        assertTrue(SourceRanker.rank(listOf(iptv), listOf(rd), SourceRanker.Prefs(tieOrigin = com.sokoul.iptv.domain.SourceOrigin.DEBRID)).first() is Candidate.Debrid)
+        assertTrue(SourceRanker.rank(listOf(iptv), listOf(rd), SourceRanker.Prefs(tieOrigin = com.sokoul.iptv.domain.SourceOrigin.IPTV)).first() is Candidate.Iptv)
+        // échec récent : la source passe après l'autre de même qualité, mais reste proposée
+        val failed = SourceRanker.rank(listOf(iptv), listOf(rd), SourceRanker.Prefs(failed = setOf("101"), tieOrigin = com.sokoul.iptv.domain.SourceOrigin.IPTV))
+        assertEquals(listOf(rd.key, "101"), failed.map { SourceRanker.id(it) })
+        // annoncée 4K mais mesurée 720p : la mesure compte, Real-Debrid 1080p passe devant
+        val fake4k = VodVersion("102", "Film 4K", "VF", "4K", "c", measured = com.sokoul.iptv.data.repo.VodQuality(width = 1280, height = 720))
+        assertTrue(SourceRanker.rank(listOf(fake4k), listOf(rd), SourceRanker.Prefs()).first() is Candidate.Debrid)
     }
 
     @Test fun `version en cache avant version a preparer a qualite egale`() {

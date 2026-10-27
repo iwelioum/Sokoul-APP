@@ -69,4 +69,20 @@ class PlaybackSourceTest {
             .filter { f -> f.readText().let { "\"HORS CATALOGUE\"" in it || "\"1080p\"" in it } }.map { it.name }.toList()
         assertEquals(emptyList<String>(), offenders)
     }
+
+    @Test fun `nom des origines ecrit a un seul endroit pour le lecteur et les fiches`() {
+        // une nouvelle source (après IPTV et Real-Debrid) s'ajoute dans SourceLabels.originName / originShort, sans toucher aux écrans
+        val literal = Regex("\"[^\"\\n]*(Real-Debrid|Abonnement IPTV)[^\"\\n]*\"")
+        val offenders = listOf("player", "vod").flatMap { dir ->
+            File("src/main/java/com/sokoul/iptv/ui/screens/$dir").walkTopDown().filter { it.isFile && it.extension == "kt" }.flatMap { f ->
+                f.readLines().withIndex()
+                    .filter { (_, line) -> val t = line.trim(); !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && "Timber." !in t }
+                    .filter { (_, line) -> literal.containsMatchIn(line) }
+                    .map { (i, _) -> "${f.name}:${i + 1}" }
+            }.toList()
+        }
+        assertEquals(emptyList<String>(), offenders)
+        assertEquals("Real-Debrid", SourceLabels.originName(SourceOrigin.DEBRID))
+        assertEquals("IPTV", SourceLabels.originShort(SourceOrigin.IPTV))
+    }
 }

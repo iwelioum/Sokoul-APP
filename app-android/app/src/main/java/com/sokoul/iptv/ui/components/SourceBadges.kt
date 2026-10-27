@@ -22,7 +22,11 @@ import com.sokoul.iptv.ui.theme.Type
 
 /** Libellés des sources, calculés ici à partir des valeurs typées (un seul endroit à traduire). */
 object SourceLabels {
-    fun origin(o: SourceOrigin) = when (o) { SourceOrigin.IPTV -> "IPTV"; SourceOrigin.DEBRID -> "RD" }
+    /** Origine en abrégé (badges, bandeau) : « IPTV », « RD ». */
+    fun origin(o: SourceOrigin) = originShort(o)
+    fun originShort(o: SourceOrigin) = when (o) { SourceOrigin.IPTV -> "IPTV"; SourceOrigin.DEBRID -> "RD" }
+    /** Origine en clair (panneaux, messages) : « Abonnement IPTV », « Real-Debrid ». Une nouvelle origine s'ajoute ici. */
+    fun originName(o: SourceOrigin) = when (o) { SourceOrigin.IPTV -> "Abonnement IPTV"; SourceOrigin.DEBRID -> "Real-Debrid" }
     fun quality(q: VideoQuality) = when (q) {
         VideoQuality.UHD_4K -> "4K"; VideoQuality.FHD_1080 -> "1080p"; VideoQuality.HD_720 -> "720p"; VideoQuality.SD -> "SD"
     }

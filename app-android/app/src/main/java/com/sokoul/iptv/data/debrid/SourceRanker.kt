@@ -1,10 +1,12 @@
 package com.sokoul.iptv.data.debrid
 
+import com.sokoul.iptv.data.repo.VodQuality
 import com.sokoul.iptv.data.repo.VodVersion
 import com.sokoul.iptv.domain.AudioLanguage
 import com.sokoul.iptv.domain.HdrFormat
 import com.sokoul.iptv.domain.PlaybackSource
 import com.sokoul.iptv.domain.PlaybackSources
+import com.sokoul.iptv.domain.SourceOrigin
 import com.sokoul.iptv.domain.VideoQuality
 
 /** Une façon de lire l'œuvre : version de l'abonnement IPTV ou version Real-Debrid. */
@@ -16,14 +18,15 @@ sealed interface Candidate {
 }
 
 /**
- * Un seul classement pour l'IPTV et Real-Debrid (« Lecture » lance le premier), dans cet ordre :
+ * Un seul classement pour toutes les origines (« Lecture » lance le premier). Aucune origine n'est favorisée :
  * 1. lisible ici (taille sous la limite du réseau, 4K seulement si la box la décode, IPTV libre) ;
  * 2. langue préférée (VF > MULTI > VOSTFR > VO par défaut) ;
- * 3. définition, puis HDR (Dolby Vision > HDR10) ;
- * 4. prêt tout de suite (IPTV, Real-Debrid déjà en cache) avant « à préparer », puis l'IPTV
- *    devant Real-Debrid (rien à préparer, reprise et sous-titres habituels) ;
- * 5. entre versions Real-Debrid : origine du fichier (Remux > Blu-ray > WEB), variante française
- *    (TRUEFRENCH, VFF), nombre de sources.
+ * 3. définition (mesurée si le fichier a déjà été lu), puis HDR (Dolby Vision > HDR10) ;
+ * 4. prête tout de suite avant « à préparer » ;
+ * 5. fiabilité : qualité mesurée avant qualité lue dans le nom, puis pas d'échec récent ;
+ * 6. origine choisie dans les Réglages pour départager (aucune par défaut) ;
+ * 7. rang dans sa propre origine (IPTV : ordre de `VersionPicker` ; Real-Debrid : Remux > Blu-ray > WEB,
+ *    TRUEFRENCH/VFF, nombre de sources, taille).
  */
 object SourceRanker {
     data class Prefs(
@@ -32,38 +35,64 @@ object SourceRanker {
         val supports4k: Boolean = true,
         /** Connexion IPTV prise (enregistrement) ou en pause après un refus : l'IPTV passe en dernier. */
         val iptvBlocked: Boolean = false,
+        /** Origine qui passe devant à égalité parfaite (Réglages › Lecture) ; null = aucune. */
+        val tieOrigin: SourceOrigin? = null,
+        /** Qualité mesurée lors d'une lecture précédente, par clé de flux Real-Debrid. */
+        val debridMeasured: Map<String, VodQuality> = emptyMap(),
+        /** Sources en échec récent (id IPTV ou clé Real-Debrid) : gardées, mais après les autres de même qualité. */
+        val failed: Set<String> = emptySet(),
     )
 
     /** [iptv] dans l'ordre de `VersionPicker` (choix mémorisé, échecs) : cet ordre départage les versions IPTV entre elles. */
     fun rank(iptv: List<VodVersion>, debrid: List<DebridStream>, prefs: Prefs): List<Candidate> {
-        val all = iptv.map { Candidate.Iptv(it, PlaybackSources.fromIptv(it)) } + debrid.map { Candidate.Debrid(it, it.toSource()) }
+        val iptvC = iptv.map { Candidate.Iptv(it, PlaybackSources.fromIptv(it)) }
+        val debridC = debrid.map { Candidate.Debrid(it, it.toSource()) }
+        // rang de chaque candidat parmi ceux de sa propre origine (jamais comparé d'une origine à l'autre)
+        val inner = HashMap<Candidate, Int>()
+        iptvC.forEachIndexed { i, c -> inner[c] = i }
+        debridC.withIndex().sortedWith(
+            compareBy<IndexedValue<Candidate.Debrid>> { it.value.stream.release.source?.ordinal ?: RipSource.WEBDL.ordinal }
+                .thenBy { frenchRank(it.value.stream.release.frenchVariant) }
+                .thenByDescending { it.value.stream.release.seeders ?: 0 }
+                .thenByDescending { it.value.stream.release.sizeBytes ?: 0 }
+                .thenBy { it.index },
+        ).forEachIndexed { i, c -> inner[c.value] = i }
+        val all: List<Candidate> = iptvC + debridC
         val order = all.withIndex().associate { (i, c) -> c to i }
         return all.sortedWith(
             compareBy<Candidate> { if (playable(it, prefs)) 0 else 1 }
                 .thenBy { languageRank(it.source.language, prefs.languages) }
-                .thenBy { qualityRank(effectiveQuality(it)) }
+                .thenBy { qualityRank(effectiveQuality(it, prefs)) }
                 .thenBy { hdrRank(it.source.hdr) }
                 .thenBy { readyRank(it) }
-                .thenBy { if (it is Candidate.Iptv) 0 else 1 }
-                .thenBy { (it as? Candidate.Debrid)?.stream?.release?.source?.ordinal ?: RipSource.WEBDL.ordinal }
-                .thenBy { frenchRank((it as? Candidate.Debrid)?.stream?.release?.frenchVariant) }
-                .thenByDescending { (it as? Candidate.Debrid)?.stream?.release?.seeders ?: 0 }
+                .thenBy { if (measured(it, prefs) != null) 0 else 1 }
+                .thenBy { if (id(it) in prefs.failed) 1 else 0 }
+                .thenBy { if (prefs.tieOrigin == null || it.source.origin == prefs.tieOrigin) 0 else 1 }
+                .thenBy { inner.getValue(it) }
                 .thenBy { order.getValue(it) },
         )
     }
 
+    /** Identifiant de la source : id de la version IPTV, ou clé du flux Real-Debrid. */
+    fun id(c: Candidate): String = when (c) { is Candidate.Iptv -> c.version.id; is Candidate.Debrid -> c.stream.key }
+
     fun playable(c: Candidate, p: Prefs): Boolean = when (c) {
         is Candidate.Iptv -> !p.iptvBlocked
         is Candidate.Debrid -> (p.maxBytes == null || (c.stream.release.sizeBytes ?: 0) <= p.maxBytes) &&
-            (p.supports4k || c.source.quality != VideoQuality.UHD_4K)
+            (p.supports4k || effectiveQuality(c, p) != VideoQuality.UHD_4K)
     }
 
-    /** Définition réelle quand elle a été mesurée (IPTV), sinon celle du nom. */
-    private fun effectiveQuality(c: Candidate): VideoQuality? = when (c) {
-        is Candidate.Iptv -> c.version.measured?.resolution?.let { r ->
-            when (r) { "4K" -> VideoQuality.UHD_4K; "1080p" -> VideoQuality.FHD_1080; "720p" -> VideoQuality.HD_720; else -> VideoQuality.SD }
-        } ?: c.source.quality
-        is Candidate.Debrid -> c.source.quality
+    private fun measured(c: Candidate, p: Prefs): VodQuality? = when (c) {
+        is Candidate.Iptv -> c.version.measured
+        is Candidate.Debrid -> p.debridMeasured[c.stream.key]
+    }?.takeIf { it.hasImage }
+
+    /** Définition réelle quand elle a été mesurée, sinon celle du nom. */
+    private fun effectiveQuality(c: Candidate, p: Prefs): VideoQuality? =
+        measured(c, p)?.resolution?.let(::fromResolution) ?: c.source.quality
+
+    fun fromResolution(r: String): VideoQuality = when (r) {
+        "4K" -> VideoQuality.UHD_4K; "1080p" -> VideoQuality.FHD_1080; "720p" -> VideoQuality.HD_720; else -> VideoQuality.SD
     }
 
     fun languageRank(l: AudioLanguage?, order: List<String>): Int =
@@ -76,6 +105,7 @@ object SourceRanker {
 
     private fun hdrRank(h: HdrFormat?) = when (h) { HdrFormat.DOLBY_VISION -> 0; HdrFormat.HDR10 -> 1; null -> 2 }
 
+    /** IPTV : lisible tout de suite ; Real-Debrid : déjà en cache, inconnu, à télécharger. */
     private fun readyRank(c: Candidate) = when (c) {
         is Candidate.Iptv -> 0
         is Candidate.Debrid -> when (c.stream.release.cached) { true -> 0; null -> 1; false -> 2 }
