@@ -102,7 +102,17 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /** Action d'un bouton du lecteur (pastille icône + texte, ou bouton du haut en tactile). */
-data class PlayerAction(val label: String, val icon: ImageVector, val primary: Boolean = false, val onClick: () -> Unit)
+/**
+ * Action d'un bouton du lecteur. [label] : nom de l'action (lu par l'accessibilité) ; [text] : valeur affichée
+ * à la place du nom (« Français », « VF · 1080p ») ; [iconOnly] : bouton rond, nom affiché au focus.
+ */
+data class PlayerAction(
+    val label: String, val icon: ImageVector, val primary: Boolean = false,
+    val text: String? = null, val iconOnly: Boolean = false,
+    /** Pour rendre le focus au bouton à la fermeture de son panneau. */
+    val focus: FocusRequester? = null,
+    val onClick: () -> Unit,
+)
 
 // --- Haut : titre, épisode, version, heure ------------------------------------------------------------
 
@@ -128,7 +138,7 @@ fun VodTopBar(ui: PlayerUi, leading: List<PlayerAction>) {
                 ui.subtitle?.let {
                     Text(it, Modifier.weight(1f, fill = false), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                ui.versionLabel?.let { VersionBadge(it) }
+                (ui.nowPlaying ?: ui.versionLabel)?.let { VersionBadge(it) }
             }
         }
         if (!l.isCompact) {
@@ -140,8 +150,9 @@ fun VodTopBar(ui: PlayerUi, leading: List<PlayerAction>) {
 @Composable
 private fun VersionBadge(label: String) {
     Text(
-        label, Modifier.padding(start = 10.dp).border(1.dp, SokoulColors.GlassHeavy, Radius.Tiny).padding(horizontal = 6.dp, vertical = 1.dp),
-        style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextSecondary,
+        label, Modifier.padding(start = 10.dp).background(SokoulColors.GlassLight, Radius.Tiny).padding(horizontal = 8.dp, vertical = 2.dp)
+            .semantics { contentDescription = "Vous regardez : $label" },
+        style = com.sokoul.iptv.ui.theme.Type.Badge, color = SokoulColors.TextPrimary, maxLines = 1,
     )
 }
 
@@ -170,7 +181,11 @@ fun VodControls(
     onSeekStep: (Long) -> Unit,
     onSeekTo: (Long) -> Unit,
     onInteract: () -> Unit,
+    /** Boutons ronds après ⏯ (Épisodes, Suivant) : icône seule, nom affiché au focus. */
+    tools: List<PlayerAction> = emptyList(),
 ) {
+    var hint by remember { mutableStateOf<String?>(null) }
+    val onHint: (String, Boolean) -> Unit = { label, has -> if (has) hint = label else if (hint == label) hint = null }
     val l = LocalLayout.current
     val side = if (l.isCompact) 16.dp else 48.dp
     val shown = preview ?: position
@@ -185,7 +200,8 @@ fun VodControls(
         else Scrubber(shown, duration, preview != null, buffering, scrubberFocus, playFocus, onSeekStep, onPlayPause)
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(formatDuration(shown), color = SokoulColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.weight(1f))
+            // nom du bouton rond qui a le focus (icône seule)
+            Text(hint.orEmpty(), Modifier.weight(1f), color = SokoulColors.TextPrimary, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 1)
             if (duration > 0) {
                 val left = (duration - shown).coerceAtLeast(0)
                 Text("−${formatDuration(left)}", color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelLarge)
@@ -194,7 +210,7 @@ fun VodControls(
         }
         if (l.isCompact) {
             Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.Center) {
-                TransportButtons(playing, playFocus, up, onBack10, onPlayPause, onFwd30)
+                TransportButtons(playing, playFocus, up, onBack10, onPlayPause, onFwd30, onHint)
             }
             // passage à la ligne plutôt qu'une rangée défilante : tous les boutons restent visibles
             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -203,14 +219,20 @@ fun VodControls(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                pills.forEach { PillButton(it, upFocus = up) }
+                (tools + pills).forEach { PillButton(it, upFocus = up) }
             }
         } else {
             Row(Modifier.padding(top = 16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TransportButtons(playing, playFocus, up, onBack10, onPlayPause, onFwd30)
+                TransportButtons(playing, playFocus, up, onBack10, onPlayPause, onFwd30, onHint)
+                tools.forEach { t ->
+                    RoundButton(t.label, 48.dp, up, Modifier.padding(start = 12.dp), onHint = onHint, onClick = t.onClick) { tint -> Icon(t.icon, null, Modifier.size(24.dp), tint = tint) }
+                }
                 Spacer(Modifier.weight(1f))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    pills.forEach { PillButton(it, upFocus = up) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    pills.forEach { p ->
+                        if (p.iconOnly) RoundButton(p.label, 48.dp, up, if (p.focus != null) Modifier.focusRequester(p.focus) else Modifier, onHint = onHint, onClick = p.onClick) { tint -> Icon(p.icon, null, Modifier.size(24.dp), tint = tint) }
+                        else PillButton(p, Modifier.widthIn(max = 168.dp), upFocus = up)
+                    }
                 }
             }
         }
@@ -221,29 +243,30 @@ fun VodControls(
 @Composable
 private fun TransportButtons(
     playing: Boolean, playFocus: FocusRequester, upFocus: FocusRequester?,
-    onBack10: () -> Unit, onPlayPause: () -> Unit, onFwd30: () -> Unit,
+    onBack10: () -> Unit, onPlayPause: () -> Unit, onFwd30: () -> Unit, onHint: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        RoundButton("Reculer de 10 secondes", 48.dp, upFocus, onClick = onBack10) { tint -> Icon(Icons.Default.Replay10, null, Modifier.size(26.dp), tint = tint) }
-        RoundButton(if (playing) "Pause" else "Lecture", 62.dp, upFocus, Modifier.focusRequester(playFocus), primary = true, onClick = onPlayPause) { tint ->
+        RoundButton("Reculer de 10 secondes", 48.dp, upFocus, onHint = onHint, onClick = onBack10) { tint -> Icon(Icons.Default.Replay10, null, Modifier.size(26.dp), tint = tint) }
+        RoundButton(if (playing) "Pause" else "Lecture", 62.dp, upFocus, Modifier.focusRequester(playFocus), primary = true, onHint = onHint, onClick = onPlayPause) { tint ->
             AnimatedContent(
                 playing,
                 transitionSpec = { (scaleIn(Motion.enter(), initialScale = 0.6f) + fadeIn(Motion.enter())) togetherWith (scaleOut(Motion.exit(), targetScale = 0.6f) + fadeOut(Motion.exit())) },
                 label = "playpause",
             ) { p -> Icon(if (p) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(34.dp), tint = tint) }
         }
-        RoundButton("Avancer de 30 secondes", 48.dp, upFocus, onClick = onFwd30) { tint -> Icon(Icons.Default.Forward30, null, Modifier.size(26.dp), tint = tint) }
+        RoundButton("Avancer de 30 secondes", 48.dp, upFocus, onHint = onHint, onClick = onFwd30) { tint -> Icon(Icons.Default.Forward30, null, Modifier.size(26.dp), tint = tint) }
     }
 }
 
 @Composable
 private fun RoundButton(
     label: String, size: Dp, upFocus: FocusRequester?, modifier: Modifier = Modifier, primary: Boolean = false,
+    onHint: (String, Boolean) -> Unit = { _, _ -> },
     onClick: () -> Unit, icon: @Composable (Color) -> Unit,
 ) {
     FocusSurface(style = FocusStyle.Chip,
         onClick = onClick,
-        modifier = modifier.then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier)
+        modifier = modifier.onFocusChanged { onHint(label, it.hasFocus) }.then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier)
             .size(size).semantics { contentDescription = label },
         shape = Radius.Round, color = if (primary) SokoulColors.GlassHeavy else SokoulColors.GlassLight,
         focusedColor = SokoulColors.OnVideo,
@@ -255,9 +278,10 @@ private fun RoundButton(
 /** Pastille icône + texte (toujours lisible, sans attendre le focus). */
 @Composable
 fun PillButton(a: PlayerAction, modifier: Modifier = Modifier, upFocus: FocusRequester? = null) = com.sokoul.iptv.ui.components.SokoulButton(
-    a.label, a.onClick,
-    modifier.then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier).semantics { contentDescription = a.label },
-    a.icon, com.sokoul.iptv.ui.components.ButtonKind.Glass,
+    a.text ?: a.label, a.onClick,
+    modifier.then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier)
+        .semantics { contentDescription = if (a.text != null) "${a.label} : ${a.text}" else a.label },
+    a.icon, com.sokoul.iptv.ui.components.ButtonKind.Glass, focusRequester = a.focus,
 )
 
 /** Barre de progression pilotée au D-pad : s'épaissit au focus, repère qui grossit, temps visé en bulle pendant l'aperçu. */

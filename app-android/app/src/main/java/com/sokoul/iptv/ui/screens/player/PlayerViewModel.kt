@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
+import com.sokoul.iptv.data.repo.toVersion
 import timber.log.Timber
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -111,6 +112,10 @@ data class PlayerUi(
     val overview: String? = null,
     /** « Ça coupe ? » : version plus légère proposée (identifiant, libellé). */
     val lighter: Pair<String, String>? = null,
+    /** Toutes les sources de l'œuvre (abonnement puis Real-Debrid), la source en cours marquée. */
+    val sources: List<PlayerSource> = emptyList(),
+    /** Ce que l'on regarde, mesuré sur le flux : « 1080p · HEVC · HDR10 · VF · IPTV ». */
+    val nowPlaying: String? = null,
 )
 
 @HiltViewModel
@@ -331,7 +336,8 @@ class PlayerViewModel @Inject constructor(
                 _ui.update { it.copy(title = title, subtitle = "Mes fichiers Real-Debrid", isLive = false, resumedFromMs = resume, seriesBackdrop = null, overview = null) }
                 val url = cloud.playable(route.id)
                 // image TMDB trouvée pour la rangée (liste en cache) : reprise illustrée sur l'accueil
-                val art = runCatching { cloud.items().firstOrNull { it.id == route.id } }.getOrNull()
+                cloudItem = runCatching { cloud.items().firstOrNull { it.id == route.id } }.getOrNull()
+                val art = cloudItem
                     ?.let { i -> (i.backdrop ?: i.poster)?.let { com.sokoul.iptv.data.repo.tmdbSized(it, "w780") } }
                 if (art != null) _ui.update { it.copy(image = art) }
                 play(ResolvedStream(listOf(url), settingsStore.current().userAgent, null, isLive = false, provider = false), title, resume)
@@ -371,8 +377,10 @@ class PlayerViewModel @Inject constructor(
         stutters = 0
         lighterOffered = false
         if (_ui.value.lighter != null) _ui.update { it.copy(lighter = null) }
+        nowVideo = null
         _player.value?.play(stream, title, startMs)
         updateVideoInfo()
+        refreshSources()
     }
 
     private var lastPlay: Triple<ResolvedStream, String, Long>? = null
@@ -588,6 +596,12 @@ class PlayerViewModel @Inject constructor(
                 }
                 return@launch
             }
+            PlayerSources.parseEpisodeId(id)?.let { (sid, eid) ->
+                val ep = allSeriesEpisodes.firstOrNull { it.seriesId == sid && it.id == eid } ?: return@launch
+                currentEpisode = ep
+                try { playEpisodeIptv(ep, pos) } catch (e: Exception) { _ui.update { it.copy(error = e.userMessage()) } }
+                return@launch
+            }
             if (route.kind == PlayKind.EPISODE) { currentEpisode?.let { e -> playEpisodeIptv(e, pos) }; return@launch }
             val i = movieVersions.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return@launch
             movieIndex = i
@@ -606,6 +620,96 @@ class PlayerViewModel @Inject constructor(
 
     fun currentMovieId(): String? = currentDebrid?.let { RD_PREFIX + it.key }
         ?: if (route.kind == PlayKind.EPISODE) IPTV_EPISODE else movieVersions.getOrNull(movieIndex)?.id
+
+    // --- Sources affichées dans le lecteur (panneaux Sources et Audio, bandeau de qualité) ----------
+
+    private data class NowVideo(val width: Int, val height: Int, val codec: String?, val hdr: String?)
+    private var nowVideo: NowVideo? = null
+    private var sourcesJob: Job? = null
+    private var categoryNamesCache: Map<ContentType, Map<String, String>> = emptyMap()
+    private val seriesCache = HashMap<String, com.sokoul.iptv.data.db.SeriesEntity?>()
+    private var cloudItem: com.sokoul.iptv.data.debrid.CloudItem? = null
+
+    private fun mimeCodec(m: String?): String? = when (m) {
+        androidx.media3.common.MimeTypes.VIDEO_H265, androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION -> "hevc"
+        androidx.media3.common.MimeTypes.VIDEO_H264 -> "h264"
+        androidx.media3.common.MimeTypes.VIDEO_AV1 -> "av1"
+        androidx.media3.common.MimeTypes.AUDIO_E_AC3, androidx.media3.common.MimeTypes.AUDIO_E_AC3_JOC -> "eac3"
+        androidx.media3.common.MimeTypes.AUDIO_AC3 -> "ac3"
+        androidx.media3.common.MimeTypes.AUDIO_TRUEHD -> "truehd"
+        androidx.media3.common.MimeTypes.AUDIO_DTS, androidx.media3.common.MimeTypes.AUDIO_DTS_HD -> "dts"
+        androidx.media3.common.MimeTypes.AUDIO_AAC -> "aac"
+        else -> m?.substringAfter('/')
+    }
+
+    /** Recalcule la liste des sources (aucune requête réseau : base locale et versions Real-Debrid déjà trouvées). */
+    private fun refreshSources() {
+        sourcesJob?.cancel()
+        sourcesJob = viewModelScope.launch {
+            val list = try { buildSources() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { Timber.w("Sources : %s", e.message); emptyList() }
+            _ui.update { it.copy(sources = list) }
+            publishNow()
+        }
+    }
+
+    private suspend fun categoryNames(pid: Long, type: ContentType): Map<String, String> =
+        categoryNamesCache[type] ?: vod.categoryNames(pid, type).also { categoryNamesCache = categoryNamesCache + (type to it) }
+
+    private suspend fun seriesById(pid: Long, id: String) = seriesCache.getOrPut(id) { catalog.seriesItem(pid, id) }
+
+    private suspend fun buildSources(): List<PlayerSource> {
+        val p = playlist
+        val rd = currentDebrid
+        val iptv = when {
+            p == null || _ui.value.isLive -> emptyList()
+            route.kind == PlayKind.MOVIE -> {
+                val names = categoryNames(p.id, ContentType.MOVIE)
+                val q = vod.qualities(p.id, ContentType.MOVIE, movieVersions.map { it.id })
+                movieVersions.mapIndexed { i, m ->
+                    PlayerSources.fromIptv(m.toVersion().copy(categoryName = names[m.categoryId], measured = q[m.id]), current = rd == null && i == movieIndex)
+                }
+            }
+            route.kind == PlayKind.EPISODE -> {
+                val e = currentEpisode
+                if (e == null) emptyList() else {
+                    val order = seriesVersionIds.withIndex().associate { it.value to it.index }
+                    val same = (allSeriesEpisodes + e).filter { it.season == e.season && it.episode == e.episode }
+                        .distinctBy { it.seriesId to it.id }.sortedBy { order[it.seriesId] ?: Int.MAX_VALUE }
+                    val names = categoryNames(p.id, ContentType.SERIES)
+                    val q = vod.qualities(p.id, ContentType.SERIES, same.map { it.seriesId }.distinct())
+                    same.mapNotNull { ep ->
+                        val s = seriesById(p.id, ep.seriesId) ?: return@mapNotNull null
+                        PlayerSources.fromIptv(
+                            s.toVersion().copy(categoryName = names[s.categoryId], measured = q[s.id]),
+                            current = rd == null && ep.id == e.id && ep.seriesId == e.seriesId,
+                            id = PlayerSources.episodeId(ep.seriesId, ep.id),
+                        )
+                    }
+                }
+            }
+            route.kind == PlayKind.CLOUD -> listOf(PlayerSources.fromCloud(cloudItem, route.title))
+            else -> emptyList()
+        }
+        val ranked = rankedDebrid()
+        val debridList = (ranked + listOfNotNull(rd?.takeIf { c -> ranked.none { it.key == c.key } }))
+            .map { PlayerSources.fromDebrid(it, current = rd?.key == it.key, id = RD_PREFIX + it.key) }
+        return iptv + debridList
+    }
+
+    /** Bandeau de qualité : mesure du flux en cours + langue et origine de la source. */
+    private fun publishNow() {
+        val v = nowVideo
+        val sources = _ui.value.sources.map { s ->
+            if (!s.current || v == null) s
+            else s.copy(
+                quality = PlayerSources.qualityOf(com.sokoul.iptv.parser.MediaInfo.resolution(v.width, v.height)) ?: s.quality,
+                codec = v.codec ?: s.codec, hdr = v.hdr, basis = QualityBasis.MEASURED,
+            )
+        }
+        val cur = sources.firstOrNull { it.current }
+        val text = PlayerSources.banner(v?.width, v?.height, v?.codec, v?.hdr, cur)
+        _ui.update { if (it.isLive) it.copy(nowPlaying = null) else it.copy(nowPlaying = text, sources = sources) }
+    }
 
     // --- Real-Debrid : versions en plus, secours quand l'IPTV est prise ou refuse -----------------
 
@@ -635,7 +739,7 @@ class PlayerViewModel @Inject constructor(
         debridStreams?.let { return it }
         val q = debridQuery ?: return emptyList()
         val d = debridLoad ?: viewModelScope.async { runCatching { debrid.find(q) }.getOrDefault(emptyList()) }.also { debridLoad = it }
-        return d.await().also { if (debridQuery == q) { debridStreams = it; _ui.update { u -> u.copy(versionLabel = u.versionLabel ?: if (it.isNotEmpty()) "Abonnement IPTV" else null) } } }
+        return d.await().also { if (debridQuery == q) { debridStreams = it; _ui.update { u -> u.copy(versionLabel = u.versionLabel ?: if (it.isNotEmpty()) "Abonnement IPTV" else null) }; refreshSources() } }
     }
 
     private fun rankedDebrid(): List<com.sokoul.iptv.data.debrid.DebridStream> {
@@ -1353,20 +1457,9 @@ class PlayerViewModel @Inject constructor(
             C.COLOR_TRANSFER_HLG -> "HLG"
             else -> null
         }
-        fun codec(m: String?) = when (m) {
-            androidx.media3.common.MimeTypes.VIDEO_H265, androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION -> "hevc"
-            androidx.media3.common.MimeTypes.VIDEO_H264 -> "h264"
-            androidx.media3.common.MimeTypes.VIDEO_AV1 -> "av1"
-            androidx.media3.common.MimeTypes.AUDIO_E_AC3, androidx.media3.common.MimeTypes.AUDIO_E_AC3_JOC -> "eac3"
-            androidx.media3.common.MimeTypes.AUDIO_AC3 -> "ac3"
-            androidx.media3.common.MimeTypes.AUDIO_TRUEHD -> "truehd"
-            androidx.media3.common.MimeTypes.AUDIO_DTS, androidx.media3.common.MimeTypes.AUDIO_DTS_HD -> "dts"
-            androidx.media3.common.MimeTypes.AUDIO_AAC -> "aac"
-            else -> m?.substringAfter('/')
-        }
         val probe = com.sokoul.iptv.data.db.VodProbeEntity(
-            p.id, type, id, v.width, v.height, codec(v.sampleMimeType), hdr, v.frameRate.takeIf { it > 0 }?.toDouble(),
-            codec(a?.sampleMimeType), a?.channelCount?.takeIf { it > 0 }, a?.language,
+            p.id, type, id, v.width, v.height, mimeCodec(v.sampleMimeType), hdr, v.frameRate.takeIf { it > 0 }?.toDouble(),
+            mimeCodec(a?.sampleMimeType), a?.channelCount?.takeIf { it > 0 }, a?.language,
             (v.bitrate.takeIf { it > 0 } ?: v.averageBitrate.takeIf { it > 0 })?.div(1000),
             (_player.value?.player?.duration?.takeIf { it > 0 } ?: 0L).div(1000).toInt().takeIf { it > 0 },
             true, System.currentTimeMillis(),
@@ -1384,8 +1477,12 @@ class PlayerViewModel @Inject constructor(
             a?.sampleMimeType?.substringAfter('/')?.uppercase()?.let(::add)
             if (v != null && v.bitrate > 0) add("${v.bitrate / 1000} kb/s")
         }.joinToString(" · ")
+        nowVideo = v?.takeIf { it.width > 0 }?.let {
+            NowVideo(it.width, it.height, com.sokoul.iptv.parser.MediaInfo.codec(mimeCodec(it.sampleMimeType)), PlayerSources.hdrOf(it.colorInfo?.colorTransfer, it.sampleMimeType == androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION))
+        }
         _ui.update { it.copy(videoInfo = info) }
         saveMeasuredQuality(v, a)
+        publishNow()
     }
 
     /** « Réessayer » : relance tout le démarrage si rien n'a pu être chargé, sinon le flux (pause fournisseur respectée). */

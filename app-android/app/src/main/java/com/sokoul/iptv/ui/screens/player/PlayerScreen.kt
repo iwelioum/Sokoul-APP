@@ -134,7 +134,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-private enum class Menu { MAIN, ASPECT, RECORD, INFO, VERSION, DECODER }
+private enum class Menu { MAIN, ASPECT, RECORD, INFO, DECODER }
 
 private val resizeModes = listOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT to "Adapter",
@@ -192,12 +192,17 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     var seekPreview by remember { mutableStateOf<Long?>(null) }
     var nextCountdown by remember { mutableStateOf<Int?>(null) }
     var nextDismissedFor by remember { mutableStateOf<String?>(null) }
-    var tracksVisible by remember { mutableStateOf(false) }
+    // panneau latéral ouvert (Audio, Sous-titres, Sources)
+    var panel by remember { mutableStateOf<PlayerPanel?>(null) }
+    // bouton qui a ouvert le panneau : il reprend le focus à la fermeture
+    var returnTo by remember { mutableStateOf<PlayerPanel?>(null) }
+    val pillFocus = remember { PlayerPanel.entries.associateWith { FocusRequester() } }
     // pause prolongée (TV) : écran « En pause » à la place de la barre
     var pauseScreen by remember { mutableStateOf(false) }
     // position au début d'un saut sans barre (pour afficher le cumul « +1 min 30 »)
     var seekOrigin by remember { mutableLongStateOf(0L) }
     val tracks by vm.tracks.collectAsStateWithLifecycle()
+    val onlineState by vm.onlineSubs.collectAsStateWithLifecycle()
     val subOffset by vm.subOffsetMs.collectAsStateWithLifecycle()
     val onlineActive = vm.onlineSubs.collectAsStateWithLifecycle().value.activeRef != null
     // sous-titres du flux retardés : dessinés par DelayedStreamCues, celui du lecteur est masqué
@@ -227,7 +232,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val showNextCard = !ui.isLive && ui.nextEpisode != null && ui.nextEpisode?.id != nextDismissedFor &&
         (ui.endedWithNext || nextCountdown != null)
     // un panneau ou une carte a le focus : les flèches servent à s'y déplacer
-    val modal = menu != null || detailsVisible || episodesVisible || tracksVisible || showNextCard || errorShown || ui.needsPin
+    val modal = menu != null || detailsVisible || episodesVisible || (panel != null) || showNextCard || errorShown || ui.needsPin
     // « Passer l'intro » : une fois par épisode, dans la fenêtre apprise pour la série
     val introFor = "${ui.title}|${ui.subtitle}|${ui.currentSe}"
     val introShown = !ui.isLive && !modal && !pauseScreen && introDoneFor != introFor && intro?.let { IntroSkip.visible(position, it) } == true
@@ -292,8 +297,8 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     }
 
     // masquage automatique, jamais pendant une pause ni quand un panneau est ouvert
-    LaunchedEffect(infoVisible, infoTick, menu, listVisible, isPlaying, episodesVisible, tracksVisible) {
-        if (infoVisible && menu == null && !listVisible && !episodesVisible && !tracksVisible && (isPlaying || ui.isLive)) {
+    LaunchedEffect(infoVisible, infoTick, menu, listVisible, isPlaying, episodesVisible, (panel != null)) {
+        if (infoVisible && menu == null && !listVisible && !episodesVisible && !(panel != null) && (isPlaying || ui.isLive)) {
             delay(if (ui.isLive) 6_000 else 5_000); infoVisible = false
         }
     }
@@ -345,7 +350,10 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         repeat(15) {
             delay(40)
             val done = runCatching {
-                if (infoVisible && !ui.isLive) { if (l.isTouch) true else scrubberFocus.requestFocus() } else focus.requestFocus()
+                if (infoVisible && !ui.isLive) {
+                    if (l.isTouch) true
+                    else returnTo?.let { p -> pillFocus.getValue(p).requestFocus().also { ok -> if (ok) returnTo = null } } ?: scrubberFocus.requestFocus()
+                } else focus.requestFocus()
             }.getOrDefault(false)
             if (done) return@LaunchedEffect
         }
@@ -355,7 +363,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     fun backConsumed(): Boolean = when {
         // Retour ferme seulement l'écran de pause (sans montrer la barre) : un second Retour quitte le lecteur
         pauseScreen -> { pauseScreen = false; true }
-        tracksVisible -> { tracksVisible = false; true }
+        panel != null -> { panel = null; true }
         detailsVisible -> { detailsVisible = false; true }
         tsBar -> { tsBar = false; true }
         // zapping en cours : on reste sur la chaîne regardée
@@ -372,7 +380,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         errorShown -> { nav.popBackStack(); true }
         else -> false
     }
-    BackHandler(enabled = pauseScreen || detailsVisible || tsBar || zapPending != null || groupsVisible || guideVisible || tracksVisible || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
+    BackHandler(enabled = pauseScreen || detailsVisible || tsBar || zapPending != null || groupsVisible || guideVisible || (panel != null) || episodesVisible || listVisible || numberBuffer.isNotEmpty() || seekPreview != null || (infoVisible && !ui.isLive && isTv)) { backConsumed() }
     // touche Retour interceptée avant Compose : sinon elle retire seulement le focus de la barre (télécommande « muette »)
     var backDownConsumed by remember { mutableStateOf(false) }
     // filet de sécurité : le lecteur ne reste jamais sans focus (hors menus, qui ont leur propre fenêtre)
@@ -424,7 +432,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 if (e.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK && menu == null) {
                     // appui long : tout fermer d'un coup et revenir à la vidéo
                     if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 1 && ui.isLive) {
-                        vm.cancelZap(); listVisible = false; groupsVisible = false; guideVisible = false; detailsVisible = false; tracksVisible = false; numberBuffer = ""; infoVisible = false
+                        vm.cancelZap(); listVisible = false; groupsVisible = false; guideVisible = false; detailsVisible = false; panel = null; numberBuffer = ""; infoVisible = false
                         backDownConsumed = true
                         return@onPreviewKeyEvent true
                     }
@@ -588,7 +596,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 SeekFeedback(last - seekOrigin, last)
             }
 
-            val controlsShown = !tsBar && infoVisible && !listVisible && !groupsVisible && !guideVisible && zapPending == null && !episodesVisible && !tracksVisible && !errorShown && !pauseScreen && !showNextCard
+            val controlsShown = !tsBar && infoVisible && !listVisible && !groupsVisible && !guideVisible && zapPending == null && !episodesVisible && !(panel != null) && !errorShown && !pauseScreen && !showNextCard
             if (!ui.isLive) {
                 AnimatedVisibility(
                     controlsShown, Modifier.align(Alignment.TopCenter),
@@ -616,12 +624,11 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     onPlayPause = ::playPause,
                     onFwd30 = { seekBy(30_000L) },
                     pills = vodPills(
-                        ui, hasEpisodes = episodes.size > 1,
-                        onEpisodes = { episodesVisible = true },
-                        onNext = { vm.playNextEpisode() },
-                        onTracks = { tracksVisible = true },
-                        onMore = { menu = Menu.MAIN },
+                        ui, audio = remember(tracks, ui.sources) { audioPillText(vm.audioOptions(), ui.sources.firstOrNull { it.current }?.let { it.language?.name ?: it.region }) }, subtitles = remember(tracks, onlineState) { subtitlePillText(vm.textOptions()) },
+                        onAudio = { panel = PlayerPanel.AUDIO; returnTo = PlayerPanel.AUDIO }, onSubtitles = { panel = PlayerPanel.SUBTITLES; returnTo = PlayerPanel.SUBTITLES },
+                        onSources = { panel = PlayerPanel.SOURCES; returnTo = PlayerPanel.SOURCES }, onMore = { menu = Menu.MAIN }, focus = pillFocus,
                     ),
+                    tools = vodTools(ui, hasEpisodes = episodes.size > 1, onEpisodes = { episodesVisible = true }, onNext = { vm.playNextEpisode() }),
                     onSeekStep = { seekBy(it) },
                     onSeekTo = { exo?.seekTo(it); showInfo() },
                     onInteract = { infoTick++ },
@@ -693,19 +700,26 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             AnimatedVisibility(episodesVisible, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
                 EpisodesPanel(episodes, ui.currentSe, ui.seriesBackdrop ?: ui.image, Modifier, tmdb = tmdbEpisodes, onSeason = vm::loadTmdbSeason) { e -> episodesVisible = false; vm.playEpisodeNow(e) }
             }
-            AnimatedVisibility(
-                tracksVisible, Modifier.align(Alignment.BottomEnd).padding(end = side, bottom = if (l.isCompact) 16.dp else 120.dp),
-                enter = fadeIn(tween(180)) + slideInVertically(tween(180, easing = Motion.Decelerate)) { it / 10 },
-                exit = fadeOut(Motion.exit()) + slideOutVertically(Motion.exit()) { it / 10 },
-            ) {
-                val audioOpts = remember(tracks) { vm.audioOptions() }
-                val online by vm.onlineSubs.collectAsStateWithLifecycle()
-                LaunchedEffect(Unit) { vm.searchOnlineSubtitles() }
-                val textOpts = remember(tracks, online) { vm.textOptions() }
-                val shown = textOpts.firstOrNull()?.selected == false
-                TracksPanel(
-                    audioOpts, textOpts, offsetMs = if (shown) subOffset else null, delayOnly = online.activeRef == null, onShift = vm::shiftSubtitles,
-                ) { type, o -> vm.selectTrack(type, o) }
+            AnimatedVisibility(panel != null, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
+                // le panneau reste affiché pendant sa sortie
+                var shown by remember { mutableStateOf(panel) }
+                if (panel != null) shown = panel
+                val resumeAt = formatDuration(position)
+                when (shown) {
+                    PlayerPanel.AUDIO -> {
+                        val audioOpts = remember(tracks) { vm.audioOptions() }
+                        AudioPanel(audioOpts, ui.sources, resumeAt, onTrack = { vm.selectTrack(C.TRACK_TYPE_AUDIO, it) }, onSource = { panel = null; vm.switchVersion(it.id) })
+                    }
+                    PlayerPanel.SUBTITLES -> {
+                        val online by vm.onlineSubs.collectAsStateWithLifecycle()
+                        LaunchedEffect(Unit) { vm.searchOnlineSubtitles() }
+                        val textOpts = remember(tracks, online) { vm.textOptions() }
+                        val on = textOpts.firstOrNull()?.selected == false
+                        SubtitlePanel(textOpts, offsetMs = if (on) subOffset else null, delayOnly = online.activeRef == null, onShift = vm::shiftSubtitles) { vm.selectTrack(C.TRACK_TYPE_TEXT, it) }
+                    }
+                    PlayerPanel.SOURCES -> SourcesPanel(ui.sources, resumeAt) { panel = null; vm.switchVersion(it.id) }
+                    null -> Unit
+                }
             }
             AnimatedVisibility(pauseScreen, enter = fadeIn(tween(Motion.SLOW)), exit = fadeOut(Motion.exit())) {
                 PauseScreen(ui, position, duration)
@@ -721,7 +735,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             var lastNext by remember { mutableStateOf(next) }
             if (next != null) lastNext = next
             AnimatedVisibility(
-                showNextCard && next != null && !episodesVisible && !tracksVisible, Modifier.align(Alignment.BottomEnd),
+                showNextCard && next != null && !episodesVisible && !(panel != null), Modifier.align(Alignment.BottomEnd),
                 enter = slideInHorizontally(Motion.enter()) { it / 2 } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it / 2 } + fadeOut(Motion.exit()),
             ) {
                 lastNext?.let { n ->
@@ -749,13 +763,13 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             buildList {
                 // direct : d'abord le lecteur (son, image, décodage, statistiques), puis ce que propose une box TV
                 if (ui.isLive) {
-                    add(MenuOption("Audio et sous-titres", Icons.Default.ClosedCaption) { tracksVisible = true })
+                    add(MenuOption("Audio", Icons.Default.Audiotrack) { panel = PlayerPanel.AUDIO })
+                    add(MenuOption("Sous-titres", Icons.Default.ClosedCaption) { panel = PlayerPanel.SUBTITLES })
                     add(MenuOption("Format d'image : ${resizeModes[resizeIndex.coerceIn(0, resizeModes.lastIndex)].second}", Icons.Default.AspectRatio) { scope.launch { delay(50); menu = Menu.ASPECT } })
                     add(MenuOption("Décodage : ${(vm.sessionDecoder ?: vm.defaultDecoder).label}", Icons.Default.Memory) { scope.launch { delay(50); menu = Menu.DECODER } })
                     add(MenuOption("Statistiques du flux", Icons.Default.Info) { scope.launch { delay(50); menu = Menu.INFO } })
                 }
                 if (!ui.isLive) add(MenuOption("Depuis le début", Icons.Default.Replay) { vm.restartFromBeginning() })
-                if (ui.versionLabel != null) add(MenuOption("Version : ${ui.versionLabel}", Icons.Default.Layers) { scope.launch { delay(50); menu = Menu.VERSION } })
                 // direct : d'abord ce que propose une box TV (guide, enregistrer, favori, recherche, enregistrements)
                 if (ui.isLive) {
                     add(MenuOption("Guide TV", Icons.Default.CalendarViewWeek) { nav.navigate(com.sokoul.iptv.ui.nav.GuideRoute) })
@@ -810,11 +824,6 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             subtitle = "Si l'image se fige ou saccade, essayez un autre mode. Le flux est rouvert ; le réglage par défaut reste dans Réglages › Lecture.",
             onDismiss = { menu = null },
         )
-        Menu.VERSION -> OptionsDialog(
-            "Version",
-            vm.movieVersionOptions().map { (id, label) -> MenuOption(label, Icons.Default.Layers, id == vm.currentMovieId()) { vm.switchVersion(id) } },
-            onDismiss = { menu = null },
-        )
         null -> Unit
     }
     LaunchedEffect(ui.notice) { ui.notice?.let { toast(context, it) } }
@@ -824,18 +833,36 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
 }
 
 /**
- * Pastilles du lecteur à la demande, toujours dans le même ordre (seules celles qui n'ont pas de sens
- * pour le titre sont absentes) : Épisodes, Suivant, Audio et sous-titres, Plus.
+ * Pastilles du lecteur à la demande, toujours dans le même ordre : Audio, Sous-titres, Source (chacune montre
+ * son choix en cours : « Français », « Désactivés », « VF · 1080p »), puis Plus (icône).
  */
 internal fun vodPills(
-    ui: PlayerUi, hasEpisodes: Boolean,
-    onEpisodes: () -> Unit, onNext: () -> Unit, onTracks: () -> Unit, onMore: () -> Unit,
-): List<PlayerAction> = buildList {
+    ui: PlayerUi, audio: String?, subtitles: String?,
+    onAudio: () -> Unit, onSubtitles: () -> Unit, onSources: () -> Unit, onMore: () -> Unit,
+    focus: Map<PlayerPanel, FocusRequester> = emptyMap(),
+): List<PlayerAction> = listOf(
+    PlayerAction("Audio", Icons.Default.Audiotrack, text = audio ?: "Audio", focus = focus[PlayerPanel.AUDIO], onClick = onAudio),
+    PlayerAction("Sous-titres", Icons.Default.ClosedCaption, text = subtitles ?: "Désactivés", focus = focus[PlayerPanel.SUBTITLES], onClick = onSubtitles),
+    PlayerAction("Source", Icons.Default.Layers, text = PlayerSources.short(ui.sources.firstOrNull { it.current }), focus = focus[PlayerPanel.SOURCES], onClick = onSources),
+    PlayerAction("Plus d'options", Icons.Default.MoreHoriz, iconOnly = true, onClick = onMore),
+)
+
+/** Boutons ronds après ⏯ (séries) : Épisodes, Suivant. */
+internal fun vodTools(ui: PlayerUi, hasEpisodes: Boolean, onEpisodes: () -> Unit, onNext: () -> Unit): List<PlayerAction> = buildList {
     if (hasEpisodes) add(PlayerAction("Épisodes", Icons.Default.VideoLibrary, onClick = onEpisodes))
-    if (ui.nextEpisode != null) add(PlayerAction("Suivant", Icons.Default.SkipNext, onClick = onNext))
-    add(PlayerAction("Audio et sous-titres", Icons.Default.ClosedCaption, onClick = onTracks))
-    add(PlayerAction("Plus", Icons.Default.MoreHoriz, onClick = onMore))
+    if (ui.nextEpisode != null) add(PlayerAction("Épisode suivant", Icons.Default.SkipNext, onClick = onNext))
 }
+
+/** Pastille Audio : la langue de la piste en cours (« Français »), sans canaux ni codec. */
+internal fun audioPillText(options: List<TrackOption>, fallback: String? = null): String? {
+    val label = (options.firstOrNull { it.selected } ?: options.singleOrNull())?.label?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
+    // piste sans langue déclarée (« Piste principale ») : la langue annoncée par la source
+    return if (label == null || label.startsWith("Piste")) fallback ?: label else label
+}
+
+/** Pastille Sous-titres : « Désactivés » ou la langue choisie. */
+internal fun subtitlePillText(options: List<TrackOption>): String =
+    options.drop(1).firstOrNull { it.selected && !it.info }?.label?.substringBefore(" · ") ?: "Désactivés"
 
 private fun toast(context: android.content.Context, msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
 
