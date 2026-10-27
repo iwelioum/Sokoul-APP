@@ -140,8 +140,8 @@ class SourcesAccountTest {
 
     @Test fun `etat de la recherche - compte seulement, non configure`() {
         val one = listOf(src("m1", AudioLanguage.VF, VideoQuality.FHD_1080, current = true))
-        assertEquals("1 source trouvée · Real-Debrid : vos fichiers seulement (recherche de sources non activée)", sourceCountLine(one, SourceSearch.ACCOUNT))
-        assertEquals("1 source trouvée · Real-Debrid : non configuré", sourceCountLine(one, SourceSearch.OFF))
+        assertEquals("1 source trouvée : IPTV 1 · RD 0 · Real-Debrid : vos fichiers seulement (recherche de sources non activée)", sourceCountLine(one, SourceSearch.ACCOUNT))
+        assertEquals("1 source trouvée : IPTV 1 · RD 0 · Real-Debrid : non configuré", sourceCountLine(one, SourceSearch.OFF))
     }
 
     @Test fun `echecs IPTV gardes 24 h, effaces quand on choisit a nouveau la source`() {

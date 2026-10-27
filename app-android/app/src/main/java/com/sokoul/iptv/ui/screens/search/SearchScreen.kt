@@ -399,7 +399,13 @@ private fun SearchResults(
     val l = LocalLayout.current
     val state = rememberLazyListState()
     val open: (Work) -> Unit = { w -> onPicked(); nav.openWork(w) }
-    val openRd: (Work) -> Unit = { w -> onPicked(); com.sokoul.iptv.ui.components.debridRoute(pid, w)?.let { nav.navigateOnce(it) } }
+    // titre trouvé via TMDB : sa fiche de l'abonnement s'il y est (IPTV + Real-Debrid), sinon Real-Debrid seul
+    val offer: com.sokoul.iptv.ui.components.DebridOfferViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val rdScope = androidx.compose.runtime.rememberCoroutineScope()
+    val openRd: (Work) -> Unit = { w ->
+        onPicked()
+        rdScope.launch { (offer.target(w) ?: com.sokoul.iptv.ui.components.debridRoute(pid, w))?.let { nav.navigateOnce(it) } }
+    }
     when {
         r == null && trending.isEmpty() && recents.isEmpty() ->
             EmptyState(Icons.Default.Search, "Recherche", "Tapez au moins 2 lettres.", modifier)

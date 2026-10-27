@@ -146,6 +146,10 @@ private fun VersionCard(g: VersionGroup, first: Boolean, preferred: Boolean, mod
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 SourceBadge(SourceLabels.originShort(s.origin), filled = true, onLight = focused)
+                // les autres origines de cette version restent visibles (l'IPTV n'est jamais caché derrière « +n »)
+                g.sources.map { it.origin }.distinct().filter { it != s.origin }.forEach {
+                    SourceBadge(SourceLabels.originShort(it), filled = false, onLight = focused)
+                }
                 s.codec?.let { SourceBadge(it, filled = false, onLight = focused) }
                 val more = g.sources.size - 1
                 if (more > 0) Text("+$more", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft)

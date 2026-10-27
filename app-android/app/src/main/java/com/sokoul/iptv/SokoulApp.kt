@@ -35,6 +35,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        com.sokoul.iptv.data.debrid.SourceLog.attach(java.io.File(filesDir, "source-log.txt"))
         createChannels()
         profiles.start()
         watchNext.start()

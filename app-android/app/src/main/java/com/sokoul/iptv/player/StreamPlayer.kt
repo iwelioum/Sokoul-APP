@@ -24,8 +24,11 @@ sealed interface StreamState {
     data class Reconnecting(val attempt: Int) : StreamState
     /** Pause imposée après un refus du fournisseur : nouvel essai automatique à [untilMs]. */
     data class Waiting(val untilMs: Long, val message: String) : StreamState
-    /** @param refused refus du fournisseur : « Réessayer » reste bloqué jusqu'à [retryAtMs]. */
-    data class Failed(val message: String, val refused: Boolean = false, val retryAtMs: Long = 0) : StreamState
+    /**
+     * @param refused refus du fournisseur : « Réessayer » reste bloqué jusqu'à [retryAtMs].
+     * @param code code HTTP d'un lien hors abonnement refusé (Real-Debrid), pour relancer un lien expiré.
+     */
+    data class Failed(val message: String, val refused: Boolean = false, val retryAtMs: Long = 0, val code: Int? = null) : StreamState
     data object Ended : StreamState
     /** La connexion IPTV est prise par l'enregistrement de [channel] : reprise automatique quand il se termine. */
     data class Busy(val channel: String) : StreamState
@@ -98,6 +101,13 @@ class StreamPlayer(
                 return
             }
             val http = httpStatus(error)
+            if (!s.provider) com.sokoul.iptv.data.debrid.SourceLog.add("Lecture : ${error.errorCodeName}" + (http?.let { " (HTTP $it)" } ?: ""))
+            // Lien hors abonnement (Real-Debrid, extension) refusé : jamais compté comme un refus du fournisseur IPTV
+            // (sinon la connexion IPTV serait mise en pause et ses sources écartées). Échec direct, une autre source prend le relais.
+            if (!s.provider && http != null && http in 400..499) {
+                _state.value = StreamState.Failed(ErrorPolicy.linkRefusal(http), code = http)
+                return
+            }
             val decision = ErrorPolicy.decide(
                 http = http, network = isNetworkError(error) || (http != null && http >= 500), format = isFormatError(error), live = s.isLive,
                 hasNextCandidate = candidateIndex < candidates.lastIndex, retries = retries, describe = describe(error),
@@ -173,7 +183,8 @@ class StreamPlayer(
         retryJob?.cancel()
         val s = stream
         gate.recording.value?.let { if (s?.provider == true) { busy(it); return } }
-        val wait = gate.remainingMs()
+        // la pause après un refus ne concerne que la connexion IPTV, pas Real-Debrid ni un fichier local
+        val wait = if (s?.provider == true) gate.remainingMs() else 0
         if (wait <= 0) { load(keepPosition); return }
         player.stop()
         _state.value = StreamState.Waiting(gate.availableAt(), "Le fournisseur a refusé une connexion il y a quelques instants.")
@@ -239,7 +250,7 @@ class StreamPlayer(
             if (stream?.isLive == true && candidates.size > 1 && retries % 3 == 0) {
                 candidateIndex = (candidateIndex + 1) % candidates.size
             }
-            if (gate.remainingMs() > 0) loadWhenAllowed(keepPosition = true) else load(keepPosition = true)
+            if (stream?.provider == true && gate.remainingMs() > 0) loadWhenAllowed(keepPosition = true) else load(keepPosition = true)
         }
     }
 
@@ -278,6 +289,15 @@ class StreamPlayer(
                 network("Flux bloqué")
             }
         }
+    }
+
+    /** Flux rejeté après coup (vidéo d'attente d'une extension, par exemple) : arrêt et échec, le secours prend le relais. */
+    fun reject(message: String) {
+        retryJob?.cancel()
+        watchdog?.cancel()
+        videoGuard?.cancel()
+        player.stop()
+        _state.value = StreamState.Failed(message)
     }
 
     /** Arrête le flux (connexion fermée). Appelé aussi quand un autre lecteur prend la main. */

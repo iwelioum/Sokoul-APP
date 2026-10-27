@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.runtime.LaunchedEffect
 import com.sokoul.iptv.data.net.providers.ApiKeys
@@ -87,6 +88,22 @@ internal fun LazyListScope.debridSection(c: SettingsCtx) {
                 "Adresse de l'extension (https://…/manifest.json)", s.debridAddon,
                 validate = { v -> if (v.isBlank() || com.sokoul.iptv.data.AppSettings.cleanAddon(v).isNotEmpty()) null else "Adresse https:// attendue" },
             ) { v -> c.vm.update { it.copy(debridAddon = v) } })
+        }
+    }
+    item("rd-log") {
+        val log = com.sokoul.iptv.data.debrid.SourceLog
+        SettingRow(
+            "Journal des sources",
+            log.recent().firstOrNull()?.let { log.format(it) } ?: "Vide",
+            "Recherches, liens et échecs récents, avec leur raison (aucune clé n'y figure)",
+            icon = Icons.Default.ReceiptLong,
+        ) {
+            val entries = log.recent()
+            c.choose(
+                "Journal des sources",
+                entries.map { e -> MenuOption(log.format(e)) {} }.ifEmpty { listOf(MenuOption("Aucun événement pour l'instant") {}) } +
+                    MenuOption("Effacer le journal") { log.clear() },
+            )
         }
     }
     item("rd-size") {

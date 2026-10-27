@@ -991,3 +991,65 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
   - la fiche Spider-Man trouve 431 sources (IPTV 14 · RD 417), dans les sections VF, MULTI, VOSTFR, VO et « Autres » ;
   - le panneau du lecteur affiche 433 sources, avec les sections Français (VF) et Plusieurs langues (MULTI) ;
   - la lecture est en cours sur la MULTI 4K Dolby Vision RD.
+
+## 19. Phase 17 — Sources fiables : Real-Debrid qui se lance, IPTV toujours présent (27/10/2026)
+
+### Problèmes signalés et causes trouvées sur la box
+- **« Aucune source Real-Debrid ne fonctionne » :**
+  1. Un refus (4xx) d'un lien Real-Debrid ou d'une extension était compté comme un refus du fournisseur IPTV. La connexion IPTV était mise en pause, ses sources écartées, et le flux RD attendait la fin de la pause.
+  2. Les liens Comet sont opaques (base64) et ne donnent pas l'empreinte du fichier. La lecture passait donc par Comet. Une version pas prête renvoyait une courte vidéo d'attente : à la fin de cette vidéo, l'œuvre était marquée « Vu » et la reprise écrasée.
+- **« Je ne vois pas les sources IPTV » :** une œuvre ouverte depuis la recherche, une saga, un acteur, Ma liste ou « Reprendre » partait en lecture Real-Debrid seule, sans chercher la même œuvre dans l'abonnement.
+
+### Corrigé
+- **Résolution par le compte :** dès que l'empreinte est connue, le lien direct est demandé à Real-Debrid avec votre compte. Pour Comet, l'empreinte est lue dans `bingeGroup` (431 versions, 0 sans empreinte sur Red Sparrow). Le lien de l'extension ne sert plus qu'en secours (pas d'empreinte, ou compte en panne) et jamais pour une version pas prête. Une clé refusée (401/403) arrête tout de suite.
+- **Packs de saison :** si l'épisode demandé n'est pas dans le pack, on affiche une erreur claire au lieu de lire « la plus grosse vidéo ». Les fichiers qui ne sont pas des vidéos sont écartés.
+- **Vidéo d'attente rejetée :** une lecture Real-Debrid de moins de 3 min est rejetée comme « pas prête » et la source suivante prend le relais. Rien n'est enregistré : ni « Vu », ni reprise.
+- **IPTV et Real-Debrid séparés :** un refus d'un lien RD n'a plus d'effet sur la connexion IPTV. La pause de 30 s après un refus ne concerne que l'IPTV.
+- **Lien RD expiré en cours de lecture (403/404/410) :** un nouveau lien est demandé une fois, et la lecture reprend au même instant.
+- **IPTV toujours présent :**
+  - une œuvre de l'abonnement ouverte depuis la recherche ou une offre Real-Debrid ouvre sa fiche normale, avec les versions IPTV et RD ;
+  - en lecture RD seule, le lecteur cherche aussi le film dans l'abonnement (fiche TMDB → catalogue). S'il le trouve, ses versions IPTV sont classées avec les autres et servent de secours ;
+  - `movieWithTmdb` / `seriesWithTmdb` tiennent compte des liens TMDB trouvés par l'app (`tmdb_match`) ;
+  - le compteur affiche toujours toutes les origines : « IPTV 0 (pas dans l'abonnement) · RD 694 » ;
+  - sur la fiche, chaque carte de version montre toutes ses origines, et l'IPTV n'est plus caché derrière « +n ».
+- **Raisons lisibles :**
+  - le panneau affiche « a échoué : limite atteinte (429) », « Fichier introuvable (404)… », etc. ;
+  - la notice de secours cite la raison ;
+  - « Aucune version RD prête » ajoute la dernière erreur.
+- **Journal des sources :**
+  - Réglages › Real-Debrid › « Journal des sources » montre les 50 derniers événements (recherche, résolution, lecture, échec), avec un bouton « Effacer ». Le journal est aussi écrit dans logcat (tag `SokoulSrc`), même en version release ;
+  - tout est masqué : jamais de clé ni d'identifiant.
+- **Recherche :** chaque extension a 10 s maximum, un cache de 30 min et rien n'est mis en cache pour une réponse vide.
+- **Classement :**
+  - une release sans aucune langue dans son nom prend la langue d'origine TMDB : VO, ou VF pour une œuvre française. Elle n'est donc plus rangée dans « Autres » ;
+  - sans décodeur Dolby Vision, la HDR10 passe devant la DV de même définition ;
+  - à égalité parfaite, le départage se fait par la clé de la version : l'ordre est stable quel que soit l'ordre d'arrivée des extensions.
+- **Changement de source :** un choix plus récent annule le précédent. Une résolution qui arrive en retard ne lance plus l'ancienne source.
+- **Déjà en place, vérifié :**
+  - les requêtes `IN (…)` sont découpées par 500 ;
+  - les remakes de même titre ne sont pas fusionnés, car l'année exacte fait partie de la clé (Dune 1984 / 2021) ;
+  - la piste audio française est préférée, et Media3 sélectionne les sous-titres forcés de la langue entendue.
+
+### Vérifié sur la box (un flux à la fois, 30 s entre deux, lecteur fermé à la fin)
+- Le journal montre « torrentio : 93 versions, 0 sans empreinte » et « comet : 431 versions, 0 sans empreinte ».
+- Spider-Man : un fichier du compte, lu en lien direct Real-Debrid.
+- Red Sparrow : la fiche affiche 695 sources (IPTV 1 · RD 694), et la carte de version montre maintenant l'origine IPTV.
+
+### Effets de bord des essais (avant correction)
+- **Red Sparrow** a été marqué « Vu » et sa reprise (« Reste 2 h 18 ») perdue, à cause de la vidéo d'attente Comet. À corriger à la main avec « Marquer comme non vu ».
+- **Spider-Man** affiche « Reste 1 min ».
+
+### Tests
+- `:parser:test` + `:app:testDebugUnitTest` : **395 tests, 0 échec, 4 ignorés**. `lintRelease` : 0 erreur.
+- Nouveaux tests du résolveur (`DebridClientTest`) :
+  - empreinte connue : lecture par le compte ;
+  - sans empreinte : lien de l'extension, sans aucun appel au compte ;
+  - compte en panne : l'extension sert de secours, sauf si la clé est refusée ;
+  - pack de saison sans l'épisode : erreur claire.
+- Nouveau `SourceHardeningTest` :
+  - journal masqué et limité à 50 événements ;
+  - raisons lisibles ;
+  - empreinte Comet ;
+  - release sans langue → VO ou VF ;
+  - Dolby Vision et ordre stable ;
+  - messages de refus.

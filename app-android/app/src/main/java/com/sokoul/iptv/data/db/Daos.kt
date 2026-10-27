@@ -567,10 +567,17 @@ interface VodDao {
     @Query("SELECT groupKey AS k, COUNT(*) AS c FROM series WHERE playlistId = :pid AND groupKey IN (:keys) GROUP BY groupKey")
     suspend fun seriesCounts(pid: Long, keys: List<String>): List<GroupCount>
 
-    @Query("SELECT id FROM movies WHERE playlistId = :pid AND (tmdbId = :tmdbId OR groupKey = 'tmdb:' || :tmdbId) LIMIT 1")
+    /** Film du fournisseur relié à cette fiche TMDB : par le fournisseur (tmdbId, clé « tmdb:N ») ou par l'app (tmdb_match). */
+    @Query(
+        "SELECT id FROM movies WHERE playlistId = :pid AND (tmdbId = :tmdbId OR groupKey = 'tmdb:' || :tmdbId " +
+            "OR COALESCE(groupKey, 'id:' || id) IN (SELECT workKey FROM tmdb_match WHERE playlistId = :pid AND type = 'MOVIE' AND tmdbId = CAST(:tmdbId AS INTEGER))) LIMIT 1"
+    )
     suspend fun movieWithTmdb(pid: Long, tmdbId: String): String?
 
-    @Query("SELECT id FROM series WHERE playlistId = :pid AND (tmdbId = :tmdbId OR groupKey = 'tmdb:' || :tmdbId) LIMIT 1")
+    @Query(
+        "SELECT id FROM series WHERE playlistId = :pid AND (tmdbId = :tmdbId OR groupKey = 'tmdb:' || :tmdbId " +
+            "OR COALESCE(groupKey, 'id:' || id) IN (SELECT workKey FROM tmdb_match WHERE playlistId = :pid AND type = 'SERIES' AND tmdbId = CAST(:tmdbId AS INTEGER))) LIMIT 1"
+    )
     suspend fun seriesWithTmdb(pid: Long, tmdbId: String): String?
 
     @Query("SELECT * FROM tmdb_links WHERE playlistId = :pid AND type = :type")

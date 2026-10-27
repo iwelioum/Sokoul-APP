@@ -78,7 +78,7 @@ data class DebridQuery(val tmdbId: Int, val series: Boolean, val season: Int? = 
 
 /**
  * Sources Real-Debrid d'une œuvre : TMDB → IMDb, puis extension au format Stremio
- * (`/stream/movie/tt….json`, `/stream/series/tt…:S:E.json`). Résultats gardés 6 h en mémoire.
+ * (`/stream/movie/tt….json`, `/stream/series/tt…:S:E.json`). Résultats gardés 30 min en mémoire.
  * L'adresse de l'extension peut contenir une clé : elle n'est jamais écrite dans un journal.
  */
 @Singleton
@@ -109,15 +109,23 @@ class DebridSources @Inject constructor(
      */
     suspend fun find(q: DebridQuery): List<DebridStream> {
         if (!enabled()) return emptyList()
+        val info = runCatching { tmdb.details(settings.current().tmdbApiKey, if (q.series) "tv" else "movie", q.tmdbId, full = false) }
+            .getOrElse { if (it is CancellationException) throw it; null }
+        val titles = listOfNotNull(info?.title, info?.originalTitle)
         val addon = runCatching { addonStreams(q) }.getOrElse { if (it is CancellationException) throw it; emptyList() }
-        val account = runCatching { accountStreams(q) }.getOrElse { if (it is CancellationException) throw it; emptyList() }
-        return merge(addon, account).also { last[q] = it }
+            .let { list ->
+                // une extension renvoie parfois une autre œuvre (« Lupin Zero » pour « Lupin ») : écartée
+                val (other, kept) = list.partition { otherWork(it.filename ?: it.title.lineSequence().firstOrNull().orEmpty(), titles, q.series) }
+                if (other.isNotEmpty()) SourceLog.add("Recherche : ${other.size} versions d'une autre œuvre écartées (ex. « ${other.first().title.lineSequence().first().take(70)} »)")
+                kept
+            }
+        val account = runCatching { info?.let { accountStreams(q, it) }.orEmpty() }.getOrElse { if (it is CancellationException) throw it; emptyList() }
+            .filterNot { otherWork(it.filename ?: it.title.lineSequence().firstOrNull().orEmpty(), titles, q.series) }
+        return untagged(merge(addon, account), info?.originalLanguage).also { last[q] = it }
     }
 
     /** Fichiers du compte qui sont cette œuvre (titres et année TMDB). */
-    private suspend fun accountStreams(q: DebridQuery): List<DebridStream> {
-        val key = settings.current().tmdbApiKey
-        val info = tmdb.details(key, if (q.series) "tv" else "movie", q.tmdbId, full = false) ?: return emptyList()
+    private suspend fun accountStreams(q: DebridQuery, info: com.sokoul.iptv.data.net.TmdbInfo): List<DebridStream> {
         val titles = listOfNotNull(info.title, info.originalTitle).distinct()
         return cloud.forWork(titles, info.year, q.season.takeIf { q.series }, q.episode.takeIf { q.series })
     }
@@ -129,8 +137,8 @@ class DebridSources @Inject constructor(
     }
 
     /**
-     * Toutes les extensions en parallèle (15 s chacune), résultats fusionnés : une même release renvoyée par deux
-     * extensions n'apparaît qu'une fois. Gardé 6 h en mémoire (sauf réponse vide : on réessaiera).
+     * Toutes les extensions en parallèle (10 s chacune), résultats fusionnés : une même release renvoyée par deux
+     * extensions n'apparaît qu'une fois. Gardé 30 min en mémoire (sauf réponse vide : on réessaiera).
      */
     private suspend fun addonStreams(q: DebridQuery): List<DebridStream> {
         cache[q]?.takeIf { System.currentTimeMillis() - it.at < TTL_MS }?.let { return it.streams }
@@ -153,11 +161,11 @@ class DebridSources @Inject constructor(
             withTimeoutOrNull(TIMEOUT_MS) {
                 http.newCall(Request.Builder().url(url).header("User-Agent", "SokoulTV/2.0").build()).await().use { r ->
                     // jamais l'adresse dans le journal : elle contient le jeton Real-Debrid
-                    if (r.isSuccessful) r.body?.string() else { Timber.w("Extension de sources (${url.host}) : HTTP ${r.code}"); null }
+                    if (r.isSuccessful) r.body?.string() else { SourceLog.add("Recherche ${url.host} : HTTP ${r.code}"); null }
                 }
-            }
-        } catch (e: CancellationException) { throw e } catch (e: Exception) { Timber.w("Extension de sources injoignable (${url.host})"); null }
-        return text?.let { parse(it, json) }.orEmpty()
+            } ?: run { SourceLog.add("Recherche ${url.host} : pas de réponse en ${TIMEOUT_MS / 1000} s"); null }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { SourceLog.add("Recherche ${url.host} : injoignable (${e.javaClass.simpleName})"); null }
+        return text?.let { parse(it, json) }.orEmpty().also { if (text != null) SourceLog.add("Recherche ${url.host} : ${it.size} versions, ${it.count { s -> s.infoHash == null }} sans empreinte") }
     }
 
     /** Une version déjà trouvée (lecteur relancé avec la même clé). */
@@ -170,6 +178,7 @@ class DebridSources @Inject constructor(
             languages = com.sokoul.iptv.data.repo.VersionPicker.parseOrder(s.vodLanguages),
             maxBytes = maxBytes(s, ethernet()),
             supports4k = com.sokoul.iptv.data.repo.DeviceCaps.supports4k,
+            dolbyVision = com.sokoul.iptv.data.repo.DeviceCaps.dolbyVision,
             iptvBlocked = iptvBlocked,
             tieOrigin = com.sokoul.iptv.domain.SourceOrigin.entries.firstOrNull { it.name == s.sourceTie },
         )
@@ -181,8 +190,50 @@ class DebridSources @Inject constructor(
     }.getOrDefault(false)
 
     companion object {
-        const val TTL_MS = 6 * 3600_000L
-        const val TIMEOUT_MS = 15_000L
+        const val TTL_MS = 30 * 60_000L
+        const val TIMEOUT_MS = 10_000L
+
+        /**
+         * Version sans aucune langue dans son nom : c'est la langue d'origine du film (les releases étrangères ne
+         * l'indiquent pas). VO, ou VF si l'œuvre est française ; rangée dans sa section au lieu de « Autres ».
+         */
+        private val tagStart = Regex("^\\s*(\\[[^]]*]|\\([^)]*\\)|\\{[^}]*})\\s*")
+        private val titleEnd = Regex(
+            "\\b(s\\d{1,2}(e\\d{1,3})?|e\\d{2,3}|season|saison|integrale|complete|(19|20)\\d{2}|\\d{3,4}p|4k|uhd|multi|truefrench|french|vff|vfq|vostfr|bluray|web|webrip|hdtv)\\b",
+        )
+        /** Mots qu'on peut trouver après le titre sans changer d'œuvre (« The Office US »). */
+        private val sameWork = setOf("us", "uk", "au", "nz", "ca", "fr", "the", "series", "serie", "tv")
+
+        private fun norm(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "").lowercase().replace('&', ' ').replace(Regex("[^a-z0-9]+"), " ").trim()
+
+        /**
+         * Le nom de la release est celui d'une autre œuvre qui commence par le même titre (« Lupin Zero » pour
+         * « Lupin ») : seule la partie avant la saison, l'année ou la qualité compte. Un nom sans rapport (titre
+         * anglais d'une série étrangère) n'est jamais écarté : on ne rejette que ce qui est sûr.
+         */
+        fun otherWork(name: String, titles: List<String>, series: Boolean = false): Boolean {
+            // série : « Lupin Part 2 » est une saison ; film : « Dune Part Two » est un autre film
+            val allowed = if (series) sameWork + setOf("part", "partie", "vol", "volume", "1", "2", "3", "4", "5", "6", "7", "8", "9") else sameWork
+            var raw = name
+            while (true) { val m = tagStart.find(raw) ?: break; raw = raw.substring(m.range.last + 1) }
+            val n = norm(raw)
+            val head = titleEnd.find(n)?.let { n.substring(0, it.range.first) }?.trim() ?: return false
+            if (head.isEmpty()) return false
+            val known = titles.map(::norm).filter { it.isNotEmpty() }
+            if (known.any { it == head || it.startsWith("$head ") }) return false
+            return known.any { t ->
+                head.startsWith("$t ") && head.removePrefix("$t ").split(' ').any { it !in allowed && it.isNotEmpty() }
+            }
+        }
+
+        fun untagged(streams: List<DebridStream>, originalLanguage: String?): List<DebridStream> {
+            if (originalLanguage.isNullOrBlank()) return streams
+            val lang = if (originalLanguage.equals("fr", ignoreCase = true)) com.sokoul.iptv.domain.AudioLanguage.VF else com.sokoul.iptv.domain.AudioLanguage.VO
+            return streams.map { s ->
+                if (s.release.language == null && s.release.audio.isEmpty()) s.copy(release = s.release.copy(language = lang)) else s
+            }
+        }
 
         /** 0 = automatique : 25 Go en Wi-Fi, sans limite en câble ; 200 = sans limite. */
         fun maxBytes(s: AppSettings, ethernet: Boolean): Long? = when {
@@ -238,6 +289,8 @@ class DebridSources @Inject constructor(
                 val hash = o.str("infoHash")?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{40}")) }
                     // extension réglée avec Real-Debrid : l'empreinte est dans le lien (« /resolve/realdebrid/…/<hash>/… »)
                     ?: url?.let { u -> Regex("[/=]([0-9a-fA-F]{40})(?=[/?]|$)").find(u)?.groupValues?.get(1)?.lowercase() }
+                    // Comet : lien opaque (base64), l'empreinte est dans « bingeGroup » (« comet|<hash> »)
+                    ?: hints?.str("bingeGroup")?.let { b -> Regex("(?<![0-9a-fA-F])([0-9a-fA-F]{40})(?![0-9a-fA-F])").find(b)?.groupValues?.get(1)?.lowercase() }
                 if (url == null && hash == null) return@mapNotNull null
                 val name = o.str("name").orEmpty()
                 val title = o.str("title") ?: o.str("description").orEmpty()

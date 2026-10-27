@@ -293,4 +293,13 @@ object DeviceCaps {
             }
         }.getOrDefault(true)
     }
+
+    /** Décodeur Dolby Vision présent : sinon une version DV passe après une HDR10 de même définition. */
+    val dolbyVision: Boolean by lazy {
+        runCatching {
+            android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+                !info.isEncoder && info.supportedTypes.any { it.equals("video/dolby-vision", true) }
+            }
+        }.getOrDefault(true)
+    }
 }

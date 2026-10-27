@@ -21,7 +21,11 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class DebridOfferViewModel @Inject constructor(playlists: PlaylistRepository, debrid: DebridSources) : ViewModel() {
+class DebridOfferViewModel @Inject constructor(
+    private val playlists: PlaylistRepository,
+    debrid: DebridSources,
+    private val browse: com.sokoul.iptv.data.repo.BrowseRepository,
+) : ViewModel() {
     val enabled = MutableStateFlow(false)
     var pid = 0L
         private set
@@ -31,6 +35,16 @@ class DebridOfferViewModel @Inject constructor(playlists: PlaylistRepository, de
             pid = playlists.activeNow()?.id ?: 0
             enabled.value = pid != 0L && debrid.searchEnabled()
         }
+    }
+
+    /** Fiche de l'abonnement si le titre y est (toutes les sources : IPTV + Real-Debrid), sinon lecture Real-Debrid seule. */
+    suspend fun target(w: Work): Any? {
+        val id = w.tmdbId ?: return null
+        val p = pid.takeIf { it != 0L } ?: playlists.activeNow()?.id ?: return null
+        browse.inCatalog(p, w.type, id)?.let { found ->
+            return if (found.type == ContentType.MOVIE) com.sokoul.iptv.ui.nav.MovieDetailRoute(found.id) else com.sokoul.iptv.ui.nav.SeriesDetailRoute(found.id)
+        }
+        return debridRoute(p, w)
     }
 }
 
@@ -51,5 +65,6 @@ fun rememberDebridPlay(nav: NavHostController): ((Work) -> Unit)? {
     val vm: DebridOfferViewModel = hiltViewModel()
     val enabled by vm.enabled.collectAsState()
     if (!enabled) return null
-    return { w -> debridRoute(vm.pid, w)?.let { nav.navigateOnce(it) } }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return { w -> scope.launch { vm.target(w)?.let { nav.navigateOnce(it) } } }
 }

@@ -33,6 +33,8 @@ object SourceRanker {
         val languages: List<String> = com.sokoul.iptv.data.repo.VersionPicker.DEFAULT_LANGUAGES,
         val maxBytes: Long? = null,
         val supports4k: Boolean = true,
+        /** L'appareil décode le Dolby Vision. */
+        val dolbyVision: Boolean = true,
         /** Connexion IPTV prise (enregistrement) ou en pause après un refus : l'IPTV passe en dernier. */
         val iptvBlocked: Boolean = false,
         /** Origine prioritaire à langue et image égales (Réglages › Bibliothèque) ; null = aucune. */
@@ -55,6 +57,8 @@ object SourceRanker {
                 .thenBy { frenchRank(it.value.stream.release.frenchVariant) }
                 .thenByDescending { it.value.stream.release.seeders ?: 0 }
                 .thenByDescending { it.value.stream.release.sizeBytes ?: 0 }
+                // ordre stable d'une recherche à l'autre : la clé, pas l'ordre d'arrivée des extensions
+                .thenBy { it.value.stream.key }
                 .thenBy { it.index },
         ).forEachIndexed { i, c -> inner[c.value] = i }
         val all: List<Candidate> = iptvC + debridC
@@ -64,7 +68,7 @@ object SourceRanker {
                 // VF et MULTI (qui contient le français) au même rang : la meilleure image l'emporte, la VF seulement à image égale
                 .thenBy { audioRank(it.source.language, prefs.languages) }
                 .thenBy { qualityRank(effectiveQuality(it, prefs)) }
-                .thenBy { hdrRank(it.source.hdr) }
+                .thenBy { hdrRank(it.source.hdr, prefs.dolbyVision) }
                 .thenBy { languageRank(it.source.language, prefs.languages) }
                 .thenBy { readyRank(it) }
                 .thenBy { if (id(it) in prefs.failed) 1 else 0 }
@@ -127,7 +131,12 @@ object SourceRanker {
         VideoQuality.UHD_4K -> 0; VideoQuality.FHD_1080 -> 1; VideoQuality.HD_720, null -> 2; VideoQuality.SD -> 3
     }
 
-    private fun hdrRank(h: HdrFormat?) = when (h) { HdrFormat.DOLBY_VISION -> 0; HdrFormat.HDR10 -> 1; null -> 2 }
+    /** Sans décodeur Dolby Vision, la HDR10 passe devant la DV (certaines DV ne s'affichent pas bien sans lui). */
+    private fun hdrRank(h: HdrFormat?, dv: Boolean) = when (h) {
+        HdrFormat.DOLBY_VISION -> if (dv) 0 else 1
+        HdrFormat.HDR10 -> if (dv) 1 else 0
+        null -> 2
+    }
 
     /** IPTV : lisible tout de suite ; Real-Debrid : déjà en cache, inconnu, à télécharger. */
     private fun readyRank(c: Candidate) = when (c) {

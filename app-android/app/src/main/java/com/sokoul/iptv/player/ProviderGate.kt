@@ -102,6 +102,14 @@ object ErrorPolicy {
         else -> ErrorDecision.Fail(describe)
     }
 
+    /** Refus d'un lien hors abonnement (Real-Debrid, extension de sources). */
+    fun linkRefusal(code: Int) = when (code) {
+        401, 403 -> "Lien refusé ($code) : clé Real-Debrid refusée ou lien expiré"
+        404, 410 -> "Fichier introuvable ($code) : retiré de Real-Debrid ou lien expiré"
+        429 -> "Limite atteinte (429) : trop de demandes, réessayez dans un instant"
+        else -> "Lien refusé (erreur $code)"
+    }
+
     fun backoff(attempt: Int): Long = minOf(500L * (1L shl minOf(attempt - 1, 5)), 15_000L)
 
     fun refusal(code: Int) = when (code) {

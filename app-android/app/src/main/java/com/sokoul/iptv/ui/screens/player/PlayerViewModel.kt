@@ -147,6 +147,7 @@ class PlayerViewModel @Inject constructor(
     private val rdResolver: com.sokoul.iptv.data.debrid.DebridResolver,
     private val cloud: com.sokoul.iptv.data.debrid.DebridCloud,
     private val trakt: com.sokoul.iptv.data.trakt.TraktSync,
+    private val browse: com.sokoul.iptv.data.repo.BrowseRepository,
 ) : ViewModel() {
 
     val route: PlayerRoute = savedState.toRoute()
@@ -365,7 +366,15 @@ class PlayerViewModel @Inject constructor(
                     )
                 }
                 setDebridQuery(q)
-                if (!playDebrid(title, resume, route.source, debridOnlySaver(), prepare = true)) throw IllegalStateException("Aucune version " + com.sokoul.iptv.ui.components.SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID) + " prête pour ce titre")
+                // film aussi dans l'abonnement (sous un autre nom) : ses versions IPTV rejoignent la liste et le secours
+                if (!q.series) loadIptvTwin(p, q.tmdbId)
+                if (!playDebrid(title, resume, route.source, debridOnlySaver(), prepare = true)) {
+                    // aucune version Real-Debrid lisible : l'abonnement prend le relais s'il a le film
+                    val twin = movieVersions.firstOrNull()
+                    if (twin == null || iptvBlocked()) throw IllegalStateException("Aucune version " + com.sokoul.iptv.ui.components.SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID) + " prête pour ce titre" + (lastRdError?.let { " (dernière erreur : $it)" } ?: ""))
+                    movieIndex = 0
+                    playMovie(p, twin, resume)
+                }
                 watchFailures()
             }
             PlayKind.RECORDING -> Unit
@@ -538,6 +547,19 @@ class PlayerViewModel @Inject constructor(
     private fun movieSaver(p: PlaylistEntity, m: com.sokoul.iptv.data.db.MovieEntity): suspend (Long, Long) -> Unit =
         { pos, dur -> library.saveProgress(p.id, ContentType.MOVIE, m.id, null, m.title, m.year?.toString(), m.poster, pos, dur) }
 
+    /**
+     * Titre lancé « Real-Debrid seul » (recherche, saga, reprise) mais présent dans l'abonnement : ses versions IPTV
+     * sont chargées comme pour un film de l'abonnement (liste « Langue et qualité », secours).
+     */
+    private suspend fun loadIptvTwin(p: PlaylistEntity, tmdbId: Int) {
+        val w = runCatching { browse.inCatalog(p.id, ContentType.MOVIE, tmdbId) }.getOrNull() ?: return
+        val m = catalog.movie(p.id, w.id) ?: return
+        val others = vod.movieVersions(p.id, m).filter { it.id != m.id }
+        movieVersions = vod.orderedMovies(p.id, listOf(m) + others)
+        movieIndex = 0
+        com.sokoul.iptv.data.debrid.SourceLog.add("Abonnement : « ${m.title} » trouvé aussi en IPTV (${movieVersions.size} versions)")
+    }
+
     private suspend fun playMovie(p: PlaylistEntity, m: com.sokoul.iptv.data.db.MovieEntity, startMs: Long) {
         currentDebrid = null
         movieUi(m, startMs)
@@ -564,8 +586,20 @@ class PlayerViewModel @Inject constructor(
                 val failedId = currentSourceId() ?: return@collect
                 val pos = sp.player.currentPosition.takeIf { it > 5_000 } ?: _ui.value.resumedFromMs
                 val was = _ui.value.sources.firstOrNull { it.current }
+                // lien Real-Debrid expiré en cours de lecture : on redemande un lien une fois et on reprend au même instant
+                val f = s as? StreamState.Failed
+                val rd = currentDebrid
+                if (rd != null && f?.code in EXPIRED_CODES && sp.player.currentPosition > 5_000 && relinked.add(rd.key)) {
+                    com.sokoul.iptv.data.debrid.SourceLog.add("Lecture : lien ${com.sokoul.iptv.ui.components.SourceLabels.originName(rd.toSource().origin)} expiré (${f?.code}), nouveau lien demandé")
+                    _ui.update { it.copy(notice = "Lien expiré, reprise de la lecture…") }
+                    if (playSource(failedId, pos, single = true)) return@collect
+                }
                 if (!blocked) {
                     markFailed(failedId)
+                    (s as? StreamState.Failed)?.let { f ->
+                        failReasons[failedId] = f.message
+                        com.sokoul.iptv.data.debrid.SourceLog.add("Échec " + com.sokoul.iptv.ui.components.SourceLabels.originName(currentDebrid?.toSource()?.origin ?: com.sokoul.iptv.domain.SourceOrigin.IPTV) + " : " + f.message)
+                    }
                     _ui.update { it.copy(notice = "Source indisponible, recherche d'une autre…") }
                     delay(FALLBACK_PAUSE_MS)
                     if (_player.value?.state?.value !is StreamState.Failed) return@collect // relancée entre-temps (Réessayer)
@@ -579,7 +613,7 @@ class PlayerViewModel @Inject constructor(
                 for (id in order) {
                     if (playSource(id, pos, single = true)) {
                         val now = _ui.value.sources.firstOrNull { it.current } ?: list.firstOrNull { it.id == id || id in it.mergedIds }
-                        _ui.update { it.copy(notice = if (blocked) iptvBusyNotice() else fallbackNotice(was, now)) }
+                        _ui.update { it.copy(notice = if (blocked) iptvBusyNotice() else fallbackNotice(was, now, failReasons[failedId])) }
                         return@collect
                     }
                 }
@@ -592,10 +626,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     /** « Source indisponible : lecture via Real-Debrid · même version » / « … · 720p ». */
-    private fun fallbackNotice(was: PlayerSource?, now: PlayerSource?): String {
-        if (now == null) return "Source indisponible : lecture d'une autre source"
+    private fun fallbackNotice(was: PlayerSource?, now: PlayerSource?, reason: String? = null): String {
+        val why = reason?.let { " ($it)" } ?: ""
+        if (now == null) return "Source indisponible$why : lecture d'une autre source"
         val same = was != null && SourceCatalog.versionKey(was) == SourceCatalog.versionKey(now)
-        return "Source indisponible : lecture via " + com.sokoul.iptv.ui.components.SourceLabels.originName(now.origin) +
+        return "Source indisponible$why : lecture via " + com.sokoul.iptv.ui.components.SourceLabels.originName(now.origin) +
             if (same) " · même version" else " · " + PlayerSources.short(now)
     }
 
@@ -603,6 +638,7 @@ class PlayerViewModel @Inject constructor(
     private fun currentSourceId(): String? = currentDebrid?.let { RD_PREFIX + it.key } ?: when (route.kind) {
         PlayKind.EPISODE -> currentEpisode?.let { PlayerSources.episodeId(it.seriesId, it.id) }
         PlayKind.MOVIE -> movieVersions.getOrNull(movieIndex)?.id
+        PlayKind.DEBRID -> movieVersions.getOrNull(movieIndex)?.id
         PlayKind.CLOUD -> "cloud"
         else -> null
     }
@@ -627,6 +663,11 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { runCatching { db.vod().saveProbe(probe) } }
     }
 
+    /** Raison du dernier échec de chaque source dans cette session (id comme [PlayerSource.id]). */
+    private val failReasons = HashMap<String, String>()
+    /** Versions Real-Debrid dont le lien expiré a déjà été redemandé (une fois par version). */
+    private val relinked = HashSet<String>()
+    private var switchJob: Job? = null
     private val failedIptv = HashSet<String>()
     private val iptvFailuresRead = HashSet<String>()
 
@@ -643,9 +684,12 @@ class PlayerViewModel @Inject constructor(
 
     /** Lance une autre source de l'œuvre en cours (panneau « Langue et qualité »), au même instant. */
     fun switchVersion(id: String) {
-        viewModelScope.launch {
+        // un choix plus récent remplace le précédent : une résolution en retard ne lance jamais l'ancienne source
+        switchJob?.cancel()
+        switchJob = viewModelScope.launch {
             saveNow()
             val pos = _player.value?.player?.currentPosition?.takeIf { it > 5_000 } ?: 0
+            failReasons -= id
             if (id.startsWith(RD_PREFIX)) {
                 if (failedDebrid.remove(id.removePrefix(RD_PREFIX))) saveFailure(RD_FAIL_PREFIX + id.removePrefix(RD_PREFIX), 0)
             } else if (failedIptv.remove(id)) saveFailure(IPTV_FAIL_PREFIX + id, 0)
@@ -779,7 +823,7 @@ class PlayerViewModel @Inject constructor(
         if (route.kind == PlayKind.CLOUD) return listOf(PlayerSources.fromCloud(cloudItem, route.title))
         // versions IPTV, identifiées comme dans le lecteur (id du film, ou « ep:série|épisode »)
         val iptv: List<Pair<com.sokoul.iptv.data.repo.VodVersion, Boolean>> = when (route.kind) {
-            PlayKind.MOVIE -> {
+            PlayKind.MOVIE, PlayKind.DEBRID -> if (movieVersions.isEmpty()) emptyList() else {
                 val names = categoryNames(p.id, ContentType.MOVIE)
                 val q = vod.qualities(p.id, ContentType.MOVIE, movieVersions.map { it.id })
                 movieVersions.mapIndexed { i, m -> m.toVersion().copy(categoryName = names[m.categoryId], measured = q[m.id]) to (rd == null && i == movieIndex) }
@@ -808,7 +852,7 @@ class PlayerViewModel @Inject constructor(
         return com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv.map { it.first }, streams, prefs).map { c ->
             when (c) {
                 is com.sokoul.iptv.data.debrid.Candidate.Iptv ->
-                    PlayerSources.fromIptv(c.version, current = c.version.id == currentIptv).copy(failed = c.version.id in failedIptv)
+                    PlayerSources.fromIptv(c.version, current = c.version.id == currentIptv).copy(failed = c.version.id in failedIptv, failReason = failReasons[c.version.id])
                 is com.sokoul.iptv.data.debrid.Candidate.Debrid -> {
                     val s = PlayerSources.fromDebrid(c.stream, current = rd?.key == c.stream.key, id = RD_PREFIX + c.stream.key)
                     val m = debridMeasured[c.stream.key]?.takeIf { it.hasImage }
@@ -818,7 +862,7 @@ class PlayerViewModel @Inject constructor(
                         hdr = m.hdr ?: s.hdr, basis = QualityBasis.MEASURED,
                     )
                     val mm = debridMeasured[c.stream.key]
-                    PlayerSources.withHeard(measured, mm?.audioLanguage, mm?.fromPlayer == true).copy(failed = c.stream.key in failedDebrid)
+                    PlayerSources.withHeard(measured, mm?.audioLanguage, mm?.fromPlayer == true).copy(failed = c.stream.key in failedDebrid, failReason = failReasons[RD_PREFIX + c.stream.key])
                 }
             }
         }
@@ -852,6 +896,8 @@ class PlayerViewModel @Inject constructor(
     private var debridLoad: kotlinx.coroutines.Deferred<List<com.sokoul.iptv.data.debrid.DebridStream>>? = null
     private var currentDebrid: com.sokoul.iptv.data.debrid.DebridStream? = null
     private val failedDebrid = HashSet<String>()
+    /** Dernière erreur Real-Debrid (affichée quand plus aucune version ne se lance). */
+    private var lastRdError: String? = null
 
     /** Connexion IPTV indisponible : enregistrement en cours, ou pause imposée après un refus. */
     private fun iptvBlocked() = gate.recording.value != null || gate.remainingMs() > 0
@@ -920,6 +966,8 @@ class PlayerViewModel @Inject constructor(
                 null
             } catch (e: Exception) {
                 Timber.w("Version Real-Debrid écartée : ${e.message}")
+                failReasons[RD_PREFIX + s.key] = com.sokoul.iptv.data.debrid.SourceLog.reason(e)
+                lastRdError = failReasons[RD_PREFIX + s.key]
                 markFailed(RD_PREFIX + s.key)
                 null
             } ?: continue
@@ -927,6 +975,7 @@ class PlayerViewModel @Inject constructor(
             _ui.update { it.copy(notice = null, versionLabel = "$label · " + com.sokoul.iptv.ui.components.SourceLabels.originShort(com.sokoul.iptv.domain.SourceOrigin.DEBRID)) }
             play(ResolvedStream(listOf(url), settingsStore.current().userAgent, null, isLive = false, provider = false), title, startMs)
             trackProgress(save)
+            guardPlaceholder(s)
             return true
         }
         val p = preparing
@@ -935,12 +984,38 @@ class PlayerViewModel @Inject constructor(
                 notice = when {
                     p != null -> "$rdName télécharge la version ${p.first} (${p.second} %). Elle sera lisible une fois prête, marquée « dans votre compte »."
                     order.isEmpty() -> null
-                    else -> "Aucune version $rdName prête pour le moment"
+                    else -> "Aucune version $rdName prête pour le moment" + (lastRdError?.let { " (dernière erreur : $it)" } ?: "")
                 },
             )
         }
         return false
     }
+
+    /**
+     * Une extension peut renvoyer une courte vidéo « téléchargement en cours » au lieu du film : durée de moins de
+     * 3 min pour un film ou un épisode = version pas prête. Le flux est rejeté (secours), rien n'est enregistré.
+     */
+    private fun guardPlaceholder(s: com.sokoul.iptv.data.debrid.DebridStream) {
+        placeholderJob?.cancel()
+        placeholderJob = viewModelScope.launch {
+            repeat(40) {
+                delay(500)
+                if (currentDebrid?.key != s.key) return@launch
+                val p = _player.value ?: return@launch
+                val dur = p.player.duration
+                if (dur != C.TIME_UNSET && dur > 0) {
+                    if (dur < PLACEHOLDER_MAX_MS) {
+                        val why = "vidéo d'attente de l'extension (${dur / 1000} s) : version pas prête sur " + com.sokoul.iptv.ui.components.SourceLabels.originName(s.toSource().origin)
+                        com.sokoul.iptv.data.debrid.SourceLog.add("Lecture « ${s.title.take(80)} » : $why")
+                        failReasons[RD_PREFIX + s.key] = why
+                        p.reject("Version pas prête : $why")
+                    }
+                    return@launch
+                }
+            }
+        }
+    }
+    private var placeholderJob: Job? = null
 
     /** Version en cours de téléchargement dans le compte : affichée « en préparation · n % », jamais « en échec ». */
     private fun markPreparing(key: String, progress: Int) {
@@ -1297,6 +1372,8 @@ class PlayerViewModel @Inject constructor(
         val dur = p.duration
         val pos = p.currentPosition
         if (dur == C.TIME_UNSET || dur <= 0 || pos < 5_000) return
+        // film ou épisode de moins de 3 min : vidéo d'attente ou d'erreur, jamais une reprise ni un « vu »
+        if (!_ui.value.isLive && dur < PLACEHOLDER_MAX_MS) return
         saver?.invoke(pos, dur)
         if (p.isPlaying) trakt.playing(traktItem(), pos * 100f / dur)
     }
@@ -1628,6 +1705,10 @@ class PlayerViewModel @Inject constructor(
 
     companion object {
         const val FALLBACK_PAUSE_MS = 4_000L
+        /** En dessous : vidéo d'attente ou d'erreur, pas un film ni un épisode. */
+        const val PLACEHOLDER_MAX_MS = 180_000L
+        /** Lien direct Real-Debrid périmé (refusé ou disparu) : redemandé une fois avant de changer de source. */
+        private val EXPIRED_CODES = setOf(403, 404, 410)
         /** Menu « Version » : identifiant d'une version Real-Debrid, et de l'épisode de l'abonnement. */
         const val RD_PREFIX = "rd:"
         /** Mesure et échec d'un flux Real-Debrid, rangés dans `vod_probe` sous ces préfixes + clé du flux. */

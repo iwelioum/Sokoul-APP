@@ -190,13 +190,20 @@ internal sealed interface VersionLine {
 internal fun versionTitle(g: VersionGroup): String =
     listOfNotNull(g.quality?.let(SourceLabels::quality), g.hdr).joinToString(" · ").ifEmpty { "Qualité non indiquée" }
 
+/** « a échoué : lien refusé (403) », sinon « a échoué récemment » (échec gardé 24 h), sinon rien. */
+internal fun failLabel(s: PlayerSource): String? = when {
+    s.failReason != null -> "a échoué : " + s.failReason
+    s.failed -> "a échoué récemment"
+    else -> null
+}
+
 /** Détail d'une source : « Abonnement IPTV · « FILMS 4K » · aussi dans « FR 4K » · qualité mesurée ». */
 internal fun sourceDetail(s: PlayerSource): String = listOfNotNull(
     s.where,
     PlayerSources.audioLine(s),
     s.alsoIn.takeIf { it.isNotEmpty() }?.joinToString(", ") { "« $it »" }?.let { "aussi dans $it" },
     PlayerSources.basisLabel(s.basis),
-    if (s.failed) "a échoué récemment" else null,
+    failLabel(s),
 ).joinToString(" · ")
 
 /**
@@ -236,7 +243,11 @@ internal fun sourceCountLine(sources: List<PlayerSource>, search: SourceSearch):
         0 -> "Aucune source trouvée"
         1 -> "1 source trouvée"
         else -> "$total sources trouvées"
-    } + if (counts.size > 1) " : " + counts.joinToString(" · ") { (o, n) -> "${SourceLabels.originShort(o)} $n" } else ""
+    } + if (total > 0) " : " + com.sokoul.iptv.domain.SourceOrigin.entries.joinToString(" · ") { o ->
+        // chaque origine toujours citée, même à 0 : on sait ce qui a été cherché
+        val n = counts.firstOrNull { it.first == o }?.second ?: 0
+        "${SourceLabels.originShort(o)} $n" + if (n == 0 && o == com.sokoul.iptv.domain.SourceOrigin.IPTV) " (pas dans l'abonnement)" else ""
+    } else ""
     val rd = SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID)
     return base + when (search) {
         SourceSearch.SEARCHING -> " · $rd : recherche…"
@@ -328,7 +339,7 @@ fun VersionPanel(
                             OriginChips(s, Modifier.padding(start = 10.dp))
                         }
                         if (!g.isCurrent) QualityDelta(s, current)
-                        RowNote(listOfNotNull(s.where, PlayerSources.audioLine(s), if (s.failed) "a échoué récemment" else null).joinToString(" · "), SokoulColors.TextSecondary)
+                        RowNote(listOfNotNull(s.where, PlayerSources.audioLine(s), failLabel(s)).joinToString(" · "), SokoulColors.TextSecondary)
                         if (n > 0) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (open) Icons.Default.ExpandMore else Icons.Default.ChevronRight, null, Modifier.size(14.dp), tint = SokoulColors.TextMuted)
                             Text(

@@ -362,6 +362,20 @@ class BrowseRepository @Inject constructor(
         )
     }
 
+    /**
+     * L'œuvre TMDB [tmdbId] est-elle dans l'abonnement ? Même rapprochement que les sagas : identifiant TMDB du fournisseur,
+     * correspondance déjà mémorisée, titre français ou original à un an près, nom exact d'un titre publié sans année.
+     * Sert à ne jamais lire « Real-Debrid seul » un titre que l'abonnement propose aussi.
+     */
+    suspend fun inCatalog(pid: Long, type: ContentType, tmdbId: Int): Work? {
+        val c = ctx(pid, type)
+        val api = enrich.apiKey()
+        val info = if (api.isBlank()) null else runCatching { tmdb.details(api, c.kind, tmdbId, full = false) }.getOrNull()
+        val item = TmdbItem(tmdbId, info?.title.orEmpty(), info?.originalTitle, info?.year, null, null, null, null)
+        return runCatching { c.matchPairs(listOf(item), limit = 1, byName = info != null).firstOrNull()?.second }
+            .onFailure { Timber.w(it, "Recherche dans l'abonnement") }.getOrNull()
+    }
+
     private suspend fun Ctx.byIds(ids: List<String>): List<Work> {
         val b = db.browse()
         val order = ids.withIndex().associate { it.value to it.index }

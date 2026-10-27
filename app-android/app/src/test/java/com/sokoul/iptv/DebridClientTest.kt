@@ -198,4 +198,61 @@ class DebridClientTest {
         }
         assertTrue(calls.none { it.url.contains("addMagnet") })
     }
+
+    // --- Lecture par le compte plutôt que par le lien de l'extension ---
+
+    private fun movieStream(url: String?, h: String? = hash) =
+        com.sokoul.iptv.data.debrid.DebridStream("k", "Film.2024.FRENCH.1080p", url, h, null, null, com.sokoul.iptv.data.debrid.Release())
+    private val movie = com.sokoul.iptv.data.debrid.DebridQuery(603, false)
+    private val addonLink = "https://comet.example/playback/opaque"
+
+    private fun accountReplies(): (Call) -> Triple<Int, String, Map<String, String>> = { c ->
+        when {
+            c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+            c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"M1"}""", emptyMap())
+            c.url.endsWith("/torrents/info/M1") -> Triple(200, """{"id":"M1","status":"downloaded","files":[{"id":1,"path":"/Film.mkv","bytes":9,"selected":1}],"links":["https://real-debrid.com/d/F"]}""", emptyMap())
+            c.url.endsWith("/unrestrict/link") -> Triple(200, """{"download":"https://dl.rd/film.mkv"}""", emptyMap())
+            else -> Triple(204, "", emptyMap())
+        }
+    }
+
+    @Test fun `empreinte connue - lecture par le compte, jamais par le lien de l extension`() = runBlocking {
+        withKey()
+        reply = accountReplies()
+        val r = com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }
+        assertEquals("https://dl.rd/film.mkv", r.resolve(movieStream(addonLink), movie))
+        assertTrue(calls.any { it.url.endsWith("/torrents/addMagnet") })
+    }
+
+    @Test fun `sans empreinte - lien de l extension, aucun appel au compte`() = runBlocking {
+        withKey()
+        reply = accountReplies()
+        assertEquals(addonLink, com.sokoul.iptv.data.debrid.DebridResolver(rd).resolve(movieStream(addonLink, h = null), movie))
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun `compte en panne - lien de l extension en secours, cle refusee - jamais`() = runBlocking {
+        withKey()
+        reply = { Triple(503, "{}", emptyMap()) }
+        assertEquals(addonLink, com.sokoul.iptv.data.debrid.DebridResolver(rd).resolve(movieStream(addonLink), movie))
+        reply = { Triple(401, """{"error":"bad_token","error_code":8}""", emptyMap()) }
+        try { com.sokoul.iptv.data.debrid.DebridResolver(rd).resolve(movieStream(addonLink), movie); fail() } catch (e: RdException) { assertEquals(401, e.code) }
+    }
+
+    @Test fun `pack de saison sans l episode demande - aucune autre video choisie`() = runBlocking {
+        withKey()
+        val other = """[{"id":1,"path":"/Show.S02E04.mkv","bytes":2000,"selected":0},{"id":2,"path":"/Show.S02E06.mkv","bytes":2100,"selected":0}]"""
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+                c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"P1"}""", emptyMap())
+                c.url.endsWith("/torrents/info/P1") -> Triple(200, """{"id":"P1","status":"waiting_files_selection","files":$other,"links":[]}""", emptyMap())
+                else -> Triple(204, "", emptyMap())
+            }
+        }
+        try { com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }.resolve(packStream(), episode); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridNotReady) {
+            assertEquals("Aucun fichier vidéo correspondant dans cette version", e.message)
+        }
+        assertTrue("rien choisi, torrent supprimé", calls.none { it.url.contains("selectFiles") } && calls.any { it.method == "DELETE" })
+    }
 }

@@ -55,6 +55,8 @@ data class PlayerSource(
     val ready: Boolean? = null,
     /** A échoué récemment : gardée et affichée, mais essayée en dernier. */
     val failed: Boolean = false,
+    /** Raison du dernier échec dans cette session (« lien refusé (403) »), affichée à la place de « a échoué récemment ». */
+    val failReason: String? = null,
 )
 
 object PlayerSources {
