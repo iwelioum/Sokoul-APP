@@ -36,7 +36,11 @@ object SourceCatalog {
     /** Clé de langue : langue connue, sinon pays du fournisseur, sinon inconnue. */
     fun languageKey(s: PlayerSource): String = s.language?.name ?: s.region?.let { "R:$it" } ?: "?"
 
-    fun versionKey(s: PlayerSource): String = languageKey(s) + "|" + (s.quality?.name ?: "?") + "|" + (s.hdr ?: "")
+    /** Version = langue + définition. Les variantes HDR d'une même définition sont des sources de la version (la meilleure en tête). */
+    fun versionKey(s: PlayerSource): String = languageKey(s) + "|" + (s.quality?.name ?: "?")
+
+    /** Langue choisie dans les Réglages (VF, MULTI, VOSTFR, VO) : les autres sont réunies sous « Autres langues ». */
+    fun mainLanguage(g: VersionGroup, languages: List<String>): Boolean = g.language?.name?.let { it in languages } == true
 
     /**
      * Doublons : même origine et même empreinte de fichier. On garde la ligne la mieux classée (ou celle en cours),
@@ -64,7 +68,7 @@ object SourceCatalog {
         s.language?.let { l -> languages.indexOf(l.name).takeIf { it >= 0 } ?: languages.size } ?: (languages.size + if (s.region != null) 1 else 2)
 
     /**
-     * Versions, dans l'ordre : langue (ordre des Réglages, puis pays, puis inconnue), définition, HDR.
+     * Versions, dans l'ordre : langue (ordre des Réglages, puis pays, puis inconnue), puis définition.
      * Dans une version, les sources gardent l'ordre reçu (classement neutre de `SourceRanker`).
      */
     fun group(sources: List<PlayerSource>, languages: List<String>): List<VersionGroup> =
@@ -74,8 +78,7 @@ object SourceCatalog {
         }.sortedWith(
             compareBy<VersionGroup> { languageOrder(it.best, languages) }
                 .thenBy { it.region.orEmpty() }
-                .thenBy { it.quality?.ordinal ?: VideoQuality.entries.size }
-                .thenBy { if (it.hdr != null) 0 else 1 },
+                .thenBy { it.quality?.ordinal ?: VideoQuality.entries.size },
         )
 
     /** Nombre de sources (doublons fusionnés) par origine, dans l'ordre de l'énumération. */

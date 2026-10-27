@@ -14,6 +14,7 @@ import com.sokoul.iptv.parser.long
 import com.sokoul.iptv.parser.str
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -100,7 +101,7 @@ class DebridSources @Inject constructor(
     suspend fun enabled(): Boolean = rd.configured() && !profiles.isKids()
 
     /** Recherche de nouvelles versions active : Real-Debrid utilisable et extension de sources renseignée. */
-    suspend fun searchEnabled(): Boolean = settings.current().debridAddon.isNotEmpty() && enabled()
+    suspend fun searchEnabled(): Boolean = enabled() && addonUrls().isNotEmpty()
 
     /**
      * Versions Real-Debrid de l'œuvre : celles de l'extension de sources (si elle est renseignée) et les fichiers
@@ -121,24 +122,42 @@ class DebridSources @Inject constructor(
         return cloud.forWork(titles, info.year, q.season.takeIf { q.series }, q.episode.takeIf { q.series })
     }
 
+    /** Adresses à interroger : Torrentio et Comet (jeton ajouté maintenant, jamais stocké), plus celles ajoutées à la main. */
+    private suspend fun addonUrls(): List<String> {
+        val s = settings.current()
+        return DebridAddons.urls(DebridAddons.parse(s.debridAddons), s.debridAddon, rd.token())
+    }
+
+    /**
+     * Toutes les extensions en parallèle (15 s chacune), résultats fusionnés : une même release renvoyée par deux
+     * extensions n'apparaît qu'une fois. Gardé 6 h en mémoire (sauf réponse vide : on réessaiera).
+     */
     private suspend fun addonStreams(q: DebridQuery): List<DebridStream> {
         cache[q]?.takeIf { System.currentTimeMillis() - it.at < TTL_MS }?.let { return it.streams }
+        val urls = addonUrls()
+        if (urls.isEmpty()) return emptyList()
         val s = settings.current()
-        if (s.debridAddon.isEmpty()) return emptyList()
         val imdb = tmdb.imdbId(s.tmdbApiKey, if (q.series) "tv" else "movie", q.tmdbId) ?: return emptyList()
         val path = if (q.series) "stream/series/$imdb:${q.season}:${q.episode}.json" else "stream/movie/$imdb.json"
-        val url = "${s.debridAddon}/$path".toHttpUrlOrNull() ?: return emptyList()
+        val results = kotlinx.coroutines.coroutineScope {
+            urls.map { base -> async { fetch("$base/$path") } }.map { it.await() }
+        }
+        val streams = combine(results)
+        if (streams.isNotEmpty()) cache[q] = Entry(System.currentTimeMillis(), streams)
+        return streams
+    }
+
+    private suspend fun fetch(address: String): List<DebridStream> {
+        val url = address.toHttpUrlOrNull() ?: return emptyList()
         val text = try {
             withTimeoutOrNull(TIMEOUT_MS) {
                 http.newCall(Request.Builder().url(url).header("User-Agent", "SokoulTV/2.0").build()).await().use { r ->
-                    if (r.isSuccessful) r.body?.string() else { Timber.w("Extension de sources : HTTP ${r.code}"); null }
+                    // jamais l'adresse dans le journal : elle contient le jeton Real-Debrid
+                    if (r.isSuccessful) r.body?.string() else { Timber.w("Extension de sources (${url.host}) : HTTP ${r.code}"); null }
                 }
             }
-        } catch (e: CancellationException) { throw e } catch (e: Exception) { Timber.w("Extension de sources injoignable"); null }
-            ?: return emptyList()
-        val streams = parse(text, json)
-        cache[q] = Entry(System.currentTimeMillis(), streams)
-        return streams
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { Timber.w("Extension de sources injoignable (${url.host})"); null }
+        return text?.let { parse(it, json) }.orEmpty()
     }
 
     /** Une version déjà trouvée (lecteur relancé avec la même clé). */
@@ -174,6 +193,27 @@ class DebridSources @Inject constructor(
         }
 
         /**
+         * Résultats de plusieurs extensions → une liste sans doublon : même clé, même empreinte de torrent (et fichier),
+         * ou même nom de fichier et même taille. L'ordre de la première extension est gardé.
+         */
+        fun combine(results: List<List<DebridStream>>): List<DebridStream> {
+            val seen = HashSet<String>()
+            val out = mutableListOf<DebridStream>()
+            for (list in results) for (s in list) {
+                val name = (s.filename ?: s.title.lineSequence().firstOrNull())?.lowercase()?.filter { it.isLetterOrDigit() }
+                val ids = listOfNotNull(
+                    "k:" + s.key,
+                    s.infoHash?.let { "h:$it:" + (s.fileIdx ?: -1) },
+                    if (!name.isNullOrEmpty() && s.release.sizeBytes != null) "n:$name|" + s.release.sizeBytes / 50_000_000 else null,
+                )
+                if (ids.any { it in seen }) continue
+                seen += ids
+                out += s
+            }
+            return out
+        }
+
+        /**
          * Versions de l'extension + fichiers du compte : une version de l'extension déjà dans le compte (même empreinte)
          * est marquée « dans votre compte » (ou « en préparation ») ; les autres fichiers du compte s'ajoutent à la fin.
          */
@@ -196,6 +236,8 @@ class DebridSources @Inject constructor(
                 val hints = o["behaviorHints"] as? JsonObject
                 val url = o.str("url")?.takeIf { it.startsWith("http") }
                 val hash = o.str("infoHash")?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{40}")) }
+                    // extension réglée avec Real-Debrid : l'empreinte est dans le lien (« /resolve/realdebrid/…/<hash>/… »)
+                    ?: url?.let { u -> Regex("[/=]([0-9a-fA-F]{40})(?=[/?]|$)").find(u)?.groupValues?.get(1)?.lowercase() }
                 if (url == null && hash == null) return@mapNotNull null
                 val name = o.str("name").orEmpty()
                 val title = o.str("title") ?: o.str("description").orEmpty()

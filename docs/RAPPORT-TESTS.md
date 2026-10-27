@@ -966,3 +966,28 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
 - **Laissé tel quel :**
   - la qualité mesurée d'une série IPTV reste rangée par série, ce qui correspond à une version du fournisseur, pas par épisode ;
   - le modèle commun pour une troisième origine de sources reste à faire.
+
+### 18.3 Real-Debrid complet, Real-Debrid d'abord, affichage rangé (27/10/2026)
+- **Problème signalé :** on voyait plus d'IPTV que de Real-Debrid. Aucune extension de recherche n'était réglée, donc Real-Debrid ne montrait que les fichiers du compte.
+- **Recherche Real-Debrid intégrée :**
+  - Torrentio (releases françaises en tête) et Comet sont interrogés ensemble et en parallèle, avec la clé Real-Debrid ajoutée au moment de la requête. La clé n'est jamais stockée dans une adresse.
+  - Les résultats sont fusionnés sans doublon : même empreinte, ou même nom et même taille.
+  - Réglages › Real-Debrid : « Recherche de sources » (Torrentio, Comet) et « Extension supplémentaire ».
+  - La clé est masquée dans les journaux (`realdebrid=…`, configuration Comet).
+- **Real-Debrid d'abord :**
+  - à langue et image égales, Real-Debrid passe devant l'IPTV. Le réglage « Source prioritaire » (Réglages › Bibliothèque, défaut Real-Debrid) permet d'inverser ;
+  - une meilleure image l'emporte toujours.
+- **MULTI = français + VO :**
+  - une release MULTI a le même rang que la VF, et la meilleure image décide. Sur Spider-Man : Brand New Day, « Reprendre » lançait une VF 1080p WEBRip ; il lance maintenant la MULTI 4K Dolby Vision ;
+  - la VF ne passe devant qu'à image égale ;
+  - même règle pour les versions IPTV entre elles ;
+  - une release « MULTI » qui n'annonce que d'autres langues (🇬🇧 / 🇮🇳) n'est plus prise pour du français.
+- **Affichage rangé :**
+  - **Fiche film :** une carte par langue et par définition. Les variantes HDR d'une même définition sont regroupées sous la carte, la meilleure en tête. Les cartes sont allégées : définition en grand, release et taille, puis origine, codec et « +n ». Les langues hors préférences tiennent dans une seule carte « Autres » (Spider-Man : 45 versions, de 68 cartes à 9 cartes).
+  - **Panneau « Langue et qualité » du lecteur :** même regroupement, une section « Autres langues ». Le repère orange « Image moins bonne » est retiré ; seul « Image meilleure » reste, en vert. Le style du lecteur est inchangé.
+  - **Accueil :** la rangée « Mes fichiers Real-Debrid » est retirée.
+- **Tests :** 361 tests, 0 échec ; lint 0 erreur. Nouveau `SourceSearchTest` (7 tests) : adresses des extensions et base64 Comet, masquage de la clé, fusion multi-extensions, Real-Debrid d'abord, MULTI contre VF, MULTI sans français, regroupement. `GroupingTest` est mis à jour : MULTI 4K avant VF 720p.
+- **Box** (un flux à la fois, lecteur fermé) :
+  - la fiche Spider-Man trouve 431 sources (IPTV 14 · RD 417), dans les sections VF, MULTI, VOSTFR, VO et « Autres » ;
+  - le panneau du lecteur affiche 433 sources, avec les sections Français (VF) et Plusieurs langues (MULTI) ;
+  - la lecture est en cours sur la MULTI 4K Dolby Vision RD.

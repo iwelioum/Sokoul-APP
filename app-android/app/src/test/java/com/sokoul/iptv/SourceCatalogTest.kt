@@ -63,7 +63,7 @@ class SourceCatalogTest {
         )
         val g = SourceCatalog.group(list, langs)
         assertEquals(
-            listOf("VF|FHD_1080|", "VF|HD_720|", "VO|UHD_4K|", "R:IT|FHD_1080|", "?|?|"),
+            listOf("VF|FHD_1080", "VF|HD_720", "VO|UHD_4K", "R:IT|FHD_1080", "?|?"),
             g.map { SourceCatalog.versionKey(it.best) },
         )
         // VF 1080p : Real-Debrid et IPTV sous la même ligne, dans l'ordre reçu (classement neutre)
@@ -98,9 +98,9 @@ class SourceCatalogTest {
         val g = SourceCatalog.group(list, langs)
         val one = listOf(TrackOption("Français · 5.1", null, 0, true))
         val closed = versionLines(one, g, emptySet(), live = false)
-        assertEquals(listOf("h-VF", "vVF|FHD_1080|", "h-VO", "vVO|UHD_4K|"), closed.map { it.key })
-        val open = versionLines(one + TrackOption("Anglais", null, 1, false), g, setOf("VF|FHD_1080|"), live = false)
-        assertEquals(listOf("h-tracks", "t0", "t1", "h-VF", "vVF|FHD_1080|", "ard:vf1080", "h-VO", "vVO|UHD_4K|"), open.map { it.key })
+        assertEquals(listOf("h-VF", "vVF|FHD_1080", "h-VO", "vVO|UHD_4K"), closed.map { it.key })
+        val open = versionLines(one + TrackOption("Anglais", null, 1, false), g, setOf("VF|FHD_1080"), live = false)
+        assertEquals(listOf("h-tracks", "t0", "t1", "h-VF", "vVF|FHD_1080", "ard:vf1080", "h-VO", "vVO|UHD_4K"), open.map { it.key })
         // la version en cours montre la source en cours (IPTV), l'autre source est repliée dessous
         assertEquals("vf1080", (open[4] as VersionLine.Version).group.shown.id)
         // direct : seulement les pistes

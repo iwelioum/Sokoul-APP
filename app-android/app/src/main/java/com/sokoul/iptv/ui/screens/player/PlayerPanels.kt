@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
@@ -161,20 +160,16 @@ private fun OriginChips(s: PlayerSource, modifier: Modifier = Modifier, withQual
     }
 }
 
-/** Repère de qualité par rapport à la source en cours : « Image moins bonne : 720p » (orange) ou « Image meilleure : 4K » (vert). */
+/** Repère vert « Image meilleure : 4K » quand une version fait mieux que la source en cours (une image moins bonne se lit déjà dans le titre). */
 @Composable
 private fun QualityDelta(s: PlayerSource, current: PlayerSource?) {
     val q = s.quality ?: return
-    val (icon, color) = when {
-        PlayerSources.qualityDrop(s, current) -> Icons.Default.ArrowDownward to SokoulColors.Warning
-        PlayerSources.qualityGain(s, current) -> Icons.Default.ArrowUpward to SokoulColors.Success
-        else -> return
-    }
+    if (!PlayerSources.qualityGain(s, current)) return
     Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(14.dp), tint = color)
+        Icon(Icons.Default.ArrowUpward, null, Modifier.size(14.dp), tint = SokoulColors.Success)
         Text(
-            (if (color == SokoulColors.Warning) "Image moins bonne : " else "Image meilleure : ") + SourceLabels.quality(q),
-            Modifier.padding(start = 4.dp), color = color, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+            "Image meilleure : " + SourceLabels.quality(q),
+            Modifier.padding(start = 4.dp), color = SokoulColors.Success, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
         )
     }
 }
@@ -186,7 +181,7 @@ internal sealed interface VersionLine {
     val key: String
     data class Header(val title: String, val hint: String? = null, override val key: String) : VersionLine
     data class Track(val option: TrackOption, val i: Int) : VersionLine { override val key get() = "t$i" }
-    data class Version(val group: VersionGroup) : VersionLine { override val key get() = "v" + SourceCatalog.versionKey(group.best) }
+    data class Version(val group: VersionGroup, val main: Boolean = true) : VersionLine { override val key get() = "v" + SourceCatalog.versionKey(group.best) }
     data class Alt(val source: PlayerSource, val groupKey: String) : VersionLine { override val key get() = "a" + source.id }
     data class Note(val text: String, override val key: String) : VersionLine
 }
@@ -206,9 +201,13 @@ internal fun sourceDetail(s: PlayerSource): String = listOfNotNull(
 
 /**
  * Lignes du panneau : pistes du fichier (si le choix existe), puis une section par langue, une ligne par version
- * (langue + qualité) avec la source qui sera lue, et ses autres sources quand la version est dépliée.
+ * (langue + définition) avec la source qui sera lue, et ses autres sources quand la version est dépliée.
+ * Les langues hors Réglages sont réunies dans une seule section « Autres langues », la langue en tête de ligne.
  */
-internal fun versionLines(tracks: List<TrackOption>, groups: List<VersionGroup>, expanded: Set<String>, live: Boolean): List<VersionLine> = buildList {
+internal fun versionLines(
+    tracks: List<TrackOption>, groups: List<VersionGroup>, expanded: Set<String>, live: Boolean,
+    languages: List<String> = com.sokoul.iptv.data.repo.VersionPicker.DEFAULT_LANGUAGES,
+): List<VersionLine> = buildList {
     if (live || tracks.size > 1) {
         add(VersionLine.Header(if (live) "Pistes audio" else "Dans ce fichier", if (live) null else "Même image, changement immédiat", "h-tracks"))
         if (tracks.isEmpty()) add(VersionLine.Note("Pistes en cours de lecture…", "n-tracks"))
@@ -216,12 +215,14 @@ internal fun versionLines(tracks: List<TrackOption>, groups: List<VersionGroup>,
     }
     var lang: String? = null
     groups.forEach { g ->
-        val k = SourceCatalog.languageKey(g.best)
+        // langues des Réglages : une section chacune ; les autres (pays, langue non indiquée) réunies dans « Autres langues »
+        val main = SourceCatalog.mainLanguage(g, languages)
+        val k = if (main) SourceCatalog.languageKey(g.best) else "OTHER"
         if (k != lang) {
             lang = k
-            add(VersionLine.Header(PlayerSources.languageName(g.language, g.region), null, "h-$k"))
+            add(VersionLine.Header(if (main) PlayerSources.languageName(g.language, g.region) else "Autres langues", null, "h-$k"))
         }
-        add(VersionLine.Version(g))
+        add(VersionLine.Version(g, main))
         val vk = SourceCatalog.versionKey(g.best)
         if (vk in expanded) g.others.forEach { add(VersionLine.Alt(it, vk)) }
     }
@@ -271,7 +272,7 @@ fun VersionPanel(
     val expanded = remember { mutableStateListOf<String>() }
     val groups = remember(sources, languages) { SourceCatalog.group(sources, languages) }
     val current = sources.firstOrNull { it.current }
-    val lines = versionLines(tracks, groups, expanded.toSet(), live)
+    val lines = versionLines(tracks, groups, expanded.toSet(), live, languages)
     val groupFocus = remember(groups) { groups.associate { SourceCatalog.versionKey(it.best) to FocusRequester() } }
     val focusIndex = lines.indexOfFirst { it is VersionLine.Version && it.group.isCurrent }.takeIf { it >= 0 }
         ?: lines.indexOfFirst { it is VersionLine.Track && it.option.selected }.takeIf { it >= 0 }
@@ -319,7 +320,7 @@ fun VersionPanel(
                     ) { f ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                versionTitle(g), Modifier.weight(1f, fill = false), color = if (f || g.isCurrent) SokoulColors.TextPrimary else SokoulColors.TextSecondary,
+                                if (line.main) versionTitle(g) else PlayerSources.languageName(g.language, g.region) + " · " + versionTitle(g), Modifier.weight(1f, fill = false), color = if (f || g.isCurrent) SokoulColors.TextPrimary else SokoulColors.TextSecondary,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
                                 fontWeight = if (g.isCurrent) FontWeight.Bold else FontWeight.Medium,
                             )
@@ -327,12 +328,12 @@ fun VersionPanel(
                             OriginChips(s, Modifier.padding(start = 10.dp))
                         }
                         if (!g.isCurrent) QualityDelta(s, current)
-                        RowNote(sourceDetail(s), SokoulColors.TextSecondary)
+                        RowNote(listOfNotNull(s.where, PlayerSources.audioLine(s), if (s.failed) "a échoué récemment" else null).joinToString(" · "), SokoulColors.TextSecondary)
                         if (n > 0) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (open) Icons.Default.ExpandMore else Icons.Default.ChevronRight, null, Modifier.size(14.dp), tint = SokoulColors.TextMuted)
                             Text(
-                                (if (n == 1) "1 autre source" else "$n autres sources") + " : " +
-                                    g.others.groupingBy { it.origin }.eachCount().entries.joinToString(" · ") { (o, c) -> "${SourceLabels.originShort(o)} $c" },
+                                (if (n == 1) "1 autre source" else "$n autres sources") + " (" +
+                                    g.others.groupingBy { it.origin }.eachCount().entries.joinToString(" · ") { (o, c) -> "${SourceLabels.originShort(o)} $c" } + ")",
                                 Modifier.padding(start = 4.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelMedium,
                             )
                         }

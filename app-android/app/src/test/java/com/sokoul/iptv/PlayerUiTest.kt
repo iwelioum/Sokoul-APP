@@ -202,7 +202,7 @@ class PlayerUiTest {
         // focus sur la version en cours ; la source Real-Debrid de la même version est repliée dessous
         val vf = "En cours, Français (VF) · 1080p, Abonnement IPTV · « FILMS FR », 1 autre source, sélectionné"
         rule.onNodeWithContentDescription(vf).assertIsFocused()
-        rule.onNodeWithText("1 autre source : RD 1").assertExists()
+        rule.onNodeWithText("1 autre source (RD 1)").assertExists()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
         rule.mainClock.advanceTimeBy(100)
         rule.onNodeWithText("Dune.2021.1080p.REMUX").assertExists()

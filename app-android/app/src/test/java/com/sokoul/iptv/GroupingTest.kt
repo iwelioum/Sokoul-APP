@@ -98,9 +98,9 @@ class GroupingTest {
     private val vf4k = VodVersion("vf4k", "Film VF 4K", "VF", "4K", "c")
     private val unknown = VodVersion("x", "Film", null, null, "c")
 
-    @Test fun `VF d'abord puis qualite`() {
+    @Test fun `francais d'abord (VF ou MULTI) puis qualite, VF avant MULTI a image egale`() {
         val order = VersionPicker.order(listOf(unknown, vostfr, multi4k, vf, vf4k)).map { it.id }
-        assertEquals(listOf("vf4k", "vf", "multi", "vost", "x"), order)
+        assertEquals(listOf("vf4k", "multi", "vf", "vost", "x"), order)
     }
 
     @Test fun `4K evitee si l'appareil ne la decode pas`() {

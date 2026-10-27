@@ -98,6 +98,8 @@ object ReleaseName {
             // « FRENCH.ENG » : deux pistes, dont le français
             french && others.any { it != "FR" } -> AudioLanguage.MULTI
             french -> AudioLanguage.VF
+            // « MULTI » avec des langues annoncées mais sans le français (🇬🇧 / 🇮🇳) : pas une version française
+            multi && others.isNotEmpty() -> null
             multi -> AudioLanguage.MULTI
             "VO" in t -> AudioLanguage.VO
             else -> null

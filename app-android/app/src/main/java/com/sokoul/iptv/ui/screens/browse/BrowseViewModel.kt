@@ -279,17 +279,8 @@ abstract class BrowseViewModel(
                     channels = list.take(30).map { ChannelTile(it, now[it.id]) })
             }.onStart { emit(null) }
 
-        // Accueil : fichiers ajoutés au compte Real-Debrid (téléphone, ordinateur), lisibles tout de suite
-        val rdCloud: Flow<BrowseRow?> = if (kind != BrowseKind.HOME) flowOf(null) else flow {
-            emit(null)
-            val items = runCatching { cloud.items() }.getOrDefault(emptyList())
-            if (items.isEmpty()) return@flow
-            val days = runCatching { cloud.daysLeft() }.getOrNull()
-            val tagline = if (days != null && days <= 7) "Abonnement Real-Debrid : plus que $days jour${if (days > 1) "s" else ""}" else "Ajoutés depuis votre téléphone ou votre ordinateur, prêts à lire."
-            emit(BrowseRow("rdcloud", "Mes fichiers Real-Debrid", tagline, RowStyle.LANDSCAPE, items.take(30).map(com.sokoul.iptv.data.debrid.DebridCloud::toWork)))
-        }
-
-        return combine(cw, channels, myList, rdCloud) { a, b, c, d -> listOfNotNull(a, b, d, c) }
+        // pas de rangée « Mes fichiers Real-Debrid » : les fichiers du compte apparaissent comme versions de leur fiche
+        return combine(cw, channels, myList) { a, b, c -> listOfNotNull(a, b, c) }
     }
 
     // --- actions ---------------------------------------------------------------------------------

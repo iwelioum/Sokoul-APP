@@ -319,6 +319,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val ranked by vm.ranked.collectAsStateWithLifecycle()
     val languages by vm.languages.collectAsStateWithLifecycle()
     var groupMenu by remember { mutableStateOf<com.sokoul.iptv.ui.screens.player.VersionGroup?>(null) }
+    var otherMenu by remember { mutableStateOf<List<com.sokoul.iptv.ui.screens.player.VersionGroup>?>(null) }
     val extras by vm.extras.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
@@ -376,7 +377,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val hero = DetailHeroData(
         title = title, logo = tm?.logo ?: extras.art?.logo, backdrop = tm?.backdrop ?: xt?.backdrop ?: extras.art?.background, poster = tm?.poster ?: xt?.poster ?: m.poster,
         rating = tm?.rating ?: xt?.rating ?: m.rating,
-        facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), durationMin?.takeIf { it > 0 }?.let { com.sokoul.iptv.ui.util.endsAt(it) }, best.language),
+        facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), durationMin?.takeIf { it > 0 }?.let { com.sokoul.iptv.ui.util.endsAt(it) }, topRd?.source?.language?.name ?: best.language),
         certification = tm?.certification, quality = topRd?.let { (listOfNotNull(it.source.quality?.let(SourceLabels::quality), it.source.hdr?.let(SourceLabels::hdr)) + SourceLabels.originName(it.source.origin)).joinToString(" · ") } ?: qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
         genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
         tagline = tm?.tagline, synopsis = synopsis,
@@ -410,14 +411,15 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
         if (sourceCount > 1) {
             // toutes les sources, toutes origines classées ensemble, rangées par version (langue + qualité), doublons fusionnés
             detailSection(
-                "versions", "Versions disponibles (${groups.size})",
+                "versions", "Versions disponibles",
                 com.sokoul.iptv.ui.screens.player.sourceCountLine(detailSources, com.sokoul.iptv.ui.screens.player.SourceSearch.DONE) + " · " +
                     if (l.isTouch) "touchez pour lire, appui long : toutes les sources" else "OK pour lire, appui long : toutes les sources",
             ) {
                 VersionsShelf(
-                    groups, firstId = detailSources.firstOrNull()?.id, preferredId = preferredId, memory = memory, below = belowVersions,
+                    groups, languages, firstId = detailSources.firstOrNull()?.id, preferredId = preferredId, memory = memory, below = belowVersions,
                     onPlay = { g -> playSource(g.best.id) },
                     onMenu = { g -> groupMenu = g },
+                    onOthers = { list -> otherMenu = list },
                 )
             }
         }
@@ -462,6 +464,21 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
                 }
             },
             onDismiss = { versionPicker = 0 },
+        )
+    }
+    otherMenu?.let { list ->
+        OptionsDialog(
+            "Autres langues",
+            list.map { g ->
+                val n = g.sources.size
+                MenuOption(
+                    com.sokoul.iptv.ui.screens.player.PlayerSources.languageName(g.language, g.region) + " · " + com.sokoul.iptv.ui.screens.player.versionTitle(g) +
+                        " · " + SourceLabels.originShort(g.best.origin) + if (n > 1) " · $n sources" else "",
+                    Icons.Default.PlayArrow,
+                ) { otherMenu = null; groupMenu = g }
+            },
+            subtitle = "Langues hors de vos préférences, et releases sans langue indiquée",
+            onDismiss = { otherMenu = null },
         )
     }
     groupMenu?.let { g ->

@@ -59,11 +59,28 @@ internal fun LazyListScope.debridSection(c: SettingsCtx) {
             icon = Icons.Default.Key,
         ) { c.sourceMenu(svc) }
     }
+    item("rd-search") {
+        val on = com.sokoul.iptv.data.debrid.DebridAddons.parse(s.debridAddons)
+        fun toggle(a: com.sokoul.iptv.data.debrid.SourceAddon) = c.vm.update { st ->
+            val now = com.sokoul.iptv.data.debrid.DebridAddons.parse(st.debridAddons).let { if (a in it) it - a else it + a }
+            st.copy(debridAddons = now.sortedBy { it.ordinal }.joinToString(",") { it.name })
+        }
+        SettingRow(
+            "Recherche de sources",
+            on.sortedBy { it.ordinal }.joinToString(" + ") { it.label }.ifEmpty { "Désactivée" },
+            "Toutes les versions Real-Debrid d'un film ou d'un épisode, interrogées ensemble et fusionnées sans doublon",
+            icon = Icons.Default.Extension,
+        ) {
+            c.choose("Recherche de sources", com.sokoul.iptv.data.debrid.SourceAddon.entries.map { a ->
+                MenuOption(a.label, selected = a in on) { toggle(a) }
+            })
+        }
+    }
     item("rd-addon") {
         SettingRow(
-            "Extension de recherche de sources",
+            "Extension supplémentaire",
             s.debridAddon.removePrefix("https://").substringBefore('/').ifEmpty { "Aucune" },
-            "Adresse d'une extension au format Stremio (…/manifest.json) : elle liste les versions d'un film ou d'un épisode",
+            "Adresse d'une autre extension au format Stremio (…/manifest.json), ajoutée à la recherche",
             icon = Icons.Default.Extension,
         ) {
             c.edit(TextEdit(

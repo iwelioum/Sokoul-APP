@@ -18,13 +18,13 @@ sealed interface Candidate {
 }
 
 /**
- * Un seul classement pour toutes les origines (« Lecture » lance le premier). Aucune origine n'est favorisée :
+ * Un seul classement pour toutes les origines (« Lecture » lance le premier) :
  * 1. lisible ici (taille sous la limite du réseau, 4K seulement si la box la décode, IPTV libre) ;
- * 2. langue préférée (VF > MULTI > VOSTFR > VO par défaut) ;
- * 3. définition (mesurée si le fichier a déjà été lu), puis HDR (Dolby Vision > HDR10) ;
- * 4. prête tout de suite avant « à préparer » ;
- * 5. fiabilité : qualité mesurée avant qualité lue dans le nom, puis pas d'échec récent ;
- * 6. origine choisie dans les Réglages pour départager (aucune par défaut) ;
+ * 2. langue préférée (VF > MULTI > VOSTFR > VO par défaut), VF et MULTI comptant comme « français » ;
+ * 3. définition (mesurée si le fichier a déjà été lu), puis HDR (Dolby Vision > HDR10), puis VF avant MULTI ;
+ * 4. prête tout de suite avant « à préparer », puis pas d'échec récent ;
+ * 5. origine prioritaire (Réglages ; Real-Debrid par défaut) : à langue et image égales, elle passe devant ;
+ * 6. qualité mesurée avant qualité lue dans le nom ;
  * 7. rang dans sa propre origine (IPTV : ordre de `VersionPicker` ; Real-Debrid : Remux > Blu-ray > WEB,
  *    TRUEFRENCH/VFF, nombre de sources, taille).
  */
@@ -35,7 +35,7 @@ object SourceRanker {
         val supports4k: Boolean = true,
         /** Connexion IPTV prise (enregistrement) ou en pause après un refus : l'IPTV passe en dernier. */
         val iptvBlocked: Boolean = false,
-        /** Origine qui passe devant à égalité parfaite (Réglages › Lecture) ; null = aucune. */
+        /** Origine prioritaire à langue et image égales (Réglages › Bibliothèque) ; null = aucune. */
         val tieOrigin: SourceOrigin? = null,
         /** Qualité mesurée lors d'une lecture précédente, par clé de flux Real-Debrid. */
         val debridMeasured: Map<String, VodQuality> = emptyMap(),
@@ -61,13 +61,16 @@ object SourceRanker {
         val order = all.withIndex().associate { (i, c) -> c to i }
         return all.sortedWith(
             compareBy<Candidate> { if (playable(it, prefs)) 0 else 1 }
-                .thenBy { languageRank(it.source.language, prefs.languages) }
+                // VF et MULTI (qui contient le français) au même rang : la meilleure image l'emporte, la VF seulement à image égale
+                .thenBy { audioRank(it.source.language, prefs.languages) }
                 .thenBy { qualityRank(effectiveQuality(it, prefs)) }
                 .thenBy { hdrRank(it.source.hdr) }
+                .thenBy { languageRank(it.source.language, prefs.languages) }
                 .thenBy { readyRank(it) }
-                .thenBy { if (measured(it, prefs) != null) 0 else 1 }
                 .thenBy { if (id(it) in prefs.failed) 1 else 0 }
+                // même langue, même image, prête : l'origine prioritaire (Real-Debrid par défaut) passe devant
                 .thenBy { if (prefs.tieOrigin == null || it.source.origin == prefs.tieOrigin) 0 else 1 }
+                .thenBy { if (measured(it, prefs) != null) 0 else 1 }
                 .thenBy { inner.getValue(it) }
                 .thenBy { order.getValue(it) },
         )
@@ -103,6 +106,17 @@ object SourceRanker {
 
     fun fromResolution(r: String): VideoQuality = when (r) {
         "4K" -> VideoQuality.UHD_4K; "1080p" -> VideoQuality.FHD_1080; "720p" -> VideoQuality.HD_720; else -> VideoQuality.SD
+    }
+
+    /**
+     * Rang « ce qu'on entend » : une release MULTI contient le français et la version originale, elle a donc
+     * le meilleur rang des deux (une MULTI 4K passe devant une VF 1080p).
+     */
+    fun audioRank(l: AudioLanguage?, order: List<String>): Int {
+        val r = languageRank(l, order)
+        if (l != AudioLanguage.MULTI) return r
+        // MULTI = français + version originale
+        return listOf(AudioLanguage.VF, AudioLanguage.VO).map { order.indexOf(it.name) }.filter { it >= 0 }.fold(r) { a, b -> minOf(a, b) }
     }
 
     fun languageRank(l: AudioLanguage?, order: List<String>): Int =

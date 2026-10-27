@@ -68,6 +68,9 @@ object HttpModule {
         .replace(Regex("(/(?:live|movie|series|timeshift)/)[^/]+/[^/]+/"), "$1***/***/")
         // clés des services de données (TMDB, OMDb, fanart.tv, TasteDive, Watchmode…), en paramètre ou en en-tête
         .replace(Regex("((?:api_key|apikey|apiKey|api-key|k|key|token)=)[^&\\s]+"), "$1***")
+        // extensions Real-Debrid : jeton dans le chemin (Torrentio « realdebrid=… », « /resolve/realdebrid/… », configuration Comet)
+        .replace(Regex("(realdebrid[=/])[^/|%&\\s]+"), "$1***")
+        .replace(Regex("(comet[^/\\s]*/)[A-Za-z0-9+_=-]{40,}"), "$1***")
         .replace(Regex("((?:X-API-Key|Api-Key|Authorization|api-key):\\s*)\\S.*", RegexOption.IGNORE_CASE), "$1***")}
 
 /** Exécute une requête GET et renvoie le corps, décompressé si c'est du gzip. */
