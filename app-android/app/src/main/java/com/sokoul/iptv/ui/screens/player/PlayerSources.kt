@@ -45,6 +45,12 @@ data class PlayerSource(
     val sizeBytes: Long? = null,
     /** Langues audio annoncées par le nom (« FR », « EN »…), affichées en clair dans le détail. */
     val audio: List<String> = emptyList(),
+    /** Langues réellement entendues lors d'une lecture (toutes les pistes étiquetées) : [audio] fait foi. */
+    val audioChecked: Boolean = false,
+    /** Real-Debrid : fichier déjà dans le compte de l'utilisateur. */
+    val inAccount: Boolean = false,
+    /** Real-Debrid : en cours de téléchargement dans le compte (pourcentage), null sinon. */
+    val preparing: Int? = null,
     /** Real-Debrid : prête tout de suite (true), à télécharger (false), inconnu (null). */
     val ready: Boolean? = null,
     /** A échoué récemment : gardée et affichée, mais essayée en dernier. */
@@ -67,8 +73,11 @@ object PlayerSources {
         return PlayerSource(
             id = id,
             origin = SourceOrigin.IPTV,
-            language = v.language?.let { runCatching { AudioLanguage.valueOf(it) }.getOrNull() },
-            region = if (v.language == null) VersionPicker.region(v.name)?.let { COUNTRY_LANG[it] ?: it } else null,
+            language = v.spokenLanguage?.let { runCatching { AudioLanguage.valueOf(it) }.getOrNull() },
+            region = if (v.spokenLanguage == null) com.sokoul.iptv.domain.SpokenLanguages.region(null, v.heard)
+                ?: VersionPicker.region(v.name)?.let { COUNTRY_LANG[it] ?: it } else null,
+            audio = v.heard,
+            audioChecked = v.heardComplete,
             quality = if (m != null) qualityOf(m.resolution) else com.sokoul.iptv.domain.PlaybackSources.quality(v.quality),
             hdr = m?.hdr ?: if (v.quality == "HDR") "HDR10" else null,
             codec = m?.videoCodec?.let(MediaInfo::codec) ?: nameCodec,
@@ -88,7 +97,13 @@ object PlayerSources {
     /** Version Real-Debrid : tout vient du nom de la release. */
     fun fromDebrid(s: DebridStream, current: Boolean, id: String): PlayerSource {
         val r = s.release
-        val state = when (r.cached) { true -> "prête"; false -> "à télécharger"; null -> null }
+        val state = when {
+            s.inAccount -> "dans votre compte"
+            s.preparing != null -> "en préparation · ${s.preparing} %"
+            r.cached == true -> "prête"
+            r.cached == false -> "à télécharger"
+            else -> null
+        }
         val name = (s.filename ?: s.title.lineSequence().firstOrNull())?.trim()?.takeIf { it.isNotEmpty() }
         return PlayerSource(
             id = id,
@@ -103,7 +118,9 @@ object PlayerSources {
             fileName = name,
             sameFile = if (name != null && r.sizeBytes != null) normalize(name) + "|" + r.sizeBytes else s.infoHash?.let { it.lowercase() + ":" + (s.fileIdx ?: 0) },
             sizeBytes = r.sizeBytes,
-            ready = r.cached,
+            ready = if (s.inAccount) true else r.cached,
+            inAccount = s.inAccount,
+            preparing = s.preparing,
             basis = if (r.quality != null) QualityBasis.NAME else QualityBasis.UNKNOWN,
             current = current,
         )
@@ -119,6 +136,23 @@ object PlayerSources {
             where = listOfNotNull(SourceLabels.originName(SourceOrigin.DEBRID) + " · Mes fichiers", item?.sizeBytes?.takeIf { it > 0 }?.let(SourceLabels::size)).joinToString(" · "),
             sizeBytes = item?.sizeBytes?.takeIf { it > 0 }, ready = true,
             fileName = item?.title ?: title, basis = if (r?.quality != null) QualityBasis.NAME else QualityBasis.UNKNOWN, current = true,
+        )
+    }
+
+    /**
+     * Ce qu'une lecture précédente a entendu (Real-Debrid) : langue corrigée si toutes les pistes étaient étiquetées,
+     * complétée sinon.
+     */
+    fun withHeard(s: PlayerSource, raw: String?, fromPlayer: Boolean): PlayerSource {
+        val heard = com.sokoul.iptv.domain.SpokenLanguages.parse(raw)
+        if (heard.isEmpty()) return s
+        val complete = com.sokoul.iptv.domain.SpokenLanguages.complete(raw, fromPlayer)
+        val lang = com.sokoul.iptv.domain.SpokenLanguages.language(s.language, heard, complete)
+        return s.copy(
+            language = lang,
+            region = if (lang == null) com.sokoul.iptv.domain.SpokenLanguages.region(null, heard) ?: s.region else null,
+            audio = if (complete || s.audio.isEmpty()) heard else s.audio,
+            audioChecked = complete,
         )
     }
 
@@ -143,6 +177,8 @@ object PlayerSources {
     fun audioLine(s: PlayerSource): String? {
         val names = s.audio.map { trackLanguageName(it.lowercase()) ?: it }
         return when {
+            s.audioChecked && names.size > 1 -> "langues entendues : " + names.joinToString(", ")
+            s.audioChecked && names.size == 1 -> "langue entendue : " + names[0]
             names.size > 1 -> "langues : " + names.joinToString(", ")
             names.size == 1 && s.language != null && s.language != AudioLanguage.VF -> "audio : " + names[0]
             else -> null

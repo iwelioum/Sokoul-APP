@@ -46,7 +46,7 @@ object SourceRanker {
     /** [iptv] dans l'ordre de `VersionPicker` (choix mémorisé, échecs) : cet ordre départage les versions IPTV entre elles. */
     fun rank(iptv: List<VodVersion>, debrid: List<DebridStream>, prefs: Prefs): List<Candidate> {
         val iptvC = iptv.map { Candidate.Iptv(it, PlaybackSources.fromIptv(it)) }
-        val debridC = debrid.map { Candidate.Debrid(it, it.toSource()) }
+        val debridC = debrid.map { Candidate.Debrid(it, heard(it, prefs)) }
         // rang de chaque candidat parmi ceux de sa propre origine (jamais comparé d'une origine à l'autre)
         val inner = HashMap<Candidate, Int>()
         iptvC.forEachIndexed { i, c -> inner[c] = i }
@@ -71,6 +71,16 @@ object SourceRanker {
                 .thenBy { inner.getValue(it) }
                 .thenBy { order.getValue(it) },
         )
+    }
+
+    /** Source Real-Debrid avec la langue entendue lors d'une lecture précédente (sinon celle du nom). */
+    private fun heard(s: DebridStream, p: Prefs): PlaybackSource {
+        val src = s.toSource()
+        val m = p.debridMeasured[s.key] ?: return src
+        val heard = com.sokoul.iptv.domain.SpokenLanguages.parse(m.audioLanguage)
+        if (heard.isEmpty()) return src
+        val lang = com.sokoul.iptv.domain.SpokenLanguages.language(src.language, heard, com.sokoul.iptv.domain.SpokenLanguages.complete(m.audioLanguage, m.fromPlayer))
+        return src.copy(language = lang, region = com.sokoul.iptv.domain.SpokenLanguages.region(lang, heard))
     }
 
     /** Identifiant de la source : id de la version IPTV, ou clé du flux Real-Debrid. */
@@ -108,7 +118,7 @@ object SourceRanker {
     /** IPTV : lisible tout de suite ; Real-Debrid : déjà en cache, inconnu, à télécharger. */
     private fun readyRank(c: Candidate) = when (c) {
         is Candidate.Iptv -> 0
-        is Candidate.Debrid -> when (c.stream.release.cached) { true -> 0; null -> 1; false -> 2 }
+        is Candidate.Debrid -> when (c.stream.readyNow) { true -> 0; null -> 1; false -> 2 }
     }
 
     private fun frenchRank(v: String?) = when (v) { "TRUEFRENCH", "VFF" -> 0; null -> 1; else -> 2 }

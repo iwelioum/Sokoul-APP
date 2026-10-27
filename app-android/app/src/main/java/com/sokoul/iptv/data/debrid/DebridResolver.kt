@@ -6,33 +6,42 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** La version n'est pas (encore) disponible : on passe à la suivante. */
-class DebridNotReady(message: String) : IOException(message)
+open class DebridNotReady(message: String) : IOException(message)
+
+/** Version en cours de téléchargement dans le compte Real-Debrid ([progress] %) : pas en panne, juste pas encore prête. */
+class DebridPreparing(val progress: Int) : DebridNotReady("Version en préparation sur Real-Debrid ($progress %)")
+
+/** Version pas en cache chez Real-Debrid (essai automatique) : écartée pour ce lancement, pas comptée comme un échec. */
+class DebridNotCached : DebridNotReady("Version pas encore prête sur Real-Debrid")
 
 /**
  * Version Real-Debrid → lien direct lisible.
  *
  * - Lien déjà résolu par l'extension : utilisé tel quel (le lecteur suit la redirection).
- * - Sinon (empreinte du torrent) : torrent déjà présent dans le compte et prêt → réutilisé ; sinon ajouté,
- *   seul le bon fichier est choisi (l'épisode dans un pack de saison), et s'il n'est pas prêt en ~3 s,
- *   le torrent ajouté est supprimé (rien ne s'accumule dans le compte) et [DebridNotReady] est levée.
+ * - Sinon (empreinte du torrent) : torrent déjà présent dans le compte et prêt → réutilisé ; présent mais pas prêt →
+ *   [DebridPreparing] (rien n'est ajouté). Sinon ajouté, seul le bon fichier est choisi (l'épisode dans un pack de saison).
+ * - Pas prêt en ~3 s : choisi par l'utilisateur ([keep]), le torrent reste dans le compte pour se télécharger
+ *   ([DebridPreparing]) ; essai automatique, il est supprimé (rien ne s'accumule) et [DebridNotReady] est levée.
  */
 @Singleton
 class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
     /** Remplaçable dans les tests. */
     internal var pollDelayMs = 1_000L
 
-    suspend fun resolve(s: DebridStream, q: DebridQuery): String {
+    suspend fun resolve(s: DebridStream, q: DebridQuery, keep: Boolean = false): String {
         s.url?.let { return it }
         val hash = s.infoHash ?: throw DebridNotReady("Version sans lien")
         val season = q.season.takeIf { q.series }
         val episode = q.episode.takeIf { q.series }
 
-        // déjà dans le compte, prêt, avec le bon fichier choisi : aucun ajout
-        rd.torrents(100).firstOrNull { it.hash == hash && it.ready }?.let { t ->
+        // déjà dans le compte : prêt avec le bon fichier choisi → aucun ajout ; en cours de téléchargement → on attend
+        val existing = rd.torrents(100).filter { it.hash == hash && it.status !in DEAD }
+        existing.firstOrNull { it.ready }?.let { t ->
             val info = rd.torrentInfo(t.id)
-            val file = pick(info.files, s, season, episode)
+            val file = pick(info.files.filter { it.selected }, s, season, episode) ?: pick(info.files, s, season, episode)
             if (file != null && file.selected) linkFor(info, file)?.let { return rd.unrestrict(it).url }
         }
+        existing.firstOrNull { !it.ready }?.let { throw DebridPreparing(it.progress.coerceIn(0, 100)) }
 
         val id = rd.addMagnet(s.magnet!!)
         try {
@@ -45,7 +54,10 @@ class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
                 if (info.status in DEAD) throw DebridNotReady("Version indisponible sur Real-Debrid")
                 if (attempt < POLLS - 1) delay(pollDelayMs)
             }
-            throw DebridNotReady("Version pas encore prête sur Real-Debrid")
+            if (keep) throw DebridPreparing(info.progress.coerceIn(0, 100))
+            throw DebridNotCached()
+        } catch (e: DebridPreparing) {
+            throw e
         } catch (e: Exception) {
             rd.deleteTorrent(id)
             throw e

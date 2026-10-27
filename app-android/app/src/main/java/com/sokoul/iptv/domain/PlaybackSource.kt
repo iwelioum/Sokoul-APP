@@ -52,8 +52,8 @@ object PlaybackSources {
         origin = SourceOrigin.IPTV,
         quality = quality(v.quality),
         hdr = if (v.quality == "HDR") HdrFormat.HDR10 else null,
-        language = v.language?.let { runCatching { AudioLanguage.valueOf(it) }.getOrNull() },
-        region = region ?: if (v.language == null) com.sokoul.iptv.data.repo.VersionPicker.region(v.name) else null,
+        language = v.spokenLanguage?.let { runCatching { AudioLanguage.valueOf(it) }.getOrNull() },
+        region = region ?: if (v.spokenLanguage == null) SpokenLanguages.region(null, v.heard) ?: com.sokoul.iptv.data.repo.VersionPicker.region(v.name) else null,
         group = v.categoryName,
     )
 

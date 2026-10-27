@@ -163,4 +163,39 @@ class DebridClientTest {
         assertEquals("https://dl.rd/old.mkv", com.sokoul.iptv.data.debrid.DebridResolver(rd).resolve(packStream(), episode))
         assertTrue(calls.none { it.url.contains("addMagnet") })
     }
+
+    @Test fun `version choisie a la main pas prete - gardee dans le compte, en preparation, pas un echec`() = runBlocking {
+        withKey()
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, "[]", emptyMap())
+                c.url.endsWith("/torrents/addMagnet") -> Triple(201, """{"id":"T8"}""", emptyMap())
+                c.url.endsWith("/torrents/info/T8") -> Triple(200, """{"id":"T8","status":"downloading","progress":12,"files":$packFiles,"links":[]}""", emptyMap())
+                else -> Triple(204, "", emptyMap())
+            }
+        }
+        val r = com.sokoul.iptv.data.debrid.DebridResolver(rd).apply { pollDelayMs = 0 }
+        try { r.resolve(packStream(), episode, keep = true); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridPreparing) {
+            assertEquals(12, e.progress)
+        }
+        assertTrue("torrent gardé pour se télécharger", calls.none { it.method == "DELETE" })
+        // essai automatique : pas en cache, écarté sans être compté comme une panne
+        calls.clear()
+        try { r.resolve(packStream(), episode); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridNotCached) {}
+        assertTrue(calls.any { it.method == "DELETE" })
+    }
+
+    @Test fun `torrent deja en telechargement dans le compte - rien n est ajoute`() = runBlocking {
+        withKey()
+        reply = { c ->
+            when {
+                c.url.contains("/torrents?") -> Triple(200, """[{"id":"DL","hash":"$hash","status":"downloading","progress":45,"files":[]}]""", emptyMap())
+                else -> Triple(500, "{}", emptyMap())
+            }
+        }
+        try { com.sokoul.iptv.data.debrid.DebridResolver(rd).resolve(packStream(), episode, keep = true); fail() } catch (e: com.sokoul.iptv.data.debrid.DebridPreparing) {
+            assertEquals(45, e.progress)
+        }
+        assertTrue(calls.none { it.url.contains("addMagnet") })
+    }
 }

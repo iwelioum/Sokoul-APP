@@ -106,7 +106,8 @@ object SourceCatalog {
             groups.filter { it !== home && lang != null && languageKey(it.best) == lang }.forEach { addAll(it.sources) }
             if (anyLanguage || home == null) groups.filter { it !== home && (lang == null || languageKey(it.best) != lang) }.forEach { addAll(it.sources) }
         }
-        return ordered.filter { it.origin !in skip && (!it.failed || it === failed) }
+        // jamais une version à télécharger ou en préparation : le secours doit démarrer tout de suite
+        return ordered.filter { it.origin !in skip && (!it.failed || it === failed) && (it.ready != false || it === failed) }
             .flatMap { listOf(it.id) + it.mergedIds }
             .filter { it != failedId }
             .distinct()

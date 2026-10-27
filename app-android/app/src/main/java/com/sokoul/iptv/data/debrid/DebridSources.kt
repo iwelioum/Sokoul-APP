@@ -38,12 +38,19 @@ data class DebridStream(
     val fileIdx: Int?,
     val filename: String?,
     val release: Release,
+    /** Déjà dans le compte Real-Debrid de l'utilisateur, prêt (« Mes fichiers ») : lecture immédiate. */
+    val inAccount: Boolean = false,
+    /** En cours de téléchargement dans le compte (pourcentage), null sinon. */
+    val preparing: Int? = null,
 ) {
     val magnet get() = infoHash?.let { "magnet:?xt=urn:btih:$it" }
 
+    /** Prête tout de suite : dans le compte, ou annoncée en cache par l'extension. */
+    val readyNow: Boolean? get() = if (inAccount) true else if (preparing != null) false else release.cached
+
     fun toSource(): PlaybackSource = PlaybackSource(
         id = key, origin = SourceOrigin.DEBRID, quality = release.quality, hdr = release.hdr, language = release.language,
-        state = if (release.cached == true) SourceState.CACHED_INSTANT else SourceState.AVAILABLE,
+        state = if (readyNow == true) SourceState.CACHED_INSTANT else SourceState.AVAILABLE,
         sizeBytes = release.sizeBytes, rip = release.source?.label,
     )
 }
@@ -82,17 +89,42 @@ class DebridSources @Inject constructor(
     private val rd: RealDebridClient,
     @ApplicationContext private val context: Context,
     private val profiles: com.sokoul.iptv.data.repo.ProfileRepository,
+    private val cloud: DebridCloud,
 ) {
     private data class Entry(val at: Long, val streams: List<DebridStream>)
     private val cache = ConcurrentHashMap<DebridQuery, Entry>()
+    /** Dernière liste complète (extension + compte) par œuvre. */
+    private val last = ConcurrentHashMap<DebridQuery, List<DebridStream>>()
 
-    /** Real-Debrid utilisable : clé (ou association) et extension de sources renseignées. */
-    suspend fun enabled(): Boolean = settings.current().debridAddon.isNotEmpty() && rd.configured() && !profiles.isKids()
+    /** Real-Debrid utilisable : clé (ou association), hors profil Enfant. Les fichiers du compte sont alors des sources. */
+    suspend fun enabled(): Boolean = rd.configured() && !profiles.isKids()
 
+    /** Recherche de nouvelles versions active : Real-Debrid utilisable et extension de sources renseignée. */
+    suspend fun searchEnabled(): Boolean = settings.current().debridAddon.isNotEmpty() && enabled()
+
+    /**
+     * Versions Real-Debrid de l'œuvre : celles de l'extension de sources (si elle est renseignée) et les fichiers
+     * déjà dans le compte. Une même empreinte n'apparaît qu'une fois, marquée « dans votre compte ».
+     */
     suspend fun find(q: DebridQuery): List<DebridStream> {
+        if (!enabled()) return emptyList()
+        val addon = runCatching { addonStreams(q) }.getOrElse { if (it is CancellationException) throw it; emptyList() }
+        val account = runCatching { accountStreams(q) }.getOrElse { if (it is CancellationException) throw it; emptyList() }
+        return merge(addon, account).also { last[q] = it }
+    }
+
+    /** Fichiers du compte qui sont cette œuvre (titres et année TMDB). */
+    private suspend fun accountStreams(q: DebridQuery): List<DebridStream> {
+        val key = settings.current().tmdbApiKey
+        val info = tmdb.details(key, if (q.series) "tv" else "movie", q.tmdbId, full = false) ?: return emptyList()
+        val titles = listOfNotNull(info.title, info.originalTitle).distinct()
+        return cloud.forWork(titles, info.year, q.season.takeIf { q.series }, q.episode.takeIf { q.series })
+    }
+
+    private suspend fun addonStreams(q: DebridQuery): List<DebridStream> {
         cache[q]?.takeIf { System.currentTimeMillis() - it.at < TTL_MS }?.let { return it.streams }
         val s = settings.current()
-        if (s.debridAddon.isEmpty() || !rd.configured() || profiles.isKids()) return emptyList()
+        if (s.debridAddon.isEmpty()) return emptyList()
         val imdb = tmdb.imdbId(s.tmdbApiKey, if (q.series) "tv" else "movie", q.tmdbId) ?: return emptyList()
         val path = if (q.series) "stream/series/$imdb:${q.season}:${q.episode}.json" else "stream/movie/$imdb.json"
         val url = "${s.debridAddon}/$path".toHttpUrlOrNull() ?: return emptyList()
@@ -110,7 +142,7 @@ class DebridSources @Inject constructor(
     }
 
     /** Une version déjà trouvée (lecteur relancé avec la même clé). */
-    fun cached(q: DebridQuery, key: String): DebridStream? = cache[q]?.streams?.firstOrNull { it.key == key }
+    fun cached(q: DebridQuery, key: String): DebridStream? = (last[q] ?: cache[q]?.streams)?.firstOrNull { it.key == key }
 
     /** Préférences de classement selon les réglages et le réseau du moment. */
     suspend fun prefs(iptvBlocked: Boolean = false): SourceRanker.Prefs {
@@ -139,6 +171,21 @@ class DebridSources @Inject constructor(
             s.debridMaxGb > 0 -> s.debridMaxGb * 1_000_000_000L
             ethernet -> null
             else -> 25_000_000_000L
+        }
+
+        /**
+         * Versions de l'extension + fichiers du compte : une version de l'extension déjà dans le compte (même empreinte)
+         * est marquée « dans votre compte » (ou « en préparation ») ; les autres fichiers du compte s'ajoutent à la fin.
+         */
+        fun merge(addon: List<DebridStream>, account: List<DebridStream>): List<DebridStream> {
+            val byHash = account.filter { it.infoHash != null }.associateBy { it.infoHash!!.lowercase() }
+            val used = HashSet<String>()
+            val out = addon.map { a ->
+                val c = a.infoHash?.lowercase()?.let(byHash::get) ?: return@map a
+                used += c.key
+                a.copy(inAccount = c.inAccount, preparing = c.preparing)
+            }
+            return out + account.filter { it.key !in used }
         }
 
         /** Réponse Stremio `{"streams":[…]}` → versions lisibles (films filmés en salle écartés). */

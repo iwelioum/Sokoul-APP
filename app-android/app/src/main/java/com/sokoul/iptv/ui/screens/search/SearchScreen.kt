@@ -207,7 +207,7 @@ class SearchViewModel @Inject constructor(
     /** Titres TMDB que l'abonnement n'a pas, lisibles via Real-Debrid (au plus 15 ; rien sans Real-Debrid ou en profil Enfant). */
     private suspend fun debridExtras(q: String, s: Set<SearchKind>, have: List<Work>): List<Work> {
         if (SearchKind.MOVIES !in s && SearchKind.SERIES !in s) return emptyList()
-        if (!runCatching { debrid.enabled() }.getOrDefault(false)) return emptyList()
+        if (!runCatching { debrid.searchEnabled() }.getOrDefault(false)) return emptyList()
         val key = runCatching { settings.current().tmdbApiKey }.getOrDefault("")
         val found = runCatching { tmdb.searchMulti(key, q) }.getOrDefault(emptyList())
         return com.sokoul.iptv.data.debrid.DebridSearch.extras(found, have, movies = SearchKind.MOVIES in s, series = SearchKind.SERIES in s)

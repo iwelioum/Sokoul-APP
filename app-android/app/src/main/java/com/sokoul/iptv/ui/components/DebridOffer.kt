@@ -29,7 +29,7 @@ class DebridOfferViewModel @Inject constructor(playlists: PlaylistRepository, de
     init {
         viewModelScope.launch {
             pid = playlists.activeNow()?.id ?: 0
-            enabled.value = pid != 0L && debrid.enabled()
+            enabled.value = pid != 0L && debrid.searchEnabled()
         }
     }
 }

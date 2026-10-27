@@ -239,7 +239,8 @@ internal fun sourceCountLine(sources: List<PlayerSource>, search: SourceSearch):
     val rd = SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID)
     return base + when (search) {
         SourceSearch.SEARCHING -> " · $rd : recherche…"
-        SourceSearch.OFF -> " · $rd : recherche de sources non activée"
+        SourceSearch.OFF -> " · $rd : non configuré"
+        SourceSearch.ACCOUNT -> " · $rd : vos fichiers seulement (recherche de sources non activée)"
         SourceSearch.DONE -> ""
     }
 }
@@ -265,7 +266,7 @@ fun VersionPanel(
     tracks: List<TrackOption>, sources: List<PlayerSource>, languages: List<String>, search: SourceSearch, resumeAt: String,
     modifier: Modifier = Modifier, onTrack: (TrackOption) -> Unit, onSource: (PlayerSource) -> Unit,
 ) {
-    val live = sources.isEmpty() && search == SourceSearch.DONE
+    val live = sources.isEmpty() && (search == SourceSearch.DONE || search == SourceSearch.ACCOUNT)
     val entry = remember { FocusRequester() }
     val expanded = remember { mutableStateListOf<String>() }
     val groups = remember(sources, languages) { SourceCatalog.group(sources, languages) }

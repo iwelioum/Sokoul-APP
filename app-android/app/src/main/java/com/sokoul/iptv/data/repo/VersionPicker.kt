@@ -10,7 +10,19 @@ data class VodVersion(
     val categoryName: String? = null,
     /** Qualité réelle, quand elle a été mesurée : prime sur l'étiquette du nom. */
     val measured: VodQuality? = null,
-)
+) {
+    /** Langues entendues lors d'une lecture (ou données par le panel) : « FR », « EN »… ; vide = jamais mesuré. */
+    val heard: List<String> get() = com.sokoul.iptv.domain.SpokenLanguages.parse(measured?.audioLanguage)
+
+    /** Toutes les pistes ont été entendues et étiquetées : la mesure fait foi sur le nom. */
+    val heardComplete: Boolean get() = com.sokoul.iptv.domain.SpokenLanguages.complete(measured?.audioLanguage, measured?.fromPlayer == true)
+
+    /** Langue retenue (VF, MULTI, VOSTFR, VO ou null) : celle entendue si on la connaît, sinon celle du nom. */
+    val spokenLanguage: String?
+        get() = if (heard.isEmpty()) language else com.sokoul.iptv.domain.SpokenLanguages.language(
+            language?.let { runCatching { com.sokoul.iptv.domain.AudioLanguage.valueOf(it) }.getOrNull() }, heard, heardComplete,
+        )?.name
+}
 
 /**
  * Ordre de lancement des versions d'une même œuvre :
@@ -42,7 +54,7 @@ object VersionPicker {
         failed: Set<String> = emptySet(),
         supports4k: Boolean = true,
     ): List<VodVersion> {
-        fun langRank(v: VodVersion) = languages.indexOf(v.language).let { if (it < 0) languages.size else it }
+        fun langRank(v: VodVersion) = languages.indexOf(v.spokenLanguage).let { if (it < 0) languages.size else it }
         fun qualityRank(v: VodVersion) = when (v.measured?.resolution?.let { r -> mapOf("4K" to "4K", "1080p" to "FHD", "720p" to "HD", "SD" to "SD")[r] } ?: v.quality) {
             "4K" -> if (supports4k) 0 else 4
             "FHD" -> 1

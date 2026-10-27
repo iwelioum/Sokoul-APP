@@ -524,19 +524,33 @@ class SeriesDetailViewModel @Inject constructor(
     /** Préférences du classement (langues, réseau, origine à égalité), pour classer ensemble IPTV et Real-Debrid à l'écran. */
     val rankPrefs = MutableStateFlow(com.sokoul.iptv.data.debrid.SourceRanker.Prefs())
 
-    /** Cherche les versions Real-Debrid d'un épisode (une fois ; rien sans compte ou en profil Enfant). */
+    /** Meilleur épisode de l'abonnement par (saison, épisode), parmi toutes les versions de la série qui l'ont. */
+    val bestIptvEpisode = MutableStateFlow<Map<Pair<Int, Int>, EpisodeEntity>>(emptyMap())
+
+    /**
+     * Classe toutes les versions d'un épisode (une fois) : chaque version de la série (séries en double) qui l'a,
+     * et Real-Debrid (rien sans compte ou en profil Enfant). « Lecture » lance la première, quelle que soit son origine.
+     */
     fun loadEpisodeRd(season: Int, episode: Int) = viewModelScope.launch {
         val tmdbId = tmdb.value?.id ?: return@launch
         val k = season to episode
         if (!rdAsked.add(k)) return@launch
-        if (!debrid.enabled()) return@launch
-        val q = com.sokoul.iptv.data.debrid.DebridQuery(tmdbId, series = true, season = season, episode = episode)
-        val found = runCatching { debrid.find(q) }.getOrDefault(emptyList())
-        // classé avec la version IPTV affichée : si une version RD passe devant, « Lecture » la lance
-        val iptv = versions.value.firstOrNull { it.id == primaryId.value }?.let { listOf(it.toVersion().copy(measured = qualities.value[it.id])) }.orEmpty()
-        val prefs = debrid.prefs()
+        val same = allEpisodes.value.filter { it.season == season && it.episode == episode }
+        // épisodes pas encore chargés : on réessaiera quand ils arrivent
+        if (same.isEmpty() && allEpisodes.value.isEmpty()) { rdAsked -= k; return@launch }
+        val bySeries = same.associateBy { it.seriesId }
+        // versions IPTV dans l'ordre de préférence de la série (celle affichée d'abord à égalité)
+        val iptv = versions.value.filter { it.id in bySeries }.sortedBy { if (it.id == primaryId.value) 0 else 1 }
+            .map { it.toVersion().copy(measured = qualities.value[it.id]) }
+        val prefs = runCatching { debrid.prefs() }.getOrDefault(com.sokoul.iptv.data.debrid.SourceRanker.Prefs())
         rankPrefs.value = prefs
+        val found = if (runCatching { debrid.enabled() }.getOrDefault(false)) {
+            runCatching { debrid.find(com.sokoul.iptv.data.debrid.DebridQuery(tmdbId, series = true, season = season, episode = episode)) }.getOrDefault(emptyList())
+        } else emptyList()
         val ranked = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, found, prefs)
+        ranked.filterIsInstance<com.sokoul.iptv.data.debrid.Candidate.Iptv>().firstOrNull()?.let { c ->
+            bySeries[c.version.id]?.let { bestIptvEpisode.value = bestIptvEpisode.value + (k to it) }
+        }
         if (ranked.firstOrNull() is com.sokoul.iptv.data.debrid.Candidate.Debrid) rdFirst.value = rdFirst.value + k
         episodeRd.value = episodeRd.value + (k to ranked.filterIsInstance<com.sokoul.iptv.data.debrid.Candidate.Debrid>().map { it.stream })
     }
@@ -702,6 +716,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val allEpisodes by vm.allEpisodes.collectAsStateWithLifecycle()
     val episodeRd by vm.episodeRd.collectAsStateWithLifecycle()
     val rdFirst by vm.rdFirst.collectAsStateWithLifecycle()
+    val bestIptvEpisode by vm.bestIptvEpisode.collectAsStateWithLifecycle()
     val rankPrefs by vm.rankPrefs.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
@@ -741,7 +756,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
         nav.navigateOnce(PlayerRoute(PlayKind.EPISODE, pid, e.id, parentId = e.seriesId, fromStart = fromStart, source = key))
     }
     // Real-Debrid de l'épisode du bouton principal : cherché dès l'ouverture (une requête)
-    LaunchedEffect(action?.episode?.id, tmdb?.id) { action?.episode?.let { vm.loadEpisodeRd(it.season, it.episode) } }
+    LaunchedEffect(action?.episode?.id, tmdb?.id, allEpisodes.isEmpty()) { action?.episode?.let { vm.loadEpisodeRd(it.season, it.episode) } }
     val seasonSeen = { n: Int ->
         val list = episodes.filter { it.season == n }
         list.isNotEmpty() && list.all { bySe[it.season to it.episode]?.finished == true }
@@ -772,7 +787,11 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
             label = EpisodeResolver.label(a),
             detail = listOfNotNull(EpisodeResolver.hint(a), rd?.let { com.sokoul.iptv.ui.components.SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID) + " · " + com.sokoul.iptv.ui.components.SourceLabels.text(it.toSource()) }).joinToString(" · ").ifEmpty { null },
             progress = p?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
-            onClick = { if (rd != null) playEpisodeRd(a.episode, rd.key, a is SeriesAction.Rewatch) else playEpisode(a.episode, a is SeriesAction.Rewatch) },
+            onClick = {
+                // sinon : la meilleure version de l'abonnement pour cet épisode (une reprise garde l'épisode en cours)
+                val iptvEp = bestIptvEpisode[a.episode.season to a.episode.episode]?.takeIf { a !is SeriesAction.Resume } ?: a.episode
+                if (rd != null) playEpisodeRd(a.episode, rd.key, a is SeriesAction.Rewatch) else playEpisode(iptvEp, a is SeriesAction.Rewatch)
+            },
         )
     }
     val actions = buildList {

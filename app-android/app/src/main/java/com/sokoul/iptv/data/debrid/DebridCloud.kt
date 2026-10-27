@@ -34,6 +34,45 @@ class DebridCloud @Inject constructor(
     @Volatile private var cache: Pair<Long, List<CloudItem>>? = null
     @Volatile private var account: Pair<Long, RdUser?>? = null
 
+    private class Snapshot(val at: Long, val torrents: List<RdTorrent>, val downloads: List<RdDownload>)
+    @Volatile private var snap: Snapshot? = null
+
+    /** Torrents (prêts ou non) et liens du compte, relus au plus une fois par minute. */
+    private suspend fun snapshot(force: Boolean = false): Snapshot {
+        snap?.takeIf { !force && System.currentTimeMillis() - it.at < SNAP_MS }?.let { return it }
+        val s = Snapshot(
+            System.currentTimeMillis(),
+            runCatching { rd.torrents(100) }.getOrDefault(emptyList()),
+            runCatching { rd.downloads(100) }.getOrDefault(emptyList()),
+        )
+        snap = s
+        return s
+    }
+
+    /**
+     * Fichiers du compte qui sont cette œuvre (titre français ou original, année à ±1 ; la bonne saison pour une série) :
+     * proposés comme sources, prêts (« dans votre compte ») ou en cours de téléchargement (« en préparation »).
+     */
+    suspend fun forWork(titles: List<String>, year: Int?, season: Int?, episode: Int?): List<DebridStream> {
+        if (profiles.isKids() || !rd.configured()) return emptyList()
+        val s = snapshot()
+        val torrents = s.torrents.filter { it.status !in DEAD && matches(it.filename, titles, year, season, episode) }.map { t ->
+            DebridStream(
+                key = "$KEY_PREFIX${t.id}", title = t.filename, url = null, infoHash = t.hash.ifEmpty { null }, fileIdx = null, filename = null,
+                release = ReleaseName.parse(t.filename).let { r -> if (r.sizeBytes == null && t.bytes > 0) r.copy(sizeBytes = t.bytes) else r },
+                inAccount = t.ready, preparing = if (t.ready) null else t.progress.coerceIn(0, 100),
+            )
+        }
+        val downloads = s.downloads.filter { ReleaseName.isVideo(it.filename) && matches(it.filename, titles, year, season, episode) }.map { d ->
+            DebridStream(
+                key = "${KEY_PREFIX}d${d.id}", title = d.filename, url = d.url, infoHash = null, fileIdx = null, filename = d.filename,
+                release = ReleaseName.parse(d.filename).let { r -> if (r.sizeBytes == null && d.bytes > 0) r.copy(sizeBytes = d.bytes) else r },
+                inAccount = true,
+            )
+        }
+        return torrents + downloads
+    }
+
     suspend fun items(force: Boolean = false): List<CloudItem> {
         if (profiles.isKids()) return emptyList()
         cache?.takeIf { !force && System.currentTimeMillis() - it.first < TTL_MS }?.let { return it.second }
@@ -86,7 +125,38 @@ class DebridCloud @Inject constructor(
 
     companion object {
         const val TTL_MS = 5 * 60_000L
+        const val SNAP_MS = 60_000L
         const val KEY_PREFIX = "rdc:"
+        private val DEAD = setOf("error", "magnet_error", "virus", "dead")
+
+        /** « Amélie » = « amelie » : minuscules, sans accents, lettres et chiffres seulement. */
+        fun norm(s: String): String =
+            java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").filter { it.isLetterOrDigit() }
+
+        /** Saison d'un pack (« Show.S02.1080p », « Saison 2 ») ; l'épisode passe par `ReleaseName.episodeTag`. */
+        fun seasonOf(name: String): Int? =
+            ReleaseName.episodeTag(name)?.first
+                ?: Regex("(?i)(?:^|[ ._\\[(-])S(\\d{1,2})(?=$|[ ._\\])-])").find(name)?.groupValues?.get(1)?.toIntOrNull()
+                ?: Regex("(?i)\\b(?:season|saison)[ ._-]?(\\d{1,2})\\b").find(name)?.groupValues?.get(1)?.toIntOrNull()
+
+        /**
+         * Le fichier [name] est-il l'œuvre cherchée ? Titre identique (français ou original), année à ±1 an pour un film ;
+         * pour une série, même saison, et le bon épisode s'il est indiqué (un pack de saison convient).
+         */
+        fun matches(name: String, titles: List<String>, year: Int?, season: Int?, episode: Int?): Boolean {
+            val base = name.substringAfterLast('/')
+            val t = norm(cleanTitle(base))
+            if (t.length < 2 || titles.none { norm(it) == t }) return false
+            val series = season != null
+            val tag = ReleaseName.episodeTag(base)
+            if (!series) {
+                if (tag != null || seasonOf(base) != null) return false
+                val y = year(base)
+                return year == null || y == null || kotlin.math.abs(y - year) <= 1
+            }
+            if (seasonOf(base) != season) return false
+            return episode == null || tag == null || tag.second == episode
+        }
 
         /** Un même film ou épisode en plusieurs fichiers : la meilleure définition reste, placée à la date du plus récent. */
         fun merge(torrents: List<CloudItem>, downloads: List<CloudItem>): List<CloudItem> =

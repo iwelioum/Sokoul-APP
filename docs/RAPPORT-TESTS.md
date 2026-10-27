@@ -942,3 +942,27 @@ Branche `phase14-design-profils`, un commit par étape (aucun envoi vers GitHub)
   - les préfixes IPTV « UK » / « US » vont dans Anglais (EN) ;
   - le détail de chaque source donne « langues : Français, Anglais, Italien » (lecteur, dépliage, fiche film).
 - **Tests :** 343 tests, 0 échec ; lint 0 erreur. APK installé sur la box. Pas de vérification Real-Debrid sur la box, l'extension de recherche n'y étant pas configurée.
+
+### 18.2 Sources : compte Real-Debrid, versions en préparation, langues entendues (27/10/2026)
+- **Fichiers du compte Real-Debrid = sources.** Un film ou un épisode déjà dans « Mes fichiers » apparaît dans ses versions, marqué « dans votre compte », même sans extension de recherche. On le reconnaît au titre français ou original et à l'année (±1) ; pour une série, à la saison, et au bon épisode ou au pack de saison. La même release trouvée par l'extension n'apparaît qu'une fois (même empreinte).
+- **Version « à télécharger » :**
+  - choisie à la main, elle reste dans le compte pour se télécharger. Le lecteur annonce « Real-Debrid télécharge la version … (12 %) » et la ligne affiche « en préparation · 12 % » ;
+  - elle n'est plus marquée « a échoué récemment » ;
+  - le secours automatique et le lancement automatique ne prennent jamais une version qui n'est pas prête : rien n'est ajouté au compte sans choix de l'utilisateur.
+- **Langues entendues :**
+  - le lecteur enregistre toutes les pistes audio du fichier (« fr,en ») ;
+  - si toutes ont une langue, cette mesure fait foi sur le nom : une « VF » qui ne contient que de l'anglais passe en « Anglais (EN) », un fichier muet avec français et anglais devient MULTI ;
+  - une mesure partielle (piste sans étiquette, panel) ne fait que compléter un nom muet ;
+  - le détail affiche « langues entendues : Français, Anglais » ;
+  - le classement s'en sert (IPTV et Real-Debrid).
+- **État de la recherche** dans le panneau : « Real-Debrid : non configuré » ou « vos fichiers seulement (recherche de sources non activée) ».
+- **« Ça coupe ? → version plus légère »** utilise la liste commune : épisodes des séries en double et Real-Debrid compris, jamais une version pas prête.
+- **Échecs IPTV gardés 24 h**, comme Real-Debrid. Ils sont effacés quand on rechoisit la source à la main.
+- **Fiche série, « Lecture » :** classe toutes les versions de la série qui ont l'épisode, plus Real-Debrid, et lance la meilleure (une reprise garde l'épisode en cours).
+- **Tests :** 354 tests, 0 échec ; lint 0 erreur. Nouveaux :
+  - `SourcesAccountTest` (9) ;
+  - 2 tests du résolveur : version gardée et en préparation, torrent déjà en téléchargement sans nouvel ajout.
+- **Box :** APK installé. Æon Flux (IPTV, un flux, lecteur fermé) : le panneau affiche « 1 source trouvée · Real-Debrid : vos fichiers seulement (recherche de sources non activée) ». Le compte a bien été consulté, il ne contient pas ce film. La piste audio de ce fichier n'a pas de langue : rien n'est affirmé, la section reste « Anglais (EN) » d'après le nom.
+- **Laissé tel quel :**
+  - la qualité mesurée d'une série IPTV reste rangée par série, ce qui correspond à une version du fournisseur, pas par épisode ;
+  - le modèle commun pour une troisième origine de sources reste à faire.
