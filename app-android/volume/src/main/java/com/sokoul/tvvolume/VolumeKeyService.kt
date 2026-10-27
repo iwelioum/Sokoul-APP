@@ -1,15 +1,11 @@
 package com.sokoul.tvvolume
 
 import android.accessibilityservice.AccessibilityService
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.media.AudioManager
-import androidx.core.content.ContextCompat
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.util.TypedValue
@@ -39,31 +35,44 @@ class VolumeKeyService : AccessibilityService() {
     private val audio by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private val anchor by lazy { VolumeMirror.anchor(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)) }
 
-    /** Volume + / − et Muet tels que la box les applique à elle-même (voir [VolumeMirror]). */
-    private val volumeWatcher = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            val ip = activeIp() ?: return
-            if (intent.getIntExtra(EXTRA_STREAM, -1) != AudioManager.STREAM_MUSIC) return
-            when (intent.action) {
-                VOLUME_CHANGED -> {
-                    val keys = VolumeMirror.keysFor(intent.getIntExtra(EXTRA_PREV, -1), intent.getIntExtra(EXTRA_VALUE, -1), anchor)
-                    if (keys.isEmpty()) return
-                    keys.forEach { send(ip, it) }
-                    holdAnchor()
-                }
-                MUTE_CHANGED -> if (intent.getBooleanExtra(EXTRA_MUTED, false)) {
-                    send(ip, TvKey.MUTE)
-                    runCatching { audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) }
-                }
-            }
+    /**
+     * Volume + / − et Muet tels que la box les applique à elle-même (voir [VolumeMirror]). Lu toutes les [POLL_MS] :
+     * l'avis du système (VOLUME_CHANGED_ACTION) arrive ~0,5 s plus tard, la box aurait le temps de baisser de
+     * plusieurs crans en même temps que la TV. Ici elle revient à l'ancrage presque aussitôt, et chaque cran compte.
+     */
+    private val poller = HandlerThread("volume-tcl").apply { start() }
+    private val pollHandler = Handler(poller.looper)
+    private var wasActive = false
+    private val poll = object : Runnable {
+        override fun run() {
+            runCatching { check() }
+            pollHandler.postDelayed(this, POLL_MS)
         }
+    }
+
+    private fun check() {
+        val ip = activeIp()
+        if (ip == null) { wasActive = false; return }
+        if (!wasActive) {
+            // (re)démarrage ou fin de pause : la box est remise à l'ancrage sans rien envoyer à la TV
+            wasActive = true
+            holdAnchor()
+            return
+        }
+        if (audio.isStreamMute(AudioManager.STREAM_MUSIC)) {
+            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            send(ip, TvKey.MUTE)
+        }
+        val keys = VolumeMirror.keysFor(anchor, audio.getStreamVolume(AudioManager.STREAM_MUSIC), anchor)
+        if (keys.isEmpty()) return
+        holdAnchor()
+        keys.forEach { send(ip, it) }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        val filter = IntentFilter().apply { addAction(VOLUME_CHANGED); addAction(MUTE_CHANGED) }
-        ContextCompat.registerReceiver(this, volumeWatcher, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        if (activeIp() != null) holdAnchor()
+        pollHandler.removeCallbacks(poll)
+        pollHandler.post(poll)
     }
 
     /** La box revient à l'ancrage, sans afficher sa propre barre de volume. */
@@ -79,7 +88,7 @@ class VolumeKeyService : AccessibilityService() {
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        // touches que le système laisse passer jusqu'ici (Muet, selon les box) ; sinon c'est [volumeWatcher]
+        // touches que le système laisse passer jusqu'ici (Muet, selon les box) ; sinon c'est [poll]
         val ip = activeIp() ?: return false
         val now = SystemClock.uptimeMillis()
         return when (val d = policy.decide(event.keyCode, event.action, event.repeatCount, now)) {
@@ -133,7 +142,8 @@ class VolumeKeyService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
-        runCatching { unregisterReceiver(volumeWatcher) }
+        pollHandler.removeCallbacksAndMessages(null)
+        poller.quitSafely()
         main.removeCallbacksAndMessages(null)
         hide.run()
         sender.shutdownNow()
@@ -142,11 +152,6 @@ class VolumeKeyService : AccessibilityService() {
 
     private companion object {
         const val PAUSE_MS = 30_000L
-        const val VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
-        const val MUTE_CHANGED = "android.media.STREAM_MUTE_CHANGED_ACTION"
-        const val EXTRA_STREAM = "android.media.EXTRA_VOLUME_STREAM_TYPE"
-        const val EXTRA_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
-        const val EXTRA_PREV = "android.media.EXTRA_PREV_VOLUME_STREAM_VALUE"
-        const val EXTRA_MUTED = "android.media.EXTRA_STREAM_VOLUME_MUTED"
+        const val POLL_MS = 20L
     }
 }
