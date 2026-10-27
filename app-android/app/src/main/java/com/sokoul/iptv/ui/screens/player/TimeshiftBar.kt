@@ -1,6 +1,12 @@
 package com.sokoul.iptv.ui.screens.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.filled.Forward30
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -45,7 +51,12 @@ internal fun behindLabel(ms: Long): String {
  * retard en grand et légendes des touches. Visible pendant la pause et quelques secondes après une action.
  */
 @Composable
-internal fun TimeshiftBar(s: LiveTimeshift.State, channel: String, modifier: Modifier = Modifier) {
+internal fun TimeshiftBar(
+    s: LiveTimeshift.State, channel: String, modifier: Modifier = Modifier,
+    // tactile : boutons et barre touchable (à la télécommande, ◀ ▶ OK ▲ ▼ font la même chose)
+    onSeek: (Long) -> Unit = {}, onToggle: () -> Unit = {}, onLive: () -> Unit = {},
+) {
+    val touch = LocalLayout.current.isTouch
     val side = if (LocalLayout.current.isCompact) 16.dp else 40.dp
     Column(
         modifier.fillMaxWidth()
@@ -64,7 +75,13 @@ internal fun TimeshiftBar(s: LiveTimeshift.State, channel: String, modifier: Mod
             }
         }
         // fenêtre : début du tampon → direct ; la position regardée en blanc, le reste enregistré en gris
-        BoxWithConstraints(Modifier.padding(top = 16.dp).fillMaxWidth().height(14.dp)) {
+        BoxWithConstraints(
+            Modifier.padding(top = 16.dp).fillMaxWidth().height(if (touch) 32.dp else 14.dp)
+                // tap sur la barre : aller à cet instant de la fenêtre enregistrée
+                .then(if (touch) Modifier.pointerInput(s.start, s.end, s.position) {
+                    detectTapGestures { o -> onSeek(timeshiftTapDelta(o.x / size.width, s.start, s.end, s.position)) }
+                } else Modifier),
+        ) {
             val span = (s.end - s.start).coerceAtLeast(1)
             val f = ((s.position - s.start).toFloat() / span).coerceIn(0f, 1f)
             Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(5.dp).background(SokoulColors.white(0.25f), Radius.Tiny))
@@ -83,6 +100,12 @@ internal fun TimeshiftBar(s: LiveTimeshift.State, channel: String, modifier: Mod
             listOf(KeyHint("OK", if (s.paused) "Reprendre" else "Pause"), KeyHint("◀", "−10 s"), KeyHint("▶", "+30 s"), KeyHint("▲", "Retour au direct"), KeyHint("▼", "Masquer")),
             Modifier.padding(top = 12.dp),
         )
+        if (touch) Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton(PlayerAction("−10 s", Icons.Default.Replay10) { onSeek(-10_000) })
+            PillButton(PlayerAction(if (s.paused) "Reprendre" else "Pause", if (s.paused) Icons.Default.PlayArrow else Icons.Default.Pause) { onToggle() })
+            PillButton(PlayerAction("+30 s", Icons.Default.Forward30) { onSeek(30_000) })
+            if (!s.atLive) PillButton(PlayerAction("Retour au direct", Icons.Default.LiveTv) { onLive() })
+        }
     }
 }
 
@@ -97,3 +120,7 @@ internal fun DelayBadge(behindMs: Long, modifier: Modifier = Modifier) {
         Text("DIFFÉRÉ ${behindLabel(behindMs)}", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = SokoulColors.OnVideo)
     }
 }
+
+/** Tap à la fraction [f] de la barre (0 = début du tampon, 1 = direct) : déplacement depuis la position regardée. */
+internal fun timeshiftTapDelta(f: Float, start: Long, end: Long, position: Long): Long =
+    (start + (end - start) * f.coerceIn(0f, 1f)).toLong() - position

@@ -70,18 +70,28 @@ fun computeLayout(widthDp: Int, heightDp: Int, isTv: Boolean): AppLayout {
             heroHeight = (w * 1.32f).coerceAtMost(h * 0.70f).coerceAtLeast(360f).dp,
             heroTitle = 30.sp, heroTextWidth = (w - 32).dp, gridCell = 104.dp, rowSpacing = 20.dp,
         )
-        WindowClass.MEDIUM -> AppLayout(
-            window, widthDp, heightDp, margin = 24.dp, gutter = 12.dp,
-            poster = 132.dp, landscape = 280.dp,
-            heroHeight = (w * 0.66f).coerceAtMost(h * 0.55f).coerceAtLeast(380f).dp,
-            heroTitle = 36.sp, heroTextWidth = (w * 0.75f).dp, gridCell = 124.dp, rowSpacing = 24.dp,
-        )
-        WindowClass.EXPANDED -> AppLayout(
-            window, widthDp, heightDp, margin = 40.dp, gutter = 14.dp,
-            poster = 140.dp, landscape = 290.dp,
-            heroHeight = (h * 0.68f).coerceIn(340f, 640f).dp,
-            heroTitle = 42.sp, heroTextWidth = (w * 0.46f).coerceAtMost(620f).dp, gridCell = 132.dp, rowSpacing = 26.dp,
-        )
+        // tablette portrait (Tab S7 FE : 800 dp) : ~4,6 affiches visibles à côté du rail de navigation
+        WindowClass.MEDIUM -> {
+            val content = w - TabletRailWidth - 24
+            val poster = ((content - 4 * 12) / 4.6f).coerceIn(132f, 176f)
+            AppLayout(
+                window, widthDp, heightDp, margin = 24.dp, gutter = 12.dp,
+                poster = poster.dp, landscape = ((content - 12) / 2.4f).coerceIn(280f, 360f).dp,
+                heroHeight = (w * 0.66f).coerceAtMost(h * 0.55f).coerceAtLeast(380f).dp,
+                heroTitle = 36.sp, heroTextWidth = (w * 0.75f).dp, gridCell = (poster - 8f).dp, rowSpacing = 24.dp,
+            )
+        }
+        // grande tablette paysage (12,4" : 1280 dp) : ~6,2 affiches par rangée, lisibles à bout de bras
+        WindowClass.EXPANDED -> {
+            val content = w - TabletRailWidth - 40
+            val poster = ((content - 5 * 14) / 6.2f).coerceIn(140f, 200f)
+            AppLayout(
+                window, widthDp, heightDp, margin = 40.dp, gutter = 14.dp,
+                poster = poster.dp, landscape = ((content - 2 * 14) / 3.3f).coerceIn(290f, 380f).dp,
+                heroHeight = (h * 0.68f).coerceIn(340f, 640f).dp,
+                heroTitle = 42.sp, heroTextWidth = (w * 0.46f).coerceAtMost(620f).dp, gridCell = (poster - 8f).dp, rowSpacing = 26.dp,
+            )
+        }
         // TV (960×540 dp sur une box 1080p) : 7 affiches par rangée, le héros laisse dépasser la 1re rangée
         WindowClass.TV -> AppLayout(
             window, widthDp, heightDp, margin = 48.dp, gutter = 14.dp,
@@ -95,7 +105,10 @@ fun computeLayout(widthDp: Int, heightDp: Int, isTv: Boolean): AppLayout {
     }
 }
 
-val LocalLayout = staticCompositionLocalOf { computeLayout(960, 540, isTv = true) }
+/** Largeur (dp) du rail de navigation des tablettes (`TabletRail`) : retirée de la place des rangées. */
+const val TabletRailWidth = 88f
+
+val LocalLayout =staticCompositionLocalOf { computeLayout(960, 540, isTv = true) }
 
 @Composable
 fun rememberAppLayout(isTv: Boolean): AppLayout {

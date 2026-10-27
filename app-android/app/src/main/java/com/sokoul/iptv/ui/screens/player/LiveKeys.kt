@@ -1,6 +1,7 @@
 package com.sokoul.iptv.ui.screens.player
 
 import android.view.KeyEvent
+import androidx.compose.ui.unit.dp
 import com.sokoul.iptv.ui.screens.tv.zapDelta
 
 /**
@@ -89,3 +90,12 @@ internal object LiveKeys {
         }
     }
 }
+
+/**
+ * Tactile : glisser le doigt vers le haut sur l'image = chaîne suivante (comme on fait défiler une liste),
+ * vers le bas = précédente. Le réglage « sens du zapping » inverse aussi le geste.
+ */
+internal fun swipeZapDelta(swipedUp: Boolean, inverted: Boolean): Int = -zapDelta(up = swipedUp, inverted = inverted)
+
+/** Distance minimale du geste de zapping (un léger frôlement ne change pas de chaîne). */
+internal val SwipeZapDistance = 72.dp

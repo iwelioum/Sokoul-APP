@@ -435,7 +435,7 @@ class PlayerViewModel @Inject constructor(
             if (!timeshiftAllowed || stream == null || url == null) { sp.player.playWhenReady = !sp.player.playWhenReady; return }
             if (gate.recording.value != null) { sp.player.playWhenReady = !sp.player.playWhenReady; return }
             if (!TimeshiftPolicy.canStart(freeBytes(factory.timeshiftDir()))) {
-                _ui.update { it.copy(notice = "Pause du direct indisponible : moins de 3 Go libres sur la box") }
+                _ui.update { it.copy(notice = "Pause du direct indisponible : moins de 3 Go libres sur l'appareil") }
                 sp.player.playWhenReady = !sp.player.playWhenReady
                 return
             }

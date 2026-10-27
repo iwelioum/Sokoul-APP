@@ -231,9 +231,9 @@ private fun PersonSkeleton(name: String) {
             Column(Modifier.padding(start = 28.dp)) {
                 Text(name, style = Type.Display)
                 Spacer(Modifier.height(12.dp))
-                Box(Modifier.width(420.dp).height(18.dp).shimmer())
+                Box(Modifier.fillMaxWidth(0.9f).widthIn(max = 420.dp).height(18.dp).shimmer())
                 Spacer(Modifier.height(10.dp))
-                Box(Modifier.width(560.dp).height(60.dp).shimmer())
+                Box(Modifier.fillMaxWidth(0.95f).widthIn(max = 560.dp).height(60.dp).shimmer())
             }
         }
         Spacer(Modifier.height(48.dp))

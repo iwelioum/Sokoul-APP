@@ -692,9 +692,9 @@ private fun CrewCard(label: String, name: String, modifier: Modifier = Modifier,
 private fun SagaSkeleton() {
     val l = LocalLayout.current
     Column(Modifier.fillMaxSize().padding(start = l.margin, top = l.safeTop + 28.dp)) {
-        Box(Modifier.width(320.dp).height(64.dp).clip(Radius.Tiny).shimmer())
+        Box(Modifier.fillMaxWidth(0.7f).widthIn(max = 320.dp).height(64.dp).clip(Radius.Tiny).shimmer())
         Spacer(Modifier.height(14.dp))
-        Box(Modifier.width(520.dp).height(40.dp).clip(Radius.Tiny).shimmer())
+        Box(Modifier.fillMaxWidth(0.9f).widthIn(max = 520.dp).height(40.dp).clip(Radius.Tiny).shimmer())
         Spacer(Modifier.height(60.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(l.gutter)) {
             repeat(6) { Box(Modifier.width(l.poster).height(l.poster * 1.5f).clip(Radius.Card).shimmer()) }

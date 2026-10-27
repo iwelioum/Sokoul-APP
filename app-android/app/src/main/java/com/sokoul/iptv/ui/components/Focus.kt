@@ -6,7 +6,9 @@ import androidx.compose.animation.core.snap
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.LocalReducedMotion
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import com.sokoul.iptv.ui.theme.Motion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +58,7 @@ fun Modifier.dpadClickable(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     enabled: Boolean = true,
+    interactionSource: MutableInteractionSource? = null,
 ): Modifier = composed {
     val press = remember { PressState() }
     val currentClick by rememberUpdatedState(onClick)
@@ -88,7 +91,7 @@ fun Modifier.dpadClickable(
             true
         }
         .combinedClickable(
-            interactionSource = null,
+            interactionSource = interactionSource,
             indication = null,
             enabled = enabled,
             onLongClick = onLongClick,
@@ -145,6 +148,16 @@ fun FocusSurface(
         if (reduced) snap() else Motion.focusSpring(),
         label = "focus",
     )
+    // toucher (tablette, téléphone) : pas de focus visible, donc un retour d'appui — léger enfoncement et
+    // couleur de focus à moitié, le temps du doigt posé
+    val touch = !LocalLayout.current.isTv
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val press = animateFloatAsState(
+        if (touch && pressed) 1f else 0f,
+        if (reduced) snap() else Motion.focusSpring(),
+        label = "press",
+    )
     val bg by rememberUpdatedState(color)
     val fbg by rememberUpdatedState(focusedColor)
     val card = style == FocusStyle.Card || style == FocusStyle.Tile
@@ -152,10 +165,8 @@ fun FocusSurface(
         modifier
             .graphicsLayer {
                 val p = progress.value
-                if (style.scale != 1f) {
-                    val s = 1f + (style.scale - 1f) * p
-                    scaleX = s; scaleY = s
-                }
+                val s = (if (style.scale != 1f) 1f + (style.scale - 1f) * p else 1f) * (1f - PressDepth * press.value)
+                if (s != 1f) { scaleX = s; scaleY = s }
                 if (style.lift.value > 0f) translationY = -style.lift.toPx() * p
             }
             .onFocusChanged {
@@ -181,7 +192,7 @@ fun FocusSurface(
                         halo2?.let { o -> translate(-glow2, -glow2) { drawOutline(o, SokoulColors.Accent, alpha = 0.10f * p) } }
                         halo1?.let { o -> translate(-glow1, -glow1) { drawOutline(o, SokoulColors.AccentEnd, alpha = 0.22f * p) } }
                     }
-                    val fill = androidx.compose.ui.graphics.lerp(bg, fbg, p)
+                    val fill = androidx.compose.ui.graphics.lerp(bg, fbg, maxOf(p, press.value * 0.5f))
                     if (fill.alpha > 0f) drawOutline(outline, fill)
                     if (p > 0.01f && style.accentBar) drawRect(
                         SokoulColors.Accent.copy(alpha = p),
@@ -203,13 +214,16 @@ fun FocusSurface(
                 }
             } else Modifier)
             .then(if (card) Modifier.focusRing(shape, style.border) { progress.value } else Modifier)
-            .dpadClickable(onClick, onLongClick)
+            .dpadClickable(onClick, onLongClick, interactionSource = interactions)
     ) {
         content(focused)
     }
 }
 
 private val FocusBarWidth = 3.dp
+
+/** Enfoncement d'une surface sous le doigt (4 %). */
+private const val PressDepth = 0.04f
 
 /** Contour de [shape] agrandi de [by] px de chaque côté (halo), à dessiner décalé de (-by, -by). */
 private fun androidx.compose.ui.draw.CacheDrawScope.expanded(shape: Shape, by: Float) =

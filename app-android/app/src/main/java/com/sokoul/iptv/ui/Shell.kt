@@ -143,7 +143,7 @@ fun Shell(nav: NavHostController, current: Dest, edgeToEdge: Boolean = false, ba
 @Composable
 private fun TabletRail(current: Dest, onSelect: (Dest) -> Unit) {
     Column(
-        Modifier.fillMaxHeight().width(88.dp).background(SokoulColors.Surface).statusBarsPadding().navigationBarsPadding().padding(vertical = 12.dp),
+        Modifier.fillMaxHeight().width(com.sokoul.iptv.ui.theme.TabletRailWidth.dp).background(SokoulColors.Surface).statusBarsPadding().navigationBarsPadding().padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {

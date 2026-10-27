@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -105,12 +106,21 @@ fun ChannelOverlay(
     clock: Long,
     withGroups: Boolean,
     modifier: Modifier = Modifier,
+    width: Dp = 460.dp,
+    /** Tactile : bouton « Catégories » dans l'en-tête (à la télécommande, c'est ◀). */
+    onGroups: (() -> Unit)? = null,
     onPick: (Int) -> Unit,
 ) {
     val state = rememberLazyListState()
     LaunchedEffect(highlighted) { keepVisible(state, highlighted) }
-    EdgeDrawer(start = true, width = 460.dp, modifier = modifier, fade = !withGroups) {
-        DrawerHeader("CHAÎNES", groupName, "${channels.size} chaînes")
+    EdgeDrawer(start = true, width = width, modifier = modifier, fade = !withGroups) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DrawerHeader("CHAÎNES", groupName, "${channels.size} chaînes", Modifier.weight(1f))
+            if (onGroups != null) com.sokoul.iptv.ui.components.SokoulButton(
+                "Catégories", onGroups, Modifier.padding(end = Space.l, bottom = Space.m), Icons.AutoMirrored.Filled.List,
+                com.sokoul.iptv.ui.components.ButtonKind.Glass,
+            )
+        }
         LazyColumn(Modifier.weight(1f), state = state, contentPadding = PaddingValues(bottom = Space.m)) {
             itemsIndexed(channels, key = { _, c -> c.id }) { i, c ->
                 val hl = i == highlighted && !withGroups
@@ -142,10 +152,10 @@ fun ChannelOverlay(
 
 /** Catégories (◀◀), en seconde colonne à gauche des chaînes : favoris en tête, puis toutes, puis celles du fournisseur. */
 @Composable
-fun GroupsPanel(groups: List<LiveGroup>, highlighted: Int, currentId: String?, modifier: Modifier = Modifier, onPick: (Int) -> Unit) {
+fun GroupsPanel(groups: List<LiveGroup>, highlighted: Int, currentId: String?, modifier: Modifier = Modifier, width: Dp = 320.dp, onPick: (Int) -> Unit) {
     val state = rememberLazyListState()
     LaunchedEffect(highlighted) { keepVisible(state, highlighted) }
-    EdgeDrawer(start = true, width = 320.dp, modifier = modifier, fade = false) {
+    EdgeDrawer(start = true, width = width, modifier = modifier, fade = false) {
         DrawerHeader("CATÉGORIES", "Bouquets", "${groups.size} catégories")
         LazyColumn(Modifier.weight(1f), state = state) {
             itemsIndexed(groups, key = { _, g -> g.id }) { i, g ->
@@ -169,10 +179,17 @@ fun GroupsPanel(groups: List<LiveGroup>, highlighted: Int, currentId: String?, m
  * Le programme surligné montre son résumé ; celui en cours porte « EN DIRECT » et son avancement.
  */
 @Composable
-fun MiniGuide(c: ChannelEntity, programs: List<ProgramEntity>?, highlighted: Int, now: Long, modifier: Modifier = Modifier) {
+fun MiniGuide(
+    c: ChannelEntity, programs: List<ProgramEntity>?, highlighted: Int, now: Long, modifier: Modifier = Modifier,
+    width: Dp = 480.dp,
+    /** Tactile : toucher un programme le surligne (et montre son résumé). */
+    onPick: ((Int) -> Unit)? = null,
+) {
     val state = rememberLazyListState()
-    LaunchedEffect(highlighted) { keepVisible(state, highlighted) }
-    EdgeDrawer(start = false, width = 480.dp, modifier = modifier) {
+    // tactile : le doigt fait défiler, la liste ne saute pas vers le programme touché
+    val touch = onPick != null
+    LaunchedEffect(highlighted) { if (!touch) keepVisible(state, highlighted) }
+    EdgeDrawer(start = false, width = width, modifier = modifier) {
         DrawerHeader("PROGRAMMES", c.name, programs?.let { if (it.isEmpty()) null else "${it.size} programmes à venir" })
         when {
             programs == null -> Text("Chargement…", Modifier.padding(Space.l).weight(1f), color = SokoulColors.TextMuted)
@@ -181,7 +198,7 @@ fun MiniGuide(c: ChannelEntity, programs: List<ProgramEntity>?, highlighted: Int
                 itemsIndexed(programs, key = { _, p -> p.start }) { i, p ->
                     val hl = i == highlighted
                     val live = p.start <= now && now < p.end
-                    DrawerRow(hl, Modifier) {
+                    DrawerRow(hl, if (onPick != null) Modifier.pointerInput(i) { detectTapGestures { onPick(i) } } else Modifier) {
                         Column(Modifier.width(64.dp)) {
                             Text(formatClock(p.start), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = if (live) SokoulColors.Accent else SokoulColors.TextPrimary)
                             Text(formatClock(p.end), style = Type.Meta, color = SokoulColors.TextMuted)
@@ -207,4 +224,23 @@ private suspend fun keepVisible(state: LazyListState, i: Int) {
     val first = visible.firstOrNull()?.index ?: 0
     val last = visible.lastOrNull()?.index ?: 0
     if (i <= first || i >= last) state.scrollToItem((i - 3).coerceAtLeast(0))
+}
+
+/**
+ * Largeurs des tiroirs du direct (dp), bornées à l'écran : TV et tablette gardent 320 / 460 / 480 ;
+ * un écran étroit garde une marge pour toucher l'image et refermer.
+ */
+data class DrawerWidths(val groups: Int, val channels: Int, val channelsBeside: Int, val guide: Int) {
+    companion object {
+        fun of(widthDp: Int): DrawerWidths {
+            val room = widthDp - 24
+            val groups = minOf(320, (widthDp * 0.4f).toInt())
+            return DrawerWidths(
+                groups = groups,
+                channels = minOf(460, room),
+                channelsBeside = minOf(460, room - groups).coerceAtLeast(160),
+                guide = minOf(480, room),
+            )
+        }
+    }
 }

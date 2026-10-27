@@ -432,6 +432,7 @@ fun GuideScreen(nav: NavHostController) {
                                 // rappels stables : une touche ne recompose que la ligne focalisée et l'aperçu
                                 onProgramClick = remember(i, c.id) { { p: ProgramEntity? -> pickRef.value(i, c, p) } },
                                 onChannelClick = remember(c.id) { { openRef.value(c) } },
+                                onProgramLongClick = remember(c.id) { { p: ProgramEntity? -> menu = c to p } },
                             )
                         }
                     }
@@ -633,6 +634,8 @@ private fun GuideRow(
     reminders: Set<String>,
     onProgramClick: (ProgramEntity?) -> Unit,
     onChannelClick: () -> Unit,
+    /** Tactile : appui long = menu du programme (rappel, enregistrement…), comme la touche Menu. */
+    onProgramLongClick: (ProgramEntity?) -> Unit = {},
 ) {
     val rowFocused = focusedTime != null
     Row(Modifier.fillMaxWidth().height(height).padding(vertical = 2.dp)) {
@@ -640,7 +643,7 @@ private fun GuideRow(
         Box(
             Modifier.width(channelCol).fillMaxHeight()
                 .background(if (selectedRow) SokoulColors.SurfaceHigher else Color.Transparent, Radius.Card)
-                .tap(onChannelClick),
+                .tap(onTap = onChannelClick),
         ) {
             if (rowFocused) Box(Modifier.width(Edge.Accent).fillMaxHeight().padding(vertical = 8.dp).background(SokoulColors.Accent, Radius.Tiny))
             Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -664,7 +667,7 @@ private fun GuideRow(
                 Box(
                     Modifier.fillMaxSize().padding(end = 2.dp)
                         .background(if (rowFocused) SokoulColors.Focus else SokoulColors.Surface, Radius.Tiny)
-                        .tap { onProgramClick(null) }
+                        .tap(onLongPress = { onProgramLongClick(null) }) { onProgramClick(null) }
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) { Text("Pas d'information · OK pour regarder", color = if (rowFocused) SokoulColors.OnLight else SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall) }
@@ -691,7 +694,7 @@ private fun GuideRow(
                 Box(
                     Modifier.offset(x = x).width(w - 3.dp).fillMaxHeight()
                         .background(bg, Radius.Tiny)
-                        .tap { onProgramClick(p) }
+                        .tap(onLongPress = { onProgramLongClick(p) }) { onProgramClick(p) }
                         .padding(horizontal = 10.dp, vertical = 7.dp),
                 ) {
                     Column {
@@ -723,4 +726,6 @@ private fun GuideRow(
 }
 
 /** Toucher sans rendre l'élément focalisable : la grille gère elle-même la télécommande. */
-private fun Modifier.tap(onTap: () -> Unit): Modifier = pointerInput(onTap) { detectTapGestures { onTap() } }
+private fun Modifier.tap(onLongPress: (() -> Unit)? = null, onTap: () -> Unit): Modifier = pointerInput(onTap, onLongPress) {
+    detectTapGestures(onLongPress = onLongPress?.let { long -> { long() } }, onTap = { onTap() })
+}

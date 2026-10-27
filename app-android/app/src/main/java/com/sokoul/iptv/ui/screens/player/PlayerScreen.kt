@@ -16,6 +16,7 @@ import com.sokoul.iptv.ui.theme.Motion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.border
@@ -120,6 +121,7 @@ import com.sokoul.iptv.ui.nav.MultiviewRoute
 import com.sokoul.iptv.ui.screens.tv.ChannelOverlay
 import com.sokoul.iptv.ui.screens.tv.GroupsPanel
 import com.sokoul.iptv.ui.screens.tv.MiniGuide
+import com.sokoul.iptv.ui.screens.tv.DrawerWidths
 import com.sokoul.iptv.ui.screens.tv.ZapBanner
 import androidx.compose.material.icons.filled.CalendarViewWeek
 import androidx.compose.material.icons.filled.Search
@@ -241,10 +243,11 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     // fréquence de l'écran calée sur celle du film (VOD seulement : en direct, chaque zapping ferait clignoter la TV)
     val rateSwitch = remember { (context as? android.app.Activity)?.window?.let { com.sokoul.iptv.player.FrameRateMatcher.Switcher(it) } }
     DisposableEffect(Unit) { onDispose { rateSwitch?.restore() } }
-    DisposableEffect(exo, ui.isLive, frameMatch) {
+    DisposableEffect(exo, ui.isLive, frameMatch, isTv) {
         val sw = rateSwitch
         if (exo == null || sw == null) return@DisposableEffect onDispose {}
-        if (ui.isLive || !frameMatch) { sw.restore(); return@DisposableEffect onDispose {} }
+        // tablette, téléphone : écran à fréquence fixe, rien à caler
+        if (ui.isLive || !frameMatch || !isTv) { sw.restore(); return@DisposableEffect onDispose {} }
         fun check() { exo.videoFormat?.frameRate?.takeIf { it > 0 }?.let(sw::match) }
         val lis = object : Player.Listener {
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) = check()
@@ -528,13 +531,37 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             .focusable()
             .pointerInput(ui.isLive) {
                 detectTapGestures(
-                    onTap = { if (infoVisible || listVisible) { infoVisible = false; listVisible = false } else showInfo() },
+                    onTap = {
+                        // un tap sur l'image ferme ce qui est ouvert (listes, programmes, détails, pause du direct), sinon montre / masque la barre
+                        when {
+                            listVisible || groupsVisible || guideVisible || detailsVisible || tsBar -> {
+                                listVisible = false; groupsVisible = false; guideVisible = false; detailsVisible = false; tsBar = false
+                            }
+                            infoVisible -> infoVisible = false
+                            else -> showInfo()
+                        }
+                    },
                     onDoubleTap = { offset ->
                         // double-tap : même chemin que le D-pad (cumul, bornes, un seul déplacement)
                         if (!ui.isLive) seekBy(if (offset.x < size.width / 2) -10_000L else 30_000L, reveal = false)
                     },
                 )
             }
+            // tactile, direct : glisser vers le haut / le bas sur l'image zappe (sens réglable comme ▲▼)
+            .then(if (l.isTouch && ui.isLive) Modifier.pointerInput(Unit) {
+                var drag = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { drag = 0f },
+                    onVerticalDrag = { change, dy -> drag += dy; change.consume() },
+                    onDragEnd = {
+                        val free = !listVisible && !groupsVisible && !guideVisible && !detailsVisible && panel == null && menu == null && !tsBar
+                        if (free && kotlin.math.abs(drag) > SwipeZapDistance.toPx()) {
+                            vm.zap(swipeZapDelta(swipedUp = drag < 0, inverted = vm.zapInverted))
+                            infoVisible = false
+                        }
+                    },
+                )
+            } else Modifier)
     ) {
         if (exo != null) {
             AndroidView(
@@ -596,6 +623,17 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 SeekFeedback(last - seekOrigin, last)
             }
 
+            // actions du direct : bandeau des détails (OK) et, en tactile, barre ouverte d'un tap
+            fun liveActions(): List<PlayerAction> = buildList {
+                if (l.isTouch) add(PlayerAction(if (ts.active && ts.paused) "Reprendre" else "Pause du direct", if (ts.active && ts.paused) Icons.Default.PlayArrow else Icons.Default.Pause) { detailsVisible = false; playPause() })
+                add(PlayerAction("Programmes", Icons.Default.CalendarViewWeek) { detailsVisible = false; infoVisible = false; guideIndex = 0; guideVisible = true })
+                add(PlayerAction("Chaînes", Icons.Default.List) { detailsVisible = false; infoVisible = false; listIndex = zapList.indexOfFirst { it.id == ui.channel?.id }.coerceAtLeast(0); listVisible = true })
+                if (ui.canCatchup && ui.nowNext?.now != null) add(PlayerAction("Revoir depuis le début", Icons.Default.History) { detailsVisible = false; vm.restartCurrentProgram() })
+                add(PlayerAction("Enregistrer", Icons.Default.FiberManualRecord) { detailsVisible = false; menu = Menu.RECORD })
+                add(PlayerAction(if (ui.isFavorite) "Retirer des favoris" else "Favori", if (ui.isFavorite) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite() })
+                if (vm.hasPrevious()) add(PlayerAction("Chaîne précédente", Icons.Default.SwapVert) { detailsVisible = false; vm.previous() })
+                add(PlayerAction("Réglages", Icons.Default.Tune) { detailsVisible = false; menu = Menu.MAIN })
+            }
             val controlsShown = !tsBar && infoVisible && !listVisible && !groupsVisible && !guideVisible && zapPending == null && !episodesVisible && !(panel != null) && !errorShown && !pauseScreen && !showNextCard
             if (!ui.isLive) {
                 AnimatedVisibility(
@@ -615,7 +653,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 controlsShown, Modifier.align(Alignment.BottomCenter),
                 enter = slideInVertically(Motion.enter()) { it / 4 } + fadeIn(Motion.enter()), exit = slideOutVertically(Motion.exit()) { it / 4 } + fadeOut(Motion.exit()),
             ) {
-                if (ui.isLive) LiveInfoBar(ui, health = healthOf(streamState)) else VodControls(
+                if (ui.isLive) LiveInfoBar(ui, actions = if (l.isTouch) liveActions() else null, health = healthOf(streamState)) else VodControls(
                     position, duration, seekPreview,
                     buffering = streamState is StreamState.Buffering,
                     playing = isPlaying,
@@ -650,25 +688,36 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             // univers TV : liste des chaînes, groupes, mini-guide, bandeau de zapping
             val side = if (l.isCompact) 8.dp else 40.dp
             val clock = rememberNow(30_000)
-            AnimatedVisibility(listVisible, Modifier.align(Alignment.CenterStart).padding(start = if (groupsVisible) 320.dp else 0.dp), enter = slideInHorizontally(Motion.enter()) { -it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { -it } + fadeOut(Motion.exit())) {
+            // largeurs des tiroirs bornées à l'écran (tablette en portrait : 800 dp pour catégories + chaînes)
+            val drawers = remember(l.widthDp) { DrawerWidths.of(l.widthDp) }
+            AnimatedVisibility(listVisible, Modifier.align(Alignment.CenterStart).padding(start = if (groupsVisible) drawers.groups.dp else 0.dp), enter = slideInHorizontally(Motion.enter()) { -it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { -it } + fadeOut(Motion.exit())) {
                 var nowMap by remember { mutableStateOf<Map<String, com.sokoul.iptv.data.db.ProgramEntity>>(emptyMap()) }
                 LaunchedEffect(zapList) { nowMap = vm.nowFor(zapList) }
                 ChannelOverlay(
                     groups.firstOrNull { it.id == currentGroup }?.name ?: "Chaînes", zapList, listIndex, ui.channel?.id, nowMap, clock, withGroups = groupsVisible,
-                ) { i -> zapList.getOrNull(i)?.let { vm.playChannel(it) }; listVisible = false }
+                    width = (if (groupsVisible) drawers.channelsBeside else drawers.channels).dp,
+                    // tactile : pas de touche ◀ pour ouvrir les catégories
+                    onGroups = if (l.isTouch && !groupsVisible) ({ groupIndex = groups.indexOfFirst { it.id == currentGroup }.coerceAtLeast(0); groupsVisible = true }) else null,
+                ) { i -> zapList.getOrNull(i)?.let { vm.playChannel(it) }; listVisible = false; groupsVisible = false }
             }
             AnimatedVisibility(groupsVisible, Modifier.align(Alignment.CenterStart), enter = slideInHorizontally(Motion.enter()) { -it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { -it } + fadeOut(Motion.exit())) {
-                GroupsPanel(groups, groupIndex, currentGroup) { i -> groups.getOrNull(i)?.let { vm.selectGroup(it.id) }; groupsVisible = false; listIndex = 0; listVisible = true }
+                GroupsPanel(groups, groupIndex, currentGroup, width = drawers.groups.dp) { i -> groups.getOrNull(i)?.let { vm.selectGroup(it.id) }; groupsVisible = false; listIndex = 0; listVisible = true }
             }
             AnimatedVisibility(guideVisible && ui.channel != null, Modifier.align(Alignment.CenterEnd), enter = slideInHorizontally(Motion.enter()) { it } + fadeIn(Motion.enter()), exit = slideOutHorizontally(Motion.exit()) { it } + fadeOut(Motion.exit())) {
-                ui.channel?.let { c -> MiniGuide(c, guidePrograms, guideIndex, clock) }
+                ui.channel?.let { c -> MiniGuide(c, guidePrograms, guideIndex, clock, width = drawers.guide.dp, onPick = { guideIndex = it }) }
             }
             AnimatedVisibility(
                 ui.isLive && ts.active && tsBar && !listVisible && !guideVisible, Modifier.align(Alignment.BottomCenter),
                 enter = slideInVertically(Motion.enter()) { it / 4 } + fadeIn(Motion.enter()), exit = slideOutVertically(Motion.exit()) { it / 4 } + fadeOut(Motion.exit()),
-            ) { TimeshiftBar(ts, ui.channel?.name ?: ui.title) }
+            ) {
+                TimeshiftBar(
+                    ts, ui.channel?.name ?: ui.title,
+                    onSeek = { vm.timeshiftSeek(it); tsShow() }, onToggle = { vm.liveTogglePause(); tsShow() }, onLive = { vm.timeshiftToLive(); tsShow() },
+                )
+            }
             if (ui.isLive && ts.active && !tsBar && !ts.atLive && !listVisible && !guideVisible) {
-                DelayBadge(ts.behindMs, Modifier.align(Alignment.TopEnd).padding(24.dp))
+                // tactile : toucher le repère rouvre la barre de la pause du direct
+                DelayBadge(ts.behindMs, Modifier.align(Alignment.TopEnd).padding(24.dp).then(if (l.isTouch) Modifier.pointerInput(Unit) { detectTapGestures { tsShow() } } else Modifier))
             }
             // OK : détails de la chaîne (bandeau enrichi + actions)
             AnimatedVisibility(
@@ -677,15 +726,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             ) {
                 LiveInfoBar(
                     ui,
-                    actions = buildList {
-                        add(PlayerAction("Programmes", Icons.Default.CalendarViewWeek) { detailsVisible = false; guideIndex = 0; guideVisible = true })
-                        add(PlayerAction("Chaînes", Icons.Default.List) { detailsVisible = false; listIndex = zapList.indexOfFirst { it.id == ui.channel?.id }.coerceAtLeast(0); listVisible = true })
-                        if (ui.canCatchup && ui.nowNext?.now != null) add(PlayerAction("Revoir depuis le début", Icons.Default.History) { detailsVisible = false; vm.restartCurrentProgram() })
-                        add(PlayerAction("Enregistrer", Icons.Default.FiberManualRecord) { detailsVisible = false; menu = Menu.RECORD })
-                        add(PlayerAction(if (ui.isFavorite) "Retirer des favoris" else "Favori", if (ui.isFavorite) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite() })
-                        if (vm.hasPrevious()) add(PlayerAction("Chaîne précédente", Icons.Default.SwapVert) { detailsVisible = false; vm.previous() })
-                        add(PlayerAction("Réglages", Icons.Default.Tune) { detailsVisible = false; menu = Menu.MAIN })
-                    },
+                    actions = liveActions(),
                     firstAction = detailsFocus,
                     health = healthOf(streamState),
                 )
