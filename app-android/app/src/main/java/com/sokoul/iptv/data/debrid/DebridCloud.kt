@@ -26,7 +26,7 @@ data class CloudItem(
  */
 @Singleton
 class DebridCloud @Inject constructor(
-    private val rd: RealDebridClient,
+    private val rd: DebridService,
     private val tmdb: com.sokoul.iptv.data.net.TmdbClient,
     private val settings: com.sokoul.iptv.data.SettingsStore,
     private val profiles: com.sokoul.iptv.data.repo.ProfileRepository,

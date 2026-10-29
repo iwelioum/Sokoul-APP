@@ -26,7 +26,7 @@ class DebridNotCached : DebridNotReady("Version pas encore prête sur Real-Debri
  *   ([DebridPreparing]) ; essai automatique, il est supprimé (rien ne s'accumule) et [DebridNotReady] est levée.
  */
 @Singleton
-class DebridResolver @Inject constructor(private val rd: RealDebridClient) {
+class DebridResolver @Inject constructor(private val rd: DebridService) {
     /** Remplaçable dans les tests. */
     internal var pollDelayMs = 1_000L
 

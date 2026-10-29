@@ -59,7 +59,8 @@ class RealDebridClient @Inject constructor(
     private val keys: ApiKeys,
     private val settings: SettingsStore,
     private val health: ProviderHealth,
-) {
+) : DebridService {
+    override val providerName: String = "Real-Debrid"
     /** Remplaçables dans les tests (MockWebServer). */
     internal var base = BASE
     internal var oauth = OAUTH
@@ -83,11 +84,11 @@ class RealDebridClient @Inject constructor(
         return keys.key(ApiService.REALDEBRID).ifEmpty { null }
     }
 
-    suspend fun configured(): Boolean = token() != null
+    override suspend fun configured(): Boolean = token() != null
 
     // --- Compte, torrents, liens ---------------------------------------------------------------
 
-    suspend fun user(): RdUser {
+    override suspend fun user(): RdUser {
         val o = call("GET", "user") as JsonObject
         return RdUser(
             username = o.str("username").orEmpty(),
@@ -97,28 +98,28 @@ class RealDebridClient @Inject constructor(
     }
 
     /** Ajoute un magnet (aucun téléchargement tant que les fichiers ne sont pas choisis). */
-    suspend fun addMagnet(magnet: String): String =
+    override suspend fun addMagnet(magnet: String): String =
         (call("POST", "torrents/addMagnet", FormBody.Builder().add("magnet", magnet).build()) as JsonObject).str("id")
             ?: throw RdException(0, "Réponse Real-Debrid inattendue")
 
-    suspend fun torrentInfo(id: String): RdTorrent = parseTorrent(call("GET", "torrents/info/$id") as JsonObject)
+    override suspend fun torrentInfo(id: String): RdTorrent = parseTorrent(call("GET", "torrents/info/$id") as JsonObject)
 
-    suspend fun selectFiles(id: String, fileIds: List<Int>) {
+    override suspend fun selectFiles(id: String, fileIds: List<Int>) {
         call("POST", "torrents/selectFiles/$id", FormBody.Builder().add("files", fileIds.joinToString(",").ifEmpty { "all" }).build())
     }
 
-    suspend fun deleteTorrent(id: String) { runCatching { call("DELETE", "torrents/delete/$id") } }
+    override suspend fun deleteTorrent(id: String) { runCatching { call("DELETE", "torrents/delete/$id") } }
 
     /** Lien RD (hébergeur) → URL directe lisible par le lecteur. */
-    suspend fun unrestrict(link: String): RdLink {
+    override suspend fun unrestrict(link: String): RdLink {
         val o = call("POST", "unrestrict/link", FormBody.Builder().add("link", link).build()) as JsonObject
         return RdLink(o.str("download") ?: throw RdException(0, "Lien indisponible"), o.str("filename").orEmpty(), o.long("filesize") ?: 0, o.str("mimeType"))
     }
 
-    suspend fun torrents(limit: Int = 50, page: Int = 1): List<RdTorrent> =
+    override suspend fun torrents(limit: Int, page: Int): List<RdTorrent> =
         (call("GET", "torrents?limit=$limit" + (if (page > 1) "&page=$page" else "")) as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::parseTorrent) }
 
-    suspend fun downloads(limit: Int = 50): List<RdDownload> =
+    override suspend fun downloads(limit: Int): List<RdDownload> =
         (call("GET", "downloads?limit=$limit") as? JsonArray).orEmpty().mapNotNull { e ->
             val o = e as? JsonObject ?: return@mapNotNull null
             RdDownload(o.str("id") ?: return@mapNotNull null, o.str("filename").orEmpty(), o.long("filesize") ?: 0,
