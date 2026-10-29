@@ -493,6 +493,24 @@ interface RecordingDao {
     @Delete
     suspend fun delete(r: RecordingEntity)
 
+    @Query("SELECT * FROM recording_rules WHERE playlistId = :pid AND enabled = 1 ORDER BY createdAt")
+    fun observeRules(pid: Long): Flow<List<RecordingRuleEntity>>
+
+    @Query("SELECT * FROM recording_rules WHERE playlistId = :pid AND ruleKey = :key LIMIT 1")
+    suspend fun findRule(pid: Long, key: String): RecordingRuleEntity?
+
+    @Query("SELECT * FROM recording_rules WHERE id = :id")
+    suspend fun getRule(id: Long): RecordingRuleEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertRule(rule: RecordingRuleEntity): Long
+
+    @Query("UPDATE recording_rules SET enabled = :enabled WHERE id = :id")
+    suspend fun setRuleEnabled(id: Long, enabled: Boolean)
+
+    @Delete
+    suspend fun deleteRule(rule: RecordingRuleEntity)
+
     @Query("SELECT * FROM reminders WHERE start > :now ORDER BY start")
     fun observeReminders(now: Long): Flow<List<ReminderEntity>>
 

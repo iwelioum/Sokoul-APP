@@ -283,6 +283,18 @@ data class RecordingEntity(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+@Entity(tableName = "recording_rules", indices = [Index("playlistId", "ruleKey", unique = true)])
+data class RecordingRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val playlistId: Long,
+    val channelId: String,
+    val channelName: String,
+    val title: String,
+    val ruleKey: String,
+    val enabled: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "reminders", primaryKeys = ["playlistId", "channelId", "start"])
 data class ReminderEntity(
     val playlistId: Long,

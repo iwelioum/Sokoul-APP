@@ -9,8 +9,10 @@ import androidx.core.content.ContextCompat
 import com.sokoul.iptv.data.db.AppDatabase
 import com.sokoul.iptv.data.db.ChannelEntity
 import com.sokoul.iptv.data.db.RecordingEntity
+import com.sokoul.iptv.data.db.RecordingRuleEntity
 import com.sokoul.iptv.data.db.RecordingStatus
 import com.sokoul.iptv.data.db.ReminderEntity
+import com.sokoul.iptv.data.db.ProgramEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +40,40 @@ class RecordingScheduler @Inject constructor(
 
     fun recordings() = db.recordings().observeAll()
     fun reminders(pid: Long) = db.recordings().observeRemindersFor(pid)
+    fun seriesRules(pid: Long) = db.recordings().observeRules(pid)
+
+    suspend fun addSeriesRule(pid: Long, channel: ChannelEntity, title: String): ScheduleOutcome {
+        val cleanTitle = title.trim().take(200)
+        if (cleanTitle.isEmpty()) return ScheduleOutcome(null, "Titre du programme manquant")
+        val key = RecordingRules.seriesKey(channel.name, cleanTitle)
+        if (db.recordings().findRule(pid, key) != null) return ScheduleOutcome(null, "Règle déjà active")
+        val id = db.recordings().insertRule(
+            RecordingRuleEntity(
+                playlistId = pid,
+                channelId = channel.id,
+                channelName = channel.name,
+                title = cleanTitle,
+                ruleKey = key,
+            )
+        )
+        return if (id > 0) ScheduleOutcome(id, "Enregistrement en série activé") else ScheduleOutcome(null, "Règle déjà active")
+    }
+
+    suspend fun removeSeriesRule(id: Long) {
+        db.recordings().getRule(id)?.let { db.recordings().deleteRule(it) }
+    }
+
+    /** Programme un épisode correspondant à une règle active, sans doublonner un rafraîchissement EPG. */
+    suspend fun scheduleSeriesOccurrence(pid: Long, channel: ChannelEntity, program: ProgramEntity): ScheduleOutcome? {
+        val key = RecordingRules.seriesKey(channel.name, program.title)
+        if (db.recordings().findRule(pid, key) == null) return null
+        val exists = db.recordings().forPlaylist(pid).any {
+            it.channelId == channel.id && it.startAt == program.start && it.endAt == program.end &&
+                it.status != RecordingStatus.CANCELLED
+        }
+        if (exists) return ScheduleOutcome(null, "Occurrence déjà programmée")
+        return schedule(pid, channel, program.title, program.start, program.end)
+    }
 
     /** Enregistrement immédiat ou programmé, refusé s'il est incohérent ou en conflit. */
     suspend fun schedule(pid: Long, channel: ChannelEntity, title: String, start: Long, end: Long): ScheduleOutcome = mutex.withLock {
