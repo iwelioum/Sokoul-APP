@@ -36,6 +36,8 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
         super.onCreate()
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
         com.sokoul.iptv.data.debrid.SourceLog.attach(java.io.File(filesDir, "source-log.txt"))
+        // télé HDR ou non, mémoire de l'appareil : avant tout classement de versions et le premier chargement d'image
+        com.sokoul.iptv.data.repo.DeviceCaps.read(this)
         createChannels()
         profiles.start()
         watchNext.start()
@@ -54,11 +56,17 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
         })
     }
 
-    /** Coil partage le client OkHttp (et son pool de connexions) ; cache disque pour les logos. */
+    /**
+     * Coil partage le client OkHttp (et son pool de connexions) ; cache disque pour les logos.
+     * Appareil modeste : sous Android 7 les images restent dans la mémoire de l'app (pas de bitmaps matériels), caches réduits.
+     */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient(okHttp)
-        .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.20).build() }
-        .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(250L * 1024 * 1024).build() }
+        .memoryCache { MemoryCache.Builder(this).maxSizePercent(if (com.sokoul.iptv.data.repo.DeviceCaps.lowMemory) 0.10 else 0.20).build() }
+        .diskCache {
+            DiskCache.Builder().directory(cacheDir.resolve("images"))
+                .maxSizeBytes((if (com.sokoul.iptv.data.repo.DeviceCaps.lowMemory) 120L else 250L) * 1024 * 1024).build()
+        }
         .crossfade(true)
         .respectCacheHeaders(false)
         .build()

@@ -42,5 +42,23 @@ internal fun LazyListScope.aboutSection(@Suppress("UNUSED_PARAMETER") c: Setting
         val st by com.sokoul.iptv.tv.WatchNextStatus.text.collectAsStateWithLifecycle()
         SettingRow("Rangée « À suivre » de l'accueil TV", st ?: "En attente", "Google TV ne l'affiche que pour certaines applis ; Android TV l'affiche toujours", icon = Icons.Default.CheckCircle) {}
     }
+    item("ab-device") {
+        // ce que l'app a déduit de l'appareil : explique pourquoi une version SDR ou 1080p passe en premier
+        val caps = com.sokoul.iptv.data.repo.DeviceCaps
+        val value = listOf(if (caps.hdrDisplay) "Télé HDR" else "Télé SDR", if (caps.supports4k) "4K" else "1080p max").joinToString(" · ")
+        val detail = listOfNotNull(
+            if (!caps.hdrDisplay) "les versions sans HDR passent devant à définition égale" else null,
+            if (caps.lowMemory) "appareil modeste : multi-écran limité à 2 chaînes, pause du direct de 1 Go" else null,
+        ).joinToString(" ; ").ifEmpty { "Versions classées pour cet écran" }
+        SettingRow("Cet appareil", value, detail.replaceFirstChar { it.uppercase() }, icon = Icons.Default.CheckCircle) {}
+    }
+    item("ab-firetv") {
+        val fireTv = androidx.compose.ui.platform.LocalContext.current.packageManager.hasSystemFeature("amazon.hardware.fire_tv")
+        if (fireTv) SettingRow(
+            "Fonctions de Google TV", "Indisponibles sur Fire TV",
+            "Rangée « À suivre », image dans l'image, économiseur d'écran Sokoul et recherche vocale : Fire OS ne les propose pas aux applis",
+            icon = Icons.Default.CheckCircle,
+        ) {}
+    }
     note("fonts", "Police Manrope (licence SIL Open Font). Données de films et séries : TMDB.")
 }

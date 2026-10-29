@@ -302,4 +302,31 @@ object DeviceCaps {
             }
         }.getOrDefault(true)
     }
+
+    /**
+     * Télé capable d'afficher le HDR (lu au lancement) : sinon une version SDR passe devant une HDR de même
+     * définition, l'image HDR convertie par la box étant souvent terne (Fire TV branché sur une télé SDR).
+     */
+    @Volatile var hdrDisplay: Boolean = true
+        private set
+
+    /**
+     * Appareil modeste (Fire TV Stick, box d'entrée de gamme : 192 Mo par app ou moins) : multi-écran réduit,
+     * caches d'images et pause du direct plus petits.
+     */
+    @Volatile var lowMemory: Boolean = false
+        private set
+
+    fun read(context: android.content.Context) {
+        hdrDisplay = runCatching {
+            val dm = context.getSystemService(android.hardware.display.DisplayManager::class.java)
+            dm.getDisplay(android.view.Display.DEFAULT_DISPLAY)?.hdrCapabilities?.supportedHdrTypes?.isNotEmpty()
+        }.getOrNull() ?: true
+        lowMemory = runCatching {
+            val am = context.getSystemService(android.app.ActivityManager::class.java)
+            am.isLowRamDevice || am.memoryClass <= LOW_MEMORY_CLASS_MB
+        }.getOrDefault(false)
+    }
+
+    private const val LOW_MEMORY_CLASS_MB = 256
 }

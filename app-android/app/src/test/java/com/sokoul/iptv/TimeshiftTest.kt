@@ -109,6 +109,12 @@ class TimeshiftTest {
         assertTrue(TimeshiftPolicy.canStart(4 * gb))
         assertEquals(TimeshiftPolicy.MAX_BYTES, TimeshiftPolicy.capBytes(20 * gb))
         assertEquals(2 * gb, TimeshiftPolicy.capBytes(3 * gb)) // 1 Go toujours laissé libre
+        // Fire TV Stick : 1,7 Go libres suffisent, tampon de 1 Go au plus, 512 Mo laissés à Android
+        val freeFire = 1_740L * 1024 * 1024
+        assertTrue(TimeshiftPolicy.canStart(freeFire, low = true))
+        assertFalse(TimeshiftPolicy.canStart(freeFire))
+        assertEquals(TimeshiftPolicy.LOW_MAX_BYTES, TimeshiftPolicy.capBytes(freeFire, low = true))
+        assertEquals(gb / 2, TimeshiftPolicy.capBytes(gb, low = true))
         assertEquals(1_000L, TimeshiftPolicy.clampSeek(0, 1_000, 60_000))
         assertEquals(57_000L, TimeshiftPolicy.clampSeek(99_000, 1_000, 60_000))
         assertTrue(TimeshiftPolicy.isAtLive(55_000, 60_000))

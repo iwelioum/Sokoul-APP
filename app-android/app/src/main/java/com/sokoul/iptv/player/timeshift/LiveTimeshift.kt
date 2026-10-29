@@ -26,10 +26,17 @@ object TimeshiftPolicy {
     /** En deçà de ce retard, on considère être « en direct ». */
     const val AT_LIVE_MS = 8_000L
 
-    fun canStart(freeBytes: Long) = freeBytes >= MIN_FREE_BYTES
+    /** Appareil modeste (Fire TV Stick : 8 Go, souvent moins de 2 Go libres) : tampon plus court mais disponible. */
+    const val LOW_MIN_FREE_BYTES = 1_200L * 1024 * 1024
+    const val LOW_MAX_BYTES = 1_024L * 1024 * 1024
 
-    /** Plafond sur disque : 2,5 Go, et toujours 1 Go laissé libre à Android. */
-    fun capBytes(freeBytes: Long) = minOf(MAX_BYTES, (freeBytes - 1_024L * 1024 * 1024).coerceAtLeast(64L * 1024 * 1024))
+    fun canStart(freeBytes: Long, low: Boolean = false) = freeBytes >= if (low) LOW_MIN_FREE_BYTES else MIN_FREE_BYTES
+
+    /** Plafond sur disque : 2,5 Go (1 Go sur appareil modeste), et toujours 1 Go (512 Mo) laissé libre à Android. */
+    fun capBytes(freeBytes: Long, low: Boolean = false): Long {
+        val reserve = if (low) 512L * 1024 * 1024 else 1_024L * 1024 * 1024
+        return minOf(if (low) LOW_MAX_BYTES else MAX_BYTES, (freeBytes - reserve).coerceAtLeast(64L * 1024 * 1024))
+    }
 
     fun clampSeek(target: Long, start: Long, end: Long) = target.coerceIn(start, maxOf(start, end - LIVE_MARGIN_MS))
 

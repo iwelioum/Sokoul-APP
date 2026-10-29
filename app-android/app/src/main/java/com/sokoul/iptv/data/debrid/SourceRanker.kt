@@ -35,6 +35,8 @@ object SourceRanker {
         val supports4k: Boolean = true,
         /** L'appareil décode le Dolby Vision. */
         val dolbyVision: Boolean = true,
+        /** La télé affiche le HDR ; sinon la SDR passe devant la HDR à définition égale. */
+        val hdrDisplay: Boolean = true,
         /** Connexion IPTV prise (enregistrement) ou en pause après un refus : l'IPTV passe en dernier. */
         val iptvBlocked: Boolean = false,
         /** Origine prioritaire à langue et image égales (Réglages › Bibliothèque) ; null = aucune. */
@@ -68,7 +70,7 @@ object SourceRanker {
                 // VF et MULTI (qui contient le français) au même rang : la meilleure image l'emporte, la VF seulement à image égale
                 .thenBy { audioRank(it.source.language, prefs.languages) }
                 .thenBy { qualityRank(effectiveQuality(it, prefs)) }
-                .thenBy { hdrRank(it.source.hdr, prefs.dolbyVision) }
+                .thenBy { hdrRank(it.source.hdr, prefs.dolbyVision, prefs.hdrDisplay) }
                 .thenBy { languageRank(it.source.language, prefs.languages) }
                 .thenBy { readyRank(it) }
                 .thenBy { if (id(it) in prefs.failed) 1 else 0 }
@@ -131,8 +133,15 @@ object SourceRanker {
         VideoQuality.UHD_4K -> 0; VideoQuality.FHD_1080 -> 1; VideoQuality.HD_720, null -> 2; VideoQuality.SD -> 3
     }
 
-    /** Sans décodeur Dolby Vision, la HDR10 passe devant la DV (certaines DV ne s'affichent pas bien sans lui). */
-    private fun hdrRank(h: HdrFormat?, dv: Boolean) = when (h) {
+    /**
+     * Sans décodeur Dolby Vision, la HDR10 passe devant la DV (certaines DV ne s'affichent pas bien sans lui).
+     * Télé SDR : la SDR d'abord, puis la HDR10, la DV en dernier (conversion de la box, couleurs fausses).
+     */
+    private fun hdrRank(h: HdrFormat?, dv: Boolean, hdrDisplay: Boolean = true) = if (!hdrDisplay) when (h) {
+        null -> 0
+        HdrFormat.HDR10 -> 1
+        HdrFormat.DOLBY_VISION -> 2
+    } else when (h) {
         HdrFormat.DOLBY_VISION -> if (dv) 0 else 1
         HdrFormat.HDR10 -> if (dv) 1 else 0
         null -> 2

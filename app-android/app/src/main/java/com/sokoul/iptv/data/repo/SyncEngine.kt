@@ -24,6 +24,7 @@ import com.sokoul.iptv.parser.XtreamParse
 import com.sokoul.iptv.parser.XtreamUrls
 import com.sokoul.iptv.parser.XmltvParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,7 +84,7 @@ class SyncEngine @Inject constructor(
         val p = playlists.get(id) ?: return@withLock
         setStatus(_playlistStatus, id, SyncStatus(running = true, step = "Connexion…"))
         try {
-            val warnings = withContext(Dispatchers.IO) {
+            val warnings = withContext(SYNC_DISPATCHER) {
                 when (p.type) {
                     PlaylistType.XTREAM -> syncXtream(p)
                     PlaylistType.M3U -> syncM3u(p)
@@ -99,7 +100,7 @@ class SyncEngine @Inject constructor(
             db.channels().matchEpgByName(id)
             // Doublons : relie les versions TMDB et sans TMDB d'une même œuvre (ne bloque jamais la synchro)
             setStatus(_playlistStatus, id, SyncStatus(running = true, step = "Regroupement des doublons…"))
-            withContext(Dispatchers.Default) {
+            withContext(SYNC_DISPATCHER) {
                 for (t in listOf(ContentType.MOVIE, ContentType.SERIES)) runCatching { vod.regroup(id, t) }.onFailure { Timber.w(it, "Regroupement") }
             }
             val counts = Triple(db.channels().count(id), db.movies().count(id), db.series().count(id))
@@ -492,6 +493,14 @@ class SyncEngine @Inject constructor(
         setStatus(_playlistStatus, pid, SyncStatus(running = true, step = step, count = count))
 
     companion object {
+        /**
+         * Synchronisation et regroupement sur deux fils de priorité basse : sur une box modeste (Fire TV Stick),
+         * la télécommande et l'interface restent fluides pendant l'import de 250 000 lignes.
+         */
+        private val SYNC_DISPATCHER = java.util.concurrent.Executors.newFixedThreadPool(2) { r ->
+            Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "sokoul-sync")
+        }.asCoroutineDispatcher()
+
         /** Guide TV France (xmltv.fr, gratuit, sans clé), activable dans Réglages. */
         const val XMLTVFR_URL = "https://xmltvfr.fr/xmltv/xmltv_fr.xml.gz"
         const val UNCATEGORIZED = "__none"

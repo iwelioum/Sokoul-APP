@@ -73,6 +73,9 @@ import javax.inject.Inject
 
 data class SlotState(val channel: ChannelEntity?, val player: StreamPlayer?)
 
+/** Flux lus en même temps sur un appareil modeste (deux décodeurs vidéo matériels sur un Fire TV Stick 4K). */
+private const val LOW_DEVICE_MAX_SLOTS = 2
+
 @HiltViewModel
 class MultiviewViewModel @Inject constructor(
     private val session: MultiviewSession,
@@ -114,6 +117,12 @@ class MultiviewViewModel @Inject constructor(
         val others = _slots.value.withIndex().count { (j, s) -> j != index && s.channel?.playlistId == c.playlistId && s.player?.state?.value.let { it is StreamState.Playing || it is StreamState.Buffering || it is StreamState.Loading || it is StreamState.Reconnecting } }
         if (max != null && others >= max) {
             notice.value = "Votre abonnement n'autorise que $max connexion${if (max > 1) "s" else ""} simultanée${if (max > 1) "s" else ""} : videz une case avant d'en lancer une autre."
+            return@launch
+        }
+        // appareil modeste (Fire TV Stick…) : pas assez de décodeurs vidéo pour quatre flux, les cases en trop resteraient noires
+        val playing = _slots.value.withIndex().count { (j, s) -> j != index && s.player?.state?.value.let { it is StreamState.Playing || it is StreamState.Buffering || it is StreamState.Loading || it is StreamState.Reconnecting } }
+        if (com.sokoul.iptv.data.repo.DeviceCaps.lowMemory && playing >= LOW_DEVICE_MAX_SLOTS) {
+            notice.value = "Cet appareil lit $LOW_DEVICE_MAX_SLOTS chaînes à la fois au plus : videz une case avant d'en lancer une autre."
             return@launch
         }
         if (catalog.isCategoryLocked(c.playlistId, com.sokoul.iptv.data.db.ContentType.LIVE, c.categoryId) && !parental.canAccessLocked()) {

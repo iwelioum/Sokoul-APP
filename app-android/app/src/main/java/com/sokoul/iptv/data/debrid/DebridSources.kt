@@ -183,6 +183,7 @@ class DebridSources @Inject constructor(
             maxBytes = maxBytes(s, ethernet()),
             supports4k = com.sokoul.iptv.data.repo.DeviceCaps.supports4k,
             dolbyVision = com.sokoul.iptv.data.repo.DeviceCaps.dolbyVision,
+            hdrDisplay = com.sokoul.iptv.data.repo.DeviceCaps.hdrDisplay,
             iptvBlocked = iptvBlocked,
             tieOrigin = com.sokoul.iptv.domain.SourceOrigin.entries.firstOrNull { it.name == s.sourceTie },
         )

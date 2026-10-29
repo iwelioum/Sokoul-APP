@@ -95,10 +95,20 @@ private val scheme = darkColorScheme(
  * Une seule police variable ; chaque graisse en est une instance (de 300 à 800 : « Black » retombe sur 800).
  */
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
-private fun manrope(w: Int) = Font(
+private fun manrope(w: Int) = if (android.os.Build.VERSION.SDK_INT >= 26) Font(
     com.sokoul.iptv.R.font.manrope, FontWeight(w),
     variationSettings = FontVariation.Settings(FontVariation.weight(w)),
-)
+) else Font(manropeStatic(w), FontWeight(w)) // Android 7 (Fire TV) : pas de police variable, une graisse par fichier
+
+/** Graisses figées de Manrope (mêmes dessins, licence OFL) pour les appareils sans polices variables. */
+private fun manropeStatic(w: Int) = when (w) {
+    300 -> com.sokoul.iptv.R.font.manrope_w300
+    400 -> com.sokoul.iptv.R.font.manrope_w400
+    500 -> com.sokoul.iptv.R.font.manrope_w500
+    600 -> com.sokoul.iptv.R.font.manrope_w600
+    700 -> com.sokoul.iptv.R.font.manrope_w700
+    else -> com.sokoul.iptv.R.font.manrope_w800
+}
 
 val Manrope = FontFamily(manrope(300), manrope(400), manrope(500), manrope(600), manrope(700), manrope(800))
 

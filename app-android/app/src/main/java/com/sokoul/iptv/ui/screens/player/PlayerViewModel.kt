@@ -457,7 +457,7 @@ class PlayerViewModel @Inject constructor(
     private var timeshiftAllowed = true
     val timeshift = LiveTimeshift(viewModelScope, newBuffer = {
         val dir = factory.timeshiftDir()
-        com.sokoul.iptv.player.timeshift.TimeshiftBuffer(dir, maxBytes = TimeshiftPolicy.capBytes(freeBytes(dir)))
+        com.sokoul.iptv.player.timeshift.TimeshiftBuffer(dir, maxBytes = TimeshiftPolicy.capBytes(freeBytes(dir), com.sokoul.iptv.data.repo.DeviceCaps.lowMemory))
     })
     val timeshiftState get() = timeshift.state
     private var tickJob: Job? = null
@@ -483,7 +483,7 @@ class PlayerViewModel @Inject constructor(
             val url = stream?.urls?.firstOrNull()
             if (!timeshiftAllowed || stream == null || url == null) { sp.player.playWhenReady = !sp.player.playWhenReady; return }
             if (gate.recording.value != null) { sp.player.playWhenReady = !sp.player.playWhenReady; return }
-            if (!TimeshiftPolicy.canStart(freeBytes(factory.timeshiftDir()))) {
+            if (!TimeshiftPolicy.canStart(freeBytes(factory.timeshiftDir()), com.sokoul.iptv.data.repo.DeviceCaps.lowMemory)) {
                 _ui.update { it.copy(notice = "Pause du direct indisponible : moins de 3 Go libres sur l'appareil") }
                 sp.player.playWhenReady = !sp.player.playWhenReady
                 return

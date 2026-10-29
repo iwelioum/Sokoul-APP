@@ -74,6 +74,14 @@ class SourceHardeningTest {
         val p = com.sokoul.iptv.data.debrid.SourceRanker.Prefs()
         assertEquals(dv.key, first(p, listOf(hdr, dv)))
         assertEquals(hdr.key, first(p.copy(dolbyVision = false), listOf(dv, hdr)))
+        // télé SDR (Fire TV sur une télé sans HDR) : la SDR de même définition d'abord, la DV en dernier
+        val sdr = s("Dune.2021.MULTi.2160p.WEB-DL.HEVC")
+        val sdrTv = p.copy(hdrDisplay = false)
+        assertEquals(sdr.key, first(sdrTv, listOf(dv, hdr, sdr)))
+        assertEquals(listOf(sdr.key, hdr.key, dv.key), com.sokoul.iptv.data.debrid.SourceRanker.rank(emptyList(), listOf(dv, sdr, hdr), sdrTv).map { (it as com.sokoul.iptv.data.debrid.Candidate.Debrid).stream.key })
+        // une 4K HDR reste devant une 1080p SDR : la définition prime
+        val sdr1080 = s("Dune.2021.MULTi.1080p.WEB-DL.x264")
+        assertEquals(hdr.key, first(sdrTv, listOf(sdr1080, hdr)))
         // deux versions identiques : même gagnante quel que soit l'ordre d'arrivée
         val a = s("Dune.2021.MULTi.1080p.WEB-DL.x264-AAA"); val b = s("Dune.2021.MULTi.1080p.WEB-DL.x264-BBB")
         assertEquals(first(p, listOf(a, b)), first(p, listOf(b, a)))
