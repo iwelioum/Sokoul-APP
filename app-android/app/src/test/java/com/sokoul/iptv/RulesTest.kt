@@ -140,6 +140,12 @@ class BackupRulesTest {
 }
 
 class RecordingRulesTest {
+    @Test fun series_key_ignores_accents_and_punctuation() {
+        val key = RecordingRules.seriesKey("FR|TF1 HD", "L'été est à nous !")
+        assertTrue(RecordingRules.matchesSeries("tf1", "L ETE EST A NOUS", key))
+        assertFalse(RecordingRules.matchesSeries("M6", "L'été est à nous", key))
+    }
+
     private val now = 1_000_000_000L
     private fun rec(ch: String, start: Long, end: Long, status: RecordingStatus = RecordingStatus.SCHEDULED) =
         RecordingEntity(playlistId = 1, channelId = ch, channelName = ch, title = "T-$ch", startAt = start, endAt = end, status = status)

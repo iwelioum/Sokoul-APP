@@ -69,6 +69,21 @@ object RecordingRules {
         return noCountry.replace(QUALITY_SUFFIX, "").trim().ifEmpty { name.trim() }
     }
 
+    /** Clé stable d'une règle de série : titre du programme et chaîne, sans accents ni ponctuation. */
+    fun seriesKey(channelName: String, title: String): String =
+        "${normalizeRulePart(channelLabel(channelName))}|${normalizeRulePart(title)}"
+
+    /** Vérifie qu'un programme du guide appartient à une règle d'enregistrement en série. */
+    fun matchesSeries(channelName: String, title: String, ruleKey: String): Boolean =
+        seriesKey(channelName, title) == ruleKey
+
+    private fun normalizeRulePart(value: String): String =
+        java.text.Normalizer.normalize(value.trim().lowercase(), java.text.Normalizer.Form.NFD)
+            .replace("\\p{M}+".toRegex(), "")
+            .replace("[^\\p{L}\\p{N}]+".toRegex(), " ")
+            .trim()
+            .replace("\\s+".toRegex(), " ")
+
     private fun same(a: String, b: String) =
         a.lowercase().filter { it.isLetterOrDigit() } == b.lowercase().filter { it.isLetterOrDigit() }
 
