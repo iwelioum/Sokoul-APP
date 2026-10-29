@@ -150,9 +150,14 @@ class LiveViewModel @Inject constructor(
             selected.drop(1).collect { settings.setLastGroup("live", p.id, it) }
         }
         viewModelScope.launch {
-            combine(playlist.filterNotNull(), channels.filterNotNull(), nowPlaying) { p, list, current -> Triple(p, list, current) }
-                .collect { (p, list, current) ->
-                    list.forEach { channel -> current[channel.id]?.let { program -> actions.scheduleSeriesOccurrence(p.id, channel, program) } }
+            combine(playlist.filterNotNull(), channels.filterNotNull()) { p, list -> p to list }
+                .collect { (p, list) ->
+                    list.forEach { channel ->
+                        val programs = runCatching {
+                            epg.range(p.id, channel, System.currentTimeMillis() - 120_000, System.currentTimeMillis() + 7 * 86_400_000L)
+                        }.getOrDefault(emptyList())
+                        programs.forEach { program -> actions.scheduleSeriesOccurrence(p.id, channel, program) }
+                    }
                 }
                 viewModelScope.launch {
                     focused.debounce(600).collectLatest { c ->
