@@ -59,6 +59,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
 import com.sokoul.iptv.data.db.ChannelEntity
 import com.sokoul.iptv.data.db.ContentType
@@ -71,6 +74,10 @@ import com.sokoul.iptv.data.repo.NowNext
 import com.sokoul.iptv.data.repo.PlaylistRepository
 import com.sokoul.iptv.data.repo.SpecialCategory
 import com.sokoul.iptv.data.repo.StreamResolver
+import com.sokoul.iptv.player.PlayerFactory
+import com.sokoul.iptv.player.ProviderGate
+import com.sokoul.iptv.player.StreamPlayer
+import com.sokoul.iptv.player.StreamState
 import com.sokoul.iptv.ui.components.CategoryChips
 import com.sokoul.iptv.ui.components.CategoryColumn
 import com.sokoul.iptv.ui.components.CategoryItem
@@ -97,6 +104,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -117,6 +125,9 @@ class LiveViewModel @Inject constructor(
     private val catalog: CatalogRepository,
     private val epg: EpgRepository,
     private val resolver: StreamResolver,
+    private val playerFactory: PlayerFactory,
+    private val providerGate: ProviderGate,
+    private val settingsStore: com.sokoul.iptv.data.SettingsStore,
     library: LibraryRepository,
     val actions: ChannelActions,
     private val settings: com.sokoul.iptv.data.SettingsStore,
@@ -125,6 +136,8 @@ class LiveViewModel @Inject constructor(
     val playlist: StateFlow<PlaylistEntity?> = playlists.active.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val selected = MutableStateFlow(SpecialCategory.ALL)
     private val focused = MutableStateFlow<ChannelEntity?>(null)
+    private val _preview = MutableStateFlow<Preview?>(null)
+    val preview: StateFlow<Preview?> = _preview
 
     init {
         // Rouvre le dernier groupe consulté (avec des centaines de groupes, revenir à « Tout » est pénible)
@@ -140,6 +153,27 @@ class LiveViewModel @Inject constructor(
             combine(playlist.filterNotNull(), channels.filterNotNull(), nowPlaying) { p, list, current -> Triple(p, list, current) }
                 .collect { (p, list, current) ->
                     list.forEach { channel -> current[channel.id]?.let { program -> actions.scheduleSeriesOccurrence(p.id, channel, program) } }
+                }
+                viewModelScope.launch {
+                    focused.debounce(600).collectLatest { c ->
+                        val p = playlist.value
+                        if (c == null || p == null) {
+                            _preview.value?.player?.stop()
+                            _preview.value = null
+                            return@collectLatest
+                        }
+                        val stream = runCatching { resolver.live(p, c) }.getOrNull() ?: return@collectLatest
+                        val current = _preview.value?.takeIf { it.channel.id == c.id }
+                        val sp = current?.player ?: StreamPlayer(
+                            playerFactory.create(settingsStore.current(), forMultiview = true),
+                            playerFactory,
+                            viewModelScope,
+                            providerGate,
+                            exclusive = true,
+                        )
+                        _preview.value = Preview(c, sp)
+                        sp.play(stream, c.name)
+                    }
                 }
         }
     }
@@ -184,6 +218,13 @@ class LiveViewModel @Inject constructor(
     suspend fun unlock(pin: String) = actions.parental.tryUnlock(pin)
     fun isUnlocked() = actions.parental.isOpen()
 
+    override fun onCleared() {
+        _preview.value?.player?.release()
+        super.onCleared()
+    }
+
+    data class Preview(val channel: ChannelEntity, val player: StreamPlayer)
+
     private fun launch(block: suspend (Long) -> Unit) {
         val pid = playlist.value?.id ?: return
         viewModelScope.launch { block(pid) }
@@ -201,6 +242,7 @@ fun LiveScreen(nav: NavHostController) {
     val channels by vm.channels.collectAsStateWithLifecycle()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
     val details by vm.details.collectAsStateWithLifecycle()
+    val preview by vm.preview.collectAsStateWithLifecycle()
     val favorites by vm.favoriteIds.collectAsStateWithLifecycle()
     val wide = useSideRail()
     val context = LocalContext.current
@@ -238,7 +280,7 @@ fun LiveScreen(nav: NavHostController) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it }, vm.lastPlayed) { vm.lastPlayed = null }
             }
-            if (showDetails) DetailsPanel(details, Modifier.width(if (l.isTv) 300.dp else 340.dp).fillMaxHeight(), vm::supportsCatchup)
+            if (showDetails) DetailsPanel(details, preview, Modifier.width(if (l.isTv) 300.dp else 340.dp).fillMaxHeight(), vm::supportsCatchup)
         }
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -399,14 +441,30 @@ private fun ChannelRow(
 }
 
 @Composable
-private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modifier, supportsCatchup: (ChannelEntity) -> Boolean) {
+private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, preview: LiveViewModel.Preview?, modifier: Modifier, supportsCatchup: (ChannelEntity) -> Boolean) {
     val time = rememberNow()
     Column(modifier.background(Brush.horizontalGradient(listOf(SokoulColors.Surface.copy(alpha = 0.55f), SokoulColors.Surface))).padding(start = 26.dp, end = 30.dp, top = 30.dp, bottom = 20.dp)) {
         val (c, nn) = details ?: run {
             Text("Choisissez une chaîne", color = SokoulColors.TextMuted)
             return@Column
         }
-        ChannelLogo(c.logo, c.name, Modifier.size(150.dp, 84.dp))
+        if (preview?.channel?.id == c.id) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                        keepScreenOn = false
+                        isFocusable = false
+                    }
+                },
+                update = { it.player = preview.player.player },
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(Radius.Card),
+            )
+        } else {
+            ChannelLogo(c.logo, c.name, Modifier.size(150.dp, 84.dp))
+        }
         Text(c.name, Modifier.padding(top = 14.dp), style = com.sokoul.iptv.ui.theme.Type.Section, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Tag("N° ${c.number}")
