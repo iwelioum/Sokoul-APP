@@ -814,7 +814,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
         val rd = episodeRd[a.episode.season to a.episode.episode]?.firstOrNull()?.takeIf { (a.episode.season to a.episode.episode) in rdFirst }
         PrimaryAction(
             label = EpisodeResolver.label(a),
-            detail = listOfNotNull(EpisodeResolver.hint(a), rd?.let { com.sokoul.iptv.ui.components.SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID) + " · " + com.sokoul.iptv.ui.components.SourceLabels.text(it.toSource()) }).joinToString(" · ").ifEmpty { null },
+            detail = listOfNotNull(EpisodeResolver.hint(a), rd?.let { com.sokoul.iptv.ui.components.SourceLabels.short(it.toSource()) + " · " + com.sokoul.iptv.ui.components.SourceLabels.originShort(com.sokoul.iptv.domain.SourceOrigin.DEBRID) }).joinToString(" · ").ifEmpty { null },
             progress = p?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
             onClick = {
                 // sinon : la meilleure version de l'abonnement pour cet épisode (une reprise garde l'épisode en cours)

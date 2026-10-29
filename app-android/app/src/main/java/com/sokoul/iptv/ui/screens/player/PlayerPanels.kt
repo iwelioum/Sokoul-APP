@@ -392,7 +392,7 @@ fun VersionPanel(
                         // titre : ce qui distingue cette source dans la version (rip, taille, état), l'origine en badge
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                PlayerSources.facts(s) ?: s.category?.let { "« $it »" } ?: SourceLabels.originName(s.origin), Modifier.weight(1f, fill = false),
+                                PlayerSources.facts(s) ?: SourceLabels.originName(s.origin), Modifier.weight(1f, fill = false),
                                 color = if (f || s.current) SokoulColors.TextPrimary else SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.titleSmall, fontWeight = if (s.current) FontWeight.Bold else FontWeight.Medium,
                             )
@@ -401,7 +401,9 @@ fun VersionPanel(
                         }
                         listOfNotNull(PlayerSources.audioLine(s), PlayerSources.basisLabel(s.basis), failLabel(s)).joinToString(" · ").ifEmpty { null }
                             ?.let { RowNote(it, if (s.failed) SokoulColors.Warning else SokoulColors.TextMuted) }
-                        s.fileName?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        // en petit : nom exact du fichier (et rubrique du fournisseur pour l'IPTV)
+                        listOfNotNull(s.fileName, s.category?.let { "rubrique « $it »" }).joinToString(" · ").ifEmpty { null }
+                            ?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
                 }
                 is VersionLine.More -> item(key = line.key) {
