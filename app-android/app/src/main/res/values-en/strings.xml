@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sokoul TV</string>
+    <string name="channel_recordings">Recordings</string>
+    <string name="channel_reminders">Program reminders</string>
+    <string name="live_preview_choose_channel">Choose a channel</string>
+    <string name="live_record_series">Record all episodes</string>
+    <string name="live_preview_no_program">No programme information</string>
+</resources>

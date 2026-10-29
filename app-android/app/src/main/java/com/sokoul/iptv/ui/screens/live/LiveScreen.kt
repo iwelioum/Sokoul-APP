@@ -52,6 +52,7 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -307,7 +308,7 @@ fun LiveScreen(nav: NavHostController) {
                     vm.record(c, 120) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 },
                 nowPlaying[c.id]?.let { p ->
-                    MenuOption("Enregistrer tous les épisodes", Icons.Default.FiberManualRecord) {
+                    MenuOption(context.getString(com.sokoul.iptv.R.string.live_record_series), Icons.Default.FiberManualRecord) {
                         vm.recordSeries(c, p) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                     }
                 },
@@ -450,7 +451,7 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, preview: LiveVi
     val time = rememberNow()
     Column(modifier.background(Brush.horizontalGradient(listOf(SokoulColors.Surface.copy(alpha = 0.55f), SokoulColors.Surface))).padding(start = 26.dp, end = 30.dp, top = 30.dp, bottom = 20.dp)) {
         val (c, nn) = details ?: run {
-            Text("Choisissez une chaîne", color = SokoulColors.TextMuted)
+            Text(stringResource(com.sokoul.iptv.R.string.live_preview_choose_channel), color = SokoulColors.TextMuted)
             return@Column
         }
         if (preview?.channel?.id == c.id) {
@@ -490,7 +491,7 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, preview: LiveVi
             com.sokoul.iptv.ui.components.ProgressLine(nn.progress(time), Modifier.padding(vertical = 8.dp), tone = com.sokoul.iptv.ui.components.ProgressTone.Live, onImage = false)
             now.description?.let { Text(it, color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = if (art != null) 3 else 7, overflow = TextOverflow.Ellipsis) }
         } else {
-            Text("Pas d'information de programme", color = SokoulColors.TextMuted)
+            Text(stringResource(com.sokoul.iptv.R.string.live_preview_no_program), color = SokoulColors.TextMuted)
         }
         nn.next?.let { next ->
             Spacer(Modifier.height(18.dp))

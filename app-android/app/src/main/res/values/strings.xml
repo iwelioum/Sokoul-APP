@@ -3,4 +3,7 @@
     <string name="app_name">Sokoul TV</string>
     <string name="channel_recordings">Enregistrements</string>
     <string name="channel_reminders">Rappels de programmes</string>
+    <string name="live_preview_choose_channel">Choisissez une chaîne</string>
+    <string name="live_record_series">Enregistrer tous les épisodes</string>
+    <string name="live_preview_no_program">Aucune information de programme</string>
 </resources>
