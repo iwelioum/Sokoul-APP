@@ -19,6 +19,14 @@ enum class BufferProfile(val label: String) { LOW("Faible (zapping rapide)"), NO
 enum class LiveFormat(val label: String, val ext: String) { TS("MPEG-TS (.ts)", "ts"), HLS("HLS (.m3u8)", "m3u8") }
 enum class DecoderMode(val label: String) { AUTO("Auto (matériel + FFmpeg)"), HARDWARE("Matériel uniquement"), SOFTWARE("Logiciel prioritaire") }
 
+/** Taille des sous-titres (facteur appliqué à la taille par défaut du lecteur). */
+enum class SubtitleSize(val label: String, val scale: Float) { SMALL("Petite", 0.8f), NORMAL("Normale", 1f), LARGE("Grande", 1.3f), HUGE("Très grande", 1.6f) }
+enum class SubtitleColor(val label: String) { WHITE("Blanc"), YELLOW("Jaune") }
+/** Lisibilité sur l'image : contour, fond noir semi-transparent ou aucun. */
+enum class SubtitleBackground(val label: String) { OUTLINE("Contour"), BOX("Fond noir"), NONE("Aucun") }
+/** Hauteur à l'écran : bas (par défaut) ou relevée (bandeaux incrustés, barre de son devant la télé). */
+enum class SubtitlePosition(val label: String, val bottomFraction: Float) { LOW("En bas", 0.08f), HIGH("Plus haut", 0.18f) }
+
 /** Recherches récentes : la nouvelle en tête, sans doublon (casse ignorée), 8 au plus, 2 lettres minimum. */
 object RecentSearches {
     const val MAX = 8
@@ -74,6 +82,11 @@ data class AppSettings(
     val frameRateMatch: Boolean = true,
     /** Son Dolby / DTS envoyé tel quel à l'ampli ou la barre de son (sinon décodé par la box). */
     val audioPassthrough: Boolean = true,
+    /** Apparence des sous-titres (le style système n'est pas réglable sur toutes les box, Fire TV compris). */
+    val subtitleSize: SubtitleSize = SubtitleSize.NORMAL,
+    val subtitleColor: SubtitleColor = SubtitleColor.WHITE,
+    val subtitleBackground: SubtitleBackground = SubtitleBackground.OUTLINE,
+    val subtitlePosition: SubtitlePosition = SubtitlePosition.LOW,
 ) {
     /** Bornes appliquées à chaque écriture : une valeur aberrante (import, bug d'UI) ne doit pas casser l'app. */
     fun sanitized(): AppSettings = copy(
@@ -147,6 +160,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val debridAddons = stringPreferencesKey("debrid_addons")
         val frameRate = booleanPreferencesKey("frame_rate_match")
         val passthrough = booleanPreferencesKey("audio_passthrough")
+        val subSize = stringPreferencesKey("sub_size")
+        val subColor = stringPreferencesKey("sub_color")
+        val subBackground = stringPreferencesKey("sub_background")
+        val subPosition = stringPreferencesKey("sub_position")
     }
 
     private val API_KEY_PREFIX = "api_key_"
@@ -188,6 +205,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         debridAddons = this[K.debridAddons] ?: "TORRENTIO,COMET",
         frameRateMatch = this[K.frameRate] ?: true,
         audioPassthrough = this[K.passthrough] ?: true,
+        subtitleSize = enumOr(this[K.subSize], SubtitleSize.NORMAL),
+        subtitleColor = enumOr(this[K.subColor], SubtitleColor.WHITE),
+        subtitleBackground = enumOr(this[K.subBackground], SubtitleBackground.OUTLINE),
+        subtitlePosition = enumOr(this[K.subPosition], SubtitlePosition.LOW),
     )
 
     private inline fun <reified T : Enum<T>> enumOr(v: String?, default: T): T =
@@ -290,6 +311,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.debridAddons] = s.debridAddons
             prefs[K.frameRate] = s.frameRateMatch
             prefs[K.passthrough] = s.audioPassthrough
+            prefs[K.subSize] = s.subtitleSize.name
+            prefs[K.subColor] = s.subtitleColor.name
+            prefs[K.subBackground] = s.subtitleBackground.name
+            prefs[K.subPosition] = s.subtitlePosition.name
             // clés des services : une préférence par service ; clé effacée → préférence retirée
             prefs.asMap().keys.filter { it.name.startsWith(API_KEY_PREFIX) }.forEach { prefs.remove(it) }
             s.apiKeys.forEach { (id, key) -> prefs[stringPreferencesKey(API_KEY_PREFIX + id)] = key }

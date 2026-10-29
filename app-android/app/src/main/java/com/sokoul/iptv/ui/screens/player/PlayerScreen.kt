@@ -45,6 +45,10 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.offset
 import com.sokoul.iptv.ui.components.KeyHint
@@ -136,7 +140,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-private enum class Menu { MAIN, ASPECT, RECORD, INFO, DECODER }
+private enum class Menu { MAIN, ASPECT, RECORD, INFO, DECODER, SPEED, SLEEP, AUDIO_DELAY }
+
+/** Retards du son proposés (ms) : le son arrive avant l'image sur certains flux. */
+private val AUDIO_DELAYS = listOf(0L, 100L, 200L, 300L, 500L, 750L, 1_000L, 1_500L)
+
+private fun audioDelayLabel(ms: Long) = if (ms == 0L) "aucun" else "son retardé de ${ms} ms"
 
 private val resizeModes = listOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT to "Adapter",
@@ -164,6 +173,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val episodes by vm.episodesFlow.collectAsStateWithLifecycle()
     val tmdbEpisodes by vm.tmdbEpisodes.collectAsStateWithLifecycle()
     val resizeIndex by vm.resizeMode.collectAsStateWithLifecycle()
+    val subtitleLook by vm.settings.collectAsStateWithLifecycle()
+    val speed by vm.speed.collectAsStateWithLifecycle()
+    val sleep by vm.sleepTimer.collectAsStateWithLifecycle()
     val inPip by PlaybackUiState.inPip.collectAsStateWithLifecycle()
     val fallbackState = remember { MutableStateFlow<StreamState>(StreamState.Idle) }
     val streamState by (sp?.state ?: fallbackState).collectAsState()
@@ -584,6 +596,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 },
                 update = { view ->
                     view.player = exo
+                    view.subtitleView?.let { com.sokoul.iptv.player.SubtitleLook.apply(it, subtitleLook) }
                     view.subtitleView?.visibility = if (streamDelay > 0) android.view.View.INVISIBLE else android.view.View.VISIBLE
                     view.resizeMode = effectiveResizeMode(resizeIndex, portrait = l.heightDp > l.widthDp)
                 },
@@ -592,7 +605,7 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         }
 
         OnlineCues(vm, exo, subOffset, Modifier.align(Alignment.BottomCenter).padding(bottom = if (infoVisible && !inPip) 190.dp else if (inPip) 8.dp else 56.dp))
-        DelayedStreamCues(exo, streamDelay, Modifier.fillMaxSize())
+        DelayedStreamCues(exo, streamDelay, subtitleLook, Modifier.fillMaxSize())
         if (!inPip) {
             val lighter = ui.lighter
             val bottom = if (infoVisible) 190.dp else 56.dp
@@ -840,6 +853,11 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 } else {
                     if (ui.channel != null) add(MenuOption("Retour au direct", Icons.Default.LiveTv) { vm.backToLive() })
                 }
+                if (!ui.isLive) {
+                    add(MenuOption("Vitesse : ${SleepTimer.speedLabel(speed)}", Icons.Default.Speed) { scope.launch { delay(50); menu = Menu.SPEED } })
+                    add(MenuOption("Décalage du son : ${audioDelayLabel(ui.audioDelayMs)}", Icons.Default.GraphicEq) { scope.launch { delay(50); menu = Menu.AUDIO_DELAY } })
+                }
+                add(MenuOption(SleepTimer.menuLabel(sleep, System.currentTimeMillis()), Icons.Default.Bedtime) { scope.launch { delay(50); menu = Menu.SLEEP } })
                 if (!ui.isLive) add(MenuOption("Infos du flux", Icons.Default.Info) { scope.launch { delay(50); menu = Menu.INFO } })
             },
             onDismiss = { if (menu == Menu.MAIN) menu = null },
@@ -869,6 +887,29 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
             },
             onDismiss = { menu = null },
         )
+        Menu.SPEED -> OptionsDialog(
+            "Vitesse de lecture",
+            SleepTimer.SPEEDS.map { f -> MenuOption(SleepTimer.speedLabel(f), Icons.Default.Speed, f == speed) { vm.setSpeed(f) } },
+            subtitle = "Pour cette séance ; le son reste à la bonne hauteur.",
+            onDismiss = { menu = null },
+        )
+        Menu.SLEEP -> OptionsDialog(
+            "Minuterie de mise en veille",
+            buildList {
+                if (sleep != null) add(MenuOption("Arrêter la minuterie", Icons.Default.Close) { vm.setSleepTimer(null) })
+                SleepTimer.CHOICES.filter { it != SleepTimer.Choice.EndOfItem || !ui.isLive }.forEach { c ->
+                    add(MenuOption(if (c is SleepTimer.Choice.EndOfItem && ui.currentSe == null) "Fin du film" else c.label, Icons.Default.Bedtime, sleep?.choice == c) { vm.setSleepTimer(c) })
+                }
+            },
+            subtitle = "La lecture se met en pause (position enregistrée) et le lecteur se ferme : la télé peut se mettre en veille.",
+            onDismiss = { menu = null },
+        )
+        Menu.AUDIO_DELAY -> OptionsDialog(
+            "Décalage du son",
+            AUDIO_DELAYS.map { ms -> MenuOption(audioDelayLabel(ms), Icons.Default.GraphicEq, ms == ui.audioDelayMs) { vm.setAudioDelay(ms) } },
+            subtitle = "Les lèvres bougent après la voix ? Retardez le son. Sans effet quand le son est envoyé tel quel à l'ampli (Dolby, DTS).",
+            onDismiss = { menu = null },
+        )
         Menu.DECODER -> OptionsDialog(
             "Décodage (cette séance)",
             com.sokoul.iptv.data.DecoderMode.entries.map { m ->
@@ -880,6 +921,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         null -> Unit
     }
     LaunchedEffect(ui.notice) { ui.notice?.let { toast(context, it) } }
+    // minuterie écoulée : le lecteur se ferme (écran de la fiche, la télé peut se mettre en veille)
+    val sleepDone by vm.sleepDone.collectAsStateWithLifecycle()
+    LaunchedEffect(sleepDone) { if (sleepDone) { toast(context, "Minuterie : lecture arrêtée"); nav.popBackStack() } }
     LaunchedEffect(menu) {
         if (menu == null) runCatching { if (infoVisible && !ui.isLive && !l.isTouch) scrubberFocus.requestFocus() else focus.requestFocus() }
     }
@@ -1032,10 +1076,20 @@ private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?,
     }
     val t = text ?: return
     val l = LocalLayout.current
+    // même apparence que les sous-titres du fichier (Réglages › Lecture › Sous-titres)
+    val s by vm.settings.collectAsStateWithLifecycle()
+    val base = if (l.isTv) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium
+    val boxed = s.subtitleBackground == com.sokoul.iptv.data.SubtitleBackground.BOX
     Text(
-        t, modifier.padding(horizontal = 48.dp).background(SokoulColors.black(0.7f), Radius.Tiny).padding(horizontal = 12.dp, vertical = 4.dp),
-        color = SokoulColors.OnVideo, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        style = if (l.isTv) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+        t,
+        modifier.padding(bottom = if (s.subtitlePosition == com.sokoul.iptv.data.SubtitlePosition.HIGH) 80.dp else 0.dp).padding(horizontal = 48.dp)
+            .then(if (boxed) Modifier.background(SokoulColors.black(0.75f), Radius.Tiny) else Modifier).padding(horizontal = 12.dp, vertical = 4.dp),
+        color = if (s.subtitleColor == com.sokoul.iptv.data.SubtitleColor.YELLOW) SokoulColors.SubtitleYellow else SokoulColors.OnVideo,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        style = base.copy(
+            fontSize = base.fontSize * s.subtitleSize.scale,
+            shadow = if (boxed) null else androidx.compose.ui.graphics.Shadow(SokoulColors.black(0.95f), blurRadius = 6f),
+        ),
     )
 }
 
@@ -1045,7 +1099,7 @@ private fun OnlineCues(vm: PlayerViewModel, exo: androidx.media3.common.Player?,
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun DelayedStreamCues(exo: androidx.media3.common.Player?, delayMs: Long, modifier: Modifier) {
+private fun DelayedStreamCues(exo: androidx.media3.common.Player?, delayMs: Long, look: com.sokoul.iptv.data.AppSettings, modifier: Modifier) {
     if (exo == null || delayMs <= 0) return
     val queue = remember(exo) { ArrayDeque<Pair<Long, List<androidx.media3.common.text.Cue>>>() }
     var shown by remember(exo) { mutableStateOf<List<androidx.media3.common.text.Cue>>(emptyList()) }
@@ -1072,8 +1126,8 @@ private fun DelayedStreamCues(exo: androidx.media3.common.Player?, delayMs: Long
         }
     }
     AndroidView(
-        factory = { ctx -> androidx.media3.ui.SubtitleView(ctx).apply { setUserDefaultStyle(); setUserDefaultTextSize() } },
-        update = { it.setCues(shown) },
+        factory = { ctx -> androidx.media3.ui.SubtitleView(ctx) },
+        update = { com.sokoul.iptv.player.SubtitleLook.apply(it, look); it.setCues(shown) },
         modifier = modifier,
     )
 }

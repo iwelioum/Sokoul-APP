@@ -44,7 +44,8 @@ class PlayerFactory @Inject constructor(
             "hw" in diag -> DecoderMode.HARDWARE
             else -> settings.decoderMode
         }
-        val renderers = (if (settings.audioPassthrough || forMultiview) DefaultRenderersFactory(context) else PcmOnlyRenderers(context))
+        val delay = AudioDelayProcessor()
+        val renderers = DelayedAudioRenderers(context, pcmOnly = !(settings.audioPassthrough || forMultiview), delay)
             .apply { if ("sync" in diag) forceDisableMediaCodecAsynchronousQueueing() }
             .setExtensionRendererMode(
                 when (mode) {
@@ -86,8 +87,14 @@ class PlayerFactory @Inject constructor(
             .apply {
                 trackSelectionParameters = params
                 playWhenReady = true
+                synchronized(delays) { delays[this] = delay }
             }
     }
+
+    /** Ligne à retard du son de chaque lecteur créé ici (« Décalage du son »). */
+    private val delays = java.util.WeakHashMap<ExoPlayer, AudioDelayProcessor>()
+
+    fun setAudioDelay(player: ExoPlayer, ms: Long) { synchronized(delays) { delays[player] }?.delayMs = ms.coerceIn(0, MAX_AUDIO_DELAY_MS) }
 
     /**
      * Débit estimé partagé par tous les lecteurs : un flux HLS démarre dans une qualité haute (estimation de départ
@@ -168,21 +175,24 @@ class PlayerFactory @Inject constructor(
         return builder.build()
     }
 
-    private companion object {
-        const val INITIAL_BITRATE = 20_000_000L
+    companion object {
+        private const val INITIAL_BITRATE = 20_000_000L
+        const val MAX_AUDIO_DELAY_MS = 3_000L
     }
 }
 
 /**
- * « Son vers l'ampli » désactivé : le son est toujours décodé en PCM par l'appareil (FFmpeg pour
+ * Sortie son avec la ligne à retard [delay] (« Décalage du son »).
+ * [pcmOnly] (« Son vers l'ampli » désactivé) : le son est toujours décodé en PCM par l'appareil (FFmpeg pour
  * AC3/DTS/TrueHD), jamais envoyé tel quel à l'ampli. Utile quand l'ampli ou la TV gèrent mal le passthrough.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private class PcmOnlyRenderers(context: Context) : DefaultRenderersFactory(context) {
+private class DelayedAudioRenderers(context: Context, private val pcmOnly: Boolean, private val delay: AudioDelayProcessor) : DefaultRenderersFactory(context) {
     @Suppress("DEPRECATION")
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean) =
         androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
-            .setAudioCapabilities(androidx.media3.exoplayer.audio.AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+            .apply { if (pcmOnly) setAudioCapabilities(androidx.media3.exoplayer.audio.AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES) }
+            .setAudioProcessors(arrayOf(delay))
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
             .build()

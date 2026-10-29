@@ -3,6 +3,10 @@ package com.sokoul.iptv.ui.screens.settings.sections
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Contrast
+import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speaker
@@ -11,6 +15,10 @@ import com.sokoul.iptv.data.AppSettings
 import com.sokoul.iptv.data.BufferProfile
 import com.sokoul.iptv.data.DecoderMode
 import com.sokoul.iptv.data.LiveFormat
+import com.sokoul.iptv.data.SubtitleBackground
+import com.sokoul.iptv.data.SubtitleColor
+import com.sokoul.iptv.data.SubtitlePosition
+import com.sokoul.iptv.data.SubtitleSize
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.screens.settings.AdvancedRow
 import com.sokoul.iptv.ui.screens.settings.SettingRow
@@ -32,6 +40,27 @@ internal fun LazyListScope.playbackSection(c: SettingsCtx) {
             c.choose("Sous-titres", (listOf("" to "Désactivés") + languages).map { (code, name) ->
                 MenuOption(name, selected = code == s.subtitleLanguage) { c.vm.update { it.copy(subtitleLanguage = code) } }
             })
+        }
+    }
+    // apparence : appliquée aussitôt, même pendant une lecture (sous-titres du fichier et en ligne)
+    item("pb-sub-size") {
+        SettingRow("Taille des sous-titres", s.subtitleSize.label, icon = Icons.Default.FormatSize) {
+            c.choose("Taille des sous-titres", SubtitleSize.entries.map { v -> MenuOption(v.label, selected = v == s.subtitleSize) { c.vm.update { it.copy(subtitleSize = v) } } })
+        }
+    }
+    item("pb-sub-color") {
+        SettingRow("Couleur des sous-titres", s.subtitleColor.label, icon = Icons.Default.Palette) {
+            c.choose("Couleur des sous-titres", SubtitleColor.entries.map { v -> MenuOption(v.label, selected = v == s.subtitleColor) { c.vm.update { it.copy(subtitleColor = v) } } })
+        }
+    }
+    item("pb-sub-bg") {
+        SettingRow("Lisibilité des sous-titres", s.subtitleBackground.label, "Contour noir, fond noir semi-transparent ou simple ombre", icon = Icons.Default.Contrast) {
+            c.choose("Lisibilité des sous-titres", SubtitleBackground.entries.map { v -> MenuOption(v.label, selected = v == s.subtitleBackground) { c.vm.update { it.copy(subtitleBackground = v) } } })
+        }
+    }
+    item("pb-sub-pos") {
+        SettingRow("Position des sous-titres", s.subtitlePosition.label, "« Plus haut » quand un bandeau ou le bas de la télé les cache", icon = Icons.Default.VerticalAlignBottom) {
+            c.choose("Position des sous-titres", SubtitlePosition.entries.map { v -> MenuOption(v.label, selected = v == s.subtitlePosition) { c.vm.update { it.copy(subtitlePosition = v) } } })
         }
     }
     item("pb-next") {

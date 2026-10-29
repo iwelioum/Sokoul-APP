@@ -49,6 +49,8 @@ object SokoulColors {
     val Panel = Color(0xF2111118)
     /** Texte et icônes posés sur la vidéo ou une image (lecteur, héros). */
     val OnVideo = Color.White
+    /** Sous-titres jaunes (Réglages › Lecture) : même teinte que les sous-titres du fichier (`SubtitleLook`). */
+    val SubtitleYellow = Color(0xFFFFE600)
     /** Fond noir derrière la vidéo. */
     val VideoBlack = Color.Black
     /** Texte et icônes posés sur un fond blanc (bouton focalisé). */

@@ -130,6 +130,8 @@ data class PlayerUi(
     /** Logo TMDB de l'œuvre et fond, affichés pendant le lancement. */
     val logo: String? = null,
     val backdrop: String? = null,
+    /** « Décalage du son » de la séance : le son est retardé de tant de millisecondes (0 = aucun). */
+    val audioDelayMs: Long = 0,
 )
 
 @HiltViewModel
@@ -226,6 +228,53 @@ class PlayerViewModel @Inject constructor(
     /** Format d'image (index dans les modes du lecteur), mémorisé dans les réglages. */
     val resizeMode = MutableStateFlow(0)
 
+    /** Réglages en direct (apparence des sous-titres) : changés dans Réglages, appliqués sans rouvrir le flux. */
+    val settings: StateFlow<com.sokoul.iptv.data.AppSettings> =
+        settingsStore.settings.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, com.sokoul.iptv.data.AppSettings())
+
+    // --- vitesse de lecture et minuterie (VOD) -------------------------------------------------
+
+    private val _speed = MutableStateFlow(1f)
+    /** Vitesse de lecture de la séance (films et séries ; le direct reste à ×1). */
+    val speed: StateFlow<Float> = _speed.asStateFlow()
+
+    fun setSpeed(f: Float) {
+        _speed.value = f
+        _player.value?.player?.setPlaybackSpeed(f)
+    }
+
+    /** Son en avance sur l'image : retardé de [ms] (séance en cours ; changement de lecteur compris). */
+    fun setAudioDelay(ms: Long) {
+        _ui.update { it.copy(audioDelayMs = ms) }
+        _player.value?.player?.let { factory.setAudioDelay(it, ms) }
+    }
+
+    private val _sleep = MutableStateFlow<SleepTimer.State?>(null)
+    val sleepTimer: StateFlow<SleepTimer.State?> = _sleep.asStateFlow()
+    private val _sleepDone = MutableStateFlow(false)
+    /** Minuterie écoulée : lecture en pause et position enregistrée ; l'écran ferme le lecteur. */
+    val sleepDone: StateFlow<Boolean> = _sleepDone.asStateFlow()
+    private var sleepJob: Job? = null
+
+    /** null : minuterie arrêtée. */
+    fun setSleepTimer(choice: SleepTimer.Choice?) {
+        sleepJob?.cancel()
+        if (choice == null) { _sleep.value = null; return }
+        val s = SleepTimer.start(choice, System.currentTimeMillis())
+        _sleep.value = s
+        val due = s.dueAt ?: return // fin de l'épisode : déclenchée par la fin de lecture (watchEnd)
+        sleepJob = viewModelScope.launch {
+            while (System.currentTimeMillis() < due) delay(minOf(30_000L, due - System.currentTimeMillis()).coerceAtLeast(1))
+            sleepNow()
+        }
+    }
+
+    private fun sleepNow() {
+        _sleep.value = null
+        if (_ui.value.isLive) _player.value?.stop() else pauseAndSave()
+        _sleepDone.value = true
+    }
+
     fun setResizeMode(i: Int) {
         resizeMode.value = i
         viewModelScope.launch { settingsStore.update { it.copy(resizeMode = i) } }
@@ -283,6 +332,8 @@ class PlayerViewModel @Inject constructor(
             sp.state.collect { s ->
                 if (s is StreamState.Ended && !_ui.value.isLive) {
                     saveNow()
+                    // minuterie « fin de l'épisode » : on s'arrête là, sans enchaîner
+                    if (_sleep.value?.choice == SleepTimer.Choice.EndOfItem) { sleepNow(); return@collect }
                     val next = _ui.value.nextEpisode
                     if (next != null && next.id != autoplayCancelledFor) {
                         if (autoplayNext) playNextEpisode() else _ui.update { it.copy(endedWithNext = true) }
@@ -571,6 +622,8 @@ class PlayerViewModel @Inject constructor(
             _player.value = sp
             watchEnd(sp)
             watchStutter(sp)
+            if (!_ui.value.isLive) sp.player.setPlaybackSpeed(_speed.value) // nouveau lecteur : même vitesse, même décalage du son
+            factory.setAudioDelay(sp.player, _ui.value.audioDelayMs)
             sp.play(stream, title, pos)
         }
     }
