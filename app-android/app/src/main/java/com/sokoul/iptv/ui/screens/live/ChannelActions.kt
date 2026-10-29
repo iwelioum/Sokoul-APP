@@ -32,6 +32,12 @@ class ChannelActions @Inject constructor(
         // marge de 2 min avant / 5 min après : les horaires EPG sont rarement exacts
         recordings.schedule(pid, c, p.title, maxOf(p.start - 120_000, System.currentTimeMillis()), p.end + 300_000).message
 
+    suspend fun recordSeries(pid: Long, c: ChannelEntity, p: ProgramEntity): String =
+        recordings.addSeriesRule(pid, c, p.title).message
+
+    suspend fun scheduleSeriesOccurrence(pid: Long, c: ChannelEntity, p: ProgramEntity) =
+        recordings.scheduleSeriesOccurrence(pid, c, p)
+
     suspend fun remind(pid: Long, c: ChannelEntity, p: ProgramEntity): String = recordings.addReminder(pid, c, p.start, p.title)
 
     /** Ajout au multi-écran ; renvoie un message si la chaîne n'a pas pu être ajoutée. */

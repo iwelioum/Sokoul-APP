@@ -136,6 +136,12 @@ class LiveViewModel @Inject constructor(
             launch { selected.drop(1).collect { focused.value = null; lastPlayed = null } }
             selected.drop(1).collect { settings.setLastGroup("live", p.id, it) }
         }
+        viewModelScope.launch {
+            combine(playlist.filterNotNull(), channels.filterNotNull(), nowPlaying) { p, list, current -> Triple(p, list, current) }
+                .collect { (p, list, current) ->
+                    list.forEach { channel -> current[channel.id]?.let { program -> actions.scheduleSeriesOccurrence(p.id, channel, program) } }
+                }
+        }
     }
 
     val categories: StateFlow<List<CategoryItem>> = playlist.filterNotNull()
@@ -169,6 +175,7 @@ class LiveViewModel @Inject constructor(
 
     fun toggleFavorite(c: ChannelEntity) = launch { actions.toggleFavorite(it, c) }
     fun record(c: ChannelEntity, minutes: Int, done: (String) -> Unit) = launch { done(actions.recordNow(it, c, minutes)) }
+    fun recordSeries(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.recordSeries(it, c, p)) }
     fun addToMultiview(c: ChannelEntity): String? = playlist.value?.let { actions.addToMultiview(it.id, c) }
     fun hideCategory(id: String) = launch { actions.setCategoryHidden(it, id, true) }
     fun setKids(id: String, v: Int) = launch { catalog.setCategoryKids(it, ContentType.LIVE, id, v) }
@@ -244,13 +251,18 @@ fun LiveScreen(nav: NavHostController) {
         val fav = c.id in favorites
         OptionsDialog(
             c.name,
-            listOf(
+            listOfNotNull(
                 MenuOption(if (fav) "Retirer des favoris" else "Ajouter aux favoris", if (fav) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite(c) },
                 MenuOption("Enregistrer 1 h", Icons.Default.FiberManualRecord) {
                     vm.record(c, 60) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 },
                 MenuOption("Enregistrer 2 h", Icons.Default.FiberManualRecord) {
                     vm.record(c, 120) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                },
+                nowPlaying[c.id]?.let { p ->
+                    MenuOption("Enregistrer tous les épisodes", Icons.Default.FiberManualRecord) {
+                        vm.recordSeries(c, p) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                    }
                 },
                 MenuOption("Ajouter au multi-écran", Icons.Default.GridView) {
                     vm.addToMultiview(c)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
