@@ -2,6 +2,9 @@ package com.sokoul.iptv.ui
 
 import com.sokoul.iptv.ui.nav.navigateOnce
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.History
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -150,6 +153,13 @@ fun AppRoot(pendingPlay: StateFlow<PlayIntent?>, onPlayConsumed: () -> Unit) {
                         onPlayConsumed()
                     }
                 }
+                val openSeries by com.sokoul.iptv.MainActivity.pendingSeries.collectAsStateWithLifecycle()
+                LaunchedEffect(openSeries) {
+                    openSeries?.let { sid ->
+                        com.sokoul.iptv.MainActivity.pendingSeries.value = null
+                        if (hasPlaylist == true) nav.navigateOnce(com.sokoul.iptv.ui.nav.SeriesDetailRoute(sid))
+                    }
+                }
                 com.sokoul.iptv.ui.components.ReminderBanner { r -> nav.navigateOnce(PlayerRoute(PlayKind.LIVE, r.playlistId, r.channelId)) }
                 com.sokoul.iptv.ui.screens.profiles.WhoIsWatchingOverlay()
             }
@@ -177,9 +187,16 @@ private fun AppNavHost(nav: NavHostController, start: Any) {
                     nav, "Ma liste", remember { GridSpec.Favorites(null).encode() },
                     emptyTitle = "Votre liste est vide",
                     emptyText = "Sur la fiche d'un film ou d'une série, choisissez « Ma liste » pour le retrouver ici.",
+                    headerActions = {
+                        com.sokoul.iptv.ui.components.SokoulButton("À venir", { nav.navigate(com.sokoul.iptv.ui.nav.CalendarRoute) }, icon = androidx.compose.material.icons.Icons.Default.Event)
+                        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.width(com.sokoul.iptv.ui.theme.Space.s))
+                        com.sokoul.iptv.ui.components.SokoulButton("Historique", { nav.navigate(com.sokoul.iptv.ui.nav.HistoryRoute) }, icon = androidx.compose.material.icons.Icons.Default.History)
+                    },
                 )
             }
         }
+        composable<com.sokoul.iptv.ui.nav.HistoryRoute> { Shell(nav, Dest.MY_LIST) { com.sokoul.iptv.ui.screens.library.HistoryScreen(nav) } }
+        composable<com.sokoul.iptv.ui.nav.CalendarRoute> { Shell(nav, Dest.MY_LIST) { com.sokoul.iptv.ui.screens.library.CalendarScreen(nav) } }
         composable<AllCategoriesRoute> {
             val movies = it.toRoute<AllCategoriesRoute>().type == "MOVIE"
             Shell(nav, if (movies) Dest.MOVIES else Dest.SERIES, bare = true) { if (movies) MoviesScreen(nav) else SeriesScreen(nav) }

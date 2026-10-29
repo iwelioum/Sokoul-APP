@@ -33,6 +33,7 @@ class SyncWorker @AssistedInject constructor(
     private val db: AppDatabase,
     private val settings: SettingsStore,
     private val channelDb: com.sokoul.iptv.data.net.providers.ChannelDbClient,
+    private val newEpisodes: NewEpisodeNotifier,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -42,6 +43,7 @@ class SyncWorker @AssistedInject constructor(
             when (mode) {
                 MODE_PLAYLIST -> {
                     sync.syncPlaylist(id)
+                    notifyNew(id)
                     if (inputData.getBoolean(KEY_WITH_EPG, false)) runCatching { sync.syncEpg(id) }
                     fillLogos(id)
                     CatalogIndexWorker.start(applicationContext)
@@ -58,6 +60,11 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
+    /** Séries suivies avec du nouveau : notification (une fois par mise à jour) ; jamais bloquant. */
+    private suspend fun notifyNew(pid: Long) {
+        runCatching { newEpisodes.check(pid) }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it else Timber.w(it, "Nouveaux épisodes") }
+    }
+
     /** Logos de secours (guide TV, puis iptv-org) pour les chaînes livrées sans logo ; jamais bloquant. */
     private suspend fun fillLogos(pid: Long) {
         runCatching { channelDb.fillMissingLogos(pid) }
@@ -71,7 +78,7 @@ class SyncWorker @AssistedInject constructor(
         db.programs().deleteOlderThan(now - 8 * 24 * 3600_000L)
         db.tmdb().purge(now - 14 * 24 * 3600_000L)
         for (p in db.playlists().getAll()) {
-            if (now - p.lastSync > s.playlistRefreshHours * 3600_000L) runCatching { sync.syncPlaylist(p.id) }
+            if (now - p.lastSync > s.playlistRefreshHours * 3600_000L) runCatching { sync.syncPlaylist(p.id) }.onSuccess { notifyNew(p.id) }
             if (now - p.lastEpgSync > s.epgRefreshHours * 3600_000L) runCatching { sync.syncEpg(p.id) }
             fillLogos(p.id)
         }

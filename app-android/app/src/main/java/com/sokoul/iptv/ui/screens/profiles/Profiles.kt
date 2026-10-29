@@ -205,6 +205,16 @@ fun ProfileSwitchButton(modifier: Modifier = Modifier, size: Dp = 36.dp) {
 @Composable
 fun isKidsProfile(): Boolean = LocalProfile.current?.kids == true
 
+/**
+ * Profil Enfant : sans les œuvres classées 12 ans et plus ou d'un genre adulte (`KidsRating`), partout où des
+ * œuvres s'affichent (grilles, Explorer, recherche), pas seulement sur l'accueil.
+ */
+@Composable
+fun List<com.sokoul.iptv.data.repo.Work>.forProfile(): List<com.sokoul.iptv.data.repo.Work> {
+    val kids = isKidsProfile()
+    return androidx.compose.runtime.remember(this, kids) { if (kids) filter(com.sokoul.iptv.data.repo.KidsRating::allowed) else this }
+}
+
 
 /** Choix « visible pour les enfants » d'un groupe (menu d'appui long). */
 fun kidsAccessOptions(onPick: (Int) -> Unit): List<com.sokoul.iptv.ui.components.MenuOption> = listOf(

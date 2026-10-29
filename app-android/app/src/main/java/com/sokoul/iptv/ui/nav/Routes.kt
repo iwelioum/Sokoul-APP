@@ -8,6 +8,10 @@ import kotlinx.serialization.Serializable
 @Serializable object MoviesRoute
 @Serializable object SeriesRoute
 @Serializable object MyListRoute
+/** Historique de visionnage du profil (depuis Ma liste). */
+@Serializable object HistoryRoute
+/** Calendrier « À venir » : prochains épisodes des séries suivies (depuis Ma liste). */
+@Serializable object CalendarRoute
 /** Hub des sagas (onglet de l'univers Streaming). */
 @Serializable object SagasRoute
 /** Page « musée » d'une saga (identifiant de collection TMDB). */

@@ -22,6 +22,12 @@ class LibraryRepository @Inject constructor(private val db: AppDatabase) {
     }
 
     fun continueWatching(pid: Long): Flow<List<ProgressEntity>> = db.library().observeContinueWatching(pid)
+
+    /** Historique du profil (films, épisodes, chaînes), le plus récent d'abord. */
+    fun history(pid: Long): Flow<List<ProgressEntity>> = db.library().observeHistory(pid)
+
+    /** Efface l'historique du profil (et donc ses reprises) ; les marquages « vu » faits à la main restent. */
+    suspend fun clearHistory(pid: Long) = db.library().clearHistory(pid)
     fun seriesProgress(pid: Long, sid: String): Flow<List<ProgressEntity>> = db.library().observeSeriesProgress(pid, sid)
 
     suspend fun progress(pid: Long, type: ContentType, id: String) = db.library().progress(pid, type, id)

@@ -442,6 +442,18 @@ interface LibraryDao {
     )
     fun observeMainResume(): Flow<List<ProgressEntity>>
 
+    /** Historique du profil : tout ce qui a été réellement regardé (30 s au moins), le plus récent d'abord. */
+    @Query(
+        """
+        SELECT * FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND manual = 0
+          AND (positionMs > 30000 OR finished = 1) ORDER BY updatedAt DESC LIMIT :limit
+        """
+    )
+    fun observeHistory(pid: Long, limit: Int = 300): Flow<List<ProgressEntity>>
+
+    @Query("DELETE FROM progress WHERE profileId = ${CUR_PROFILE} AND playlistId = :pid AND manual = 0")
+    suspend fun clearHistory(pid: Long)
+
     @Query("SELECT * FROM progress WHERE profileId = 0 AND playlistId = :pid AND type = :type AND itemId = :id")
     suspend fun mainProgress(pid: Long, type: ContentType, id: String): ProgressEntity?
 

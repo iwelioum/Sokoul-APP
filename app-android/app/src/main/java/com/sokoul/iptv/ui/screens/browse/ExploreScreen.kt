@@ -58,6 +58,7 @@ import com.sokoul.iptv.ui.components.focusMemory
 import com.sokoul.iptv.ui.components.rememberFocusMemory
 import com.sokoul.iptv.ui.components.shimmer
 import com.sokoul.iptv.ui.theme.LocalLayout
+import com.sokoul.iptv.ui.screens.profiles.forProfile
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Space
 import com.sokoul.iptv.ui.theme.Type
@@ -151,7 +152,11 @@ fun ExploreScreen(nav: NavHostController, typeName: String) {
     val type = runCatching { ContentType.valueOf(typeName) }.getOrDefault(ContentType.MOVIE)
     val vm: ExploreViewModel = hiltViewModel()
     LaunchedEffect(type) { vm.start(type) }
-    val ui by vm.ui.collectAsStateWithLifecycle()
+    val raw by vm.ui.collectAsStateWithLifecycle()
+    // profil Enfant : sans les titres 12 ans et plus (le compteur et « Surprends-moi » suivent)
+    val kids = com.sokoul.iptv.ui.screens.profiles.isKidsProfile()
+    val kidsWorks = raw.works.forProfile()
+    val ui = if (kidsWorks === raw.works) raw else raw.copy(works = kidsWorks)
     val f by vm.filter.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
     val l = LocalLayout.current
@@ -192,7 +197,10 @@ fun ExploreScreen(nav: NavHostController, typeName: String) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.s), contentPadding = PaddingValues(vertical = Space.xs)) {
                         item("surprise") {
                             SokoulChip("Surprends-moi", {
-                                vm.surprise { w -> if (w != null) nav.openWork(w) else android.widget.Toast.makeText(context, "Aucun titre bien noté et pas encore vu avec ces filtres", android.widget.Toast.LENGTH_SHORT).show() }
+                                val none = { android.widget.Toast.makeText(context, "Aucun titre bien noté et pas encore vu avec ces filtres", android.widget.Toast.LENGTH_SHORT).show() }
+                                // profil Enfant : tirage parmi les titres autorisés affichés
+                                if (kids) ui.works.randomOrNull()?.let { nav.openWork(it) } ?: none()
+                                else vm.surprise { w -> if (w != null) nav.openWork(w) else none() }
                             }, Modifier.focusMemory(memory, "f:surprise"), icon = Icons.Default.Casino)
                         }
                         item("genre") { FilterChip("Genre", f.genre?.let { genres[it] }, memory, "f:genre") { dialog = "genre" } }

@@ -2,6 +2,7 @@ package com.sokoul.iptv.ui.screens.browse
 
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.Radius
+import com.sokoul.iptv.ui.screens.profiles.forProfile
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -175,6 +176,8 @@ fun BrowseGridScreen(
     spec: String,
     emptyTitle: String = "Rien à afficher",
     emptyText: String = "Aucun titre de cette sélection n'est disponible dans votre abonnement.",
+    /** Boutons à droite du titre (Ma liste : « Historique »). */
+    headerActions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
 ) {
     val bar = LocalTopBar.current
     val vm: BrowseGridViewModel = hiltViewModel()
@@ -190,7 +193,7 @@ fun BrowseGridScreen(
     // Ma liste change ailleurs (fiches) : rechargée à chaque retour sur la page
     LaunchedEffect(spec) { vm.load(spec, force = spec.startsWith("fav")) }
     val header = ui.header
-    val works = ui.sorted
+    val works = ui.sorted.forProfile() // profil Enfant : sans les titres 12 ans et plus
     // titre hors catalogue (retenu depuis une saga) : pas de fiche, seulement le retirer
     val open: (Work) -> Unit = { w -> if (w.available) nav.openWork(w) else menuFor = w }
     val play: (Work) -> Unit = { w -> scope.launch { nav.navigateOnce(vm.playRoute(w)) } }
@@ -204,7 +207,7 @@ fun BrowseGridScreen(
             horizontalArrangement = Arrangement.spacedBy(l.gutter),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            item("banner", span = { GridItemSpan(maxLineSpan) }) { GridBanner(title, header, ui.works.size, ui.loading, ui.truncated, underTabs = bar != null) }
+            item("banner", span = { GridItemSpan(maxLineSpan) }) { GridBanner(title, header, works.size, ui.loading, ui.truncated, underTabs = bar != null, actions = headerActions) }
             // tri : inutile pour une saga (ordre chronologique) ou une liste trop courte
             val saga = header?.backdrop != null && header.platform == null
             if (!ui.loading && ui.works.size > 8 && !saga) {
@@ -305,7 +308,10 @@ fun BrowseGridScreen(
 }
 
 @Composable
-private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: Boolean, truncated: Boolean, underTabs: Boolean = false) {
+private fun GridBanner(
+    title: String, header: GridHeader?, count: Int, loading: Boolean, truncated: Boolean, underTabs: Boolean = false,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+) {
     val countText = if (truncated) "Les $count premiers titres" else if (count <= 1) "$count titre" else "$count titres"
     val l = LocalLayout.current
     val rich = header?.backdrop != null || header?.platform != null
@@ -314,6 +320,7 @@ private fun GridBanner(title: String, header: GridHeader?, count: Int, loading: 
             title, Modifier.statusBarsPadding(),
             subtitle = header?.subtitle ?: if (!loading) countText else null,
             top = when { underTabs -> TopTabsHeight + l.safeTop; l.isTouch -> 56.dp; else -> 28.dp },
+            actions = actions,
         )
         return
     }

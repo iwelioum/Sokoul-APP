@@ -237,8 +237,16 @@ fun SearchScreen(nav: NavHostController, origin: String = com.sokoul.iptv.data.r
     LaunchedEffect(origin) { vm.start(SearchKind.forOrigin(origin)) }
     val query by vm.query.collectAsStateWithLifecycle()
     val scope by vm.scope.collectAsStateWithLifecycle()
-    val results by vm.results.collectAsStateWithLifecycle()
-    val trending by vm.trending.collectAsStateWithLifecycle()
+    val rawResults by vm.results.collectAsStateWithLifecycle()
+    val rawTrending by vm.trending.collectAsStateWithLifecycle()
+    // profil Enfant : sans les titres 12 ans et plus, dans les résultats comme dans les tendances
+    val kids = com.sokoul.iptv.ui.screens.profiles.isKidsProfile()
+    val results = remember(rawResults, kids) {
+        rawResults?.let { r -> if (!kids) r else r.copy(movies = r.movies.filter(com.sokoul.iptv.data.repo.KidsRating::allowed), series = r.series.filter(com.sokoul.iptv.data.repo.KidsRating::allowed), debrid = emptyList()) }
+    }
+    val trending = remember(rawTrending, kids) {
+        if (!kids) rawTrending else rawTrending.map { it.copy(works = it.works.filter(com.sokoul.iptv.data.repo.KidsRating::allowed)) }.filter { it.works.isNotEmpty() }
+    }
     val completions by vm.completions.collectAsStateWithLifecycle()
     val recents by vm.recents.collectAsStateWithLifecycle()
     val l = LocalLayout.current

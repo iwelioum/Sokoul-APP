@@ -79,6 +79,12 @@ class MainActivity : ComponentActivity() {
         }
         intent?.removeExtra(EXTRA_PLAY_PLAYLIST)
         intent?.removeExtra(EXTRA_PLAY_CHANNEL)
+        // notification « Nouvel épisode » : fiche de la série (même contrôle d'identifiant que pour une chaîne)
+        val spid = intent?.getLongExtra(EXTRA_OPEN_SERIES_PLAYLIST, 0) ?: 0
+        val sid = intent?.getStringExtra(EXTRA_OPEN_SERIES)
+        if (spid > 0 && sid != null && sid.length in 1..64 && sid.all { it.isLetterOrDigit() || it == '-' || it == '_' }) pendingSeries.value = sid
+        intent?.removeExtra(EXTRA_OPEN_SERIES_PLAYLIST)
+        intent?.removeExtra(EXTRA_OPEN_SERIES)
     }
 
     private fun isTelevision(): Boolean {
@@ -116,5 +122,9 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_PLAY_PLAYLIST = "play_playlist"
         const val EXTRA_PLAY_CHANNEL = "play_channel"
+        const val EXTRA_OPEN_SERIES_PLAYLIST = "open_series_playlist"
+        const val EXTRA_OPEN_SERIES = "open_series"
+        /** Série à ouvrir (notification « Nouvel épisode »), consommée par la navigation. */
+        val pendingSeries = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     }
 }
