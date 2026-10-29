@@ -125,6 +125,11 @@ data class PlayerUi(
     val languages: List<String> = com.sokoul.iptv.data.repo.VersionPicker.DEFAULT_LANGUAGES,
     /** Ce que l'on regarde, mesuré sur le flux : « 1080p · HEVC · HDR10 · VF · IPTV ». */
     val nowPlaying: String? = null,
+    /** Lancement en cours, jusqu'à la première image : ce qui se passe (« Recherche de la meilleure version… »). */
+    val starting: String? = null,
+    /** Logo TMDB de l'œuvre et fond, affichés pendant le lancement. */
+    val logo: String? = null,
+    val backdrop: String? = null,
 )
 
 @HiltViewModel
@@ -211,6 +216,8 @@ class PlayerViewModel @Inject constructor(
             _player.value = sp
             watchEnd(sp)
             watchStutter(sp)
+            watchFirstFrame(sp)
+            if (!_ui.value.isLive) startingStatus(if (route.kind in WORK_KINDS) "Recherche de la meilleure version…" else "Chargement…")
             playlist = playlists.get(route.playlistId) ?: if (route.kind == PlayKind.CLOUD || route.kind == PlayKind.DEBRID) playlists.activeNow() else null
             startSafely()
         }
@@ -232,8 +239,42 @@ class PlayerViewModel @Inject constructor(
             start()
             started = true
         } catch (e: Exception) {
-            _ui.update { it.copy(error = e.userMessage()) }
+            _ui.update { it.copy(error = e.userMessage(), starting = null) }
         }
+    }
+
+    /** Écran de lancement (logo) retiré à la première image, ou dès qu'une erreur s'affiche. */
+    private fun watchFirstFrame(sp: StreamPlayer) {
+        viewModelScope.launch {
+            sp.state.collect { s ->
+                if (_ui.value.starting != null && (s is StreamState.Playing || s is StreamState.Failed || s is StreamState.Busy || s is StreamState.Waiting)) {
+                    _ui.update { it.copy(starting = null) }
+                }
+            }
+        }
+    }
+
+    private fun startingStatus(text: String) = _ui.update { it.copy(starting = text) }
+
+    /** Logo et fond de l'œuvre (fiche TMDB en cache) pour l'écran de lancement. */
+    private fun showArt(info: com.sokoul.iptv.data.net.TmdbInfo?) {
+        if (info == null) return
+        _ui.update { it.copy(logo = info.logo ?: it.logo, backdrop = info.backdrop ?: it.backdrop) }
+    }
+
+    /**
+     * Lecture sans version imposée : attend au plus [StartPick.WAIT_MS] la recherche Real-Debrid, puis renvoie la clé
+     * Real-Debrid si elle passe devant l'IPTV dans le classement commun ; null : la version IPTV demandée part.
+     */
+    private suspend fun bestDebridAtStart(query: suspend () -> com.sokoul.iptv.data.debrid.DebridQuery?): String? {
+        if (!debrid.enabled()) { viewModelScope.launch { setDebridQuery(query()) }; return null }
+        val found = kotlinx.coroutines.withTimeoutOrNull(StartPick.WAIT_MS) { setDebridQuery(query()); debridStreamsNow() }
+        if (found == null) {
+            if (debridQuery == null) viewModelScope.launch { setDebridQuery(query()) }
+            com.sokoul.iptv.data.debrid.SourceLog.add("Lecture : recherche ${com.sokoul.iptv.ui.components.SourceLabels.originName(com.sokoul.iptv.domain.SourceOrigin.DEBRID)} trop longue, lancement de la meilleure version connue")
+            return null
+        }
+        return StartPick.debridFirst(buildSources())
     }
 
     /** Fin de lecture : position finale enregistrée (l'épisode passe « vu »), puis enchaînement. */
@@ -261,7 +302,7 @@ class PlayerViewModel @Inject constructor(
     private suspend fun allowed(type: ContentType, categoryId: String?, then: suspend () -> Unit): Boolean {
         if (categoryId == null || !catalog.isCategoryLocked(route.playlistId, type, categoryId) || actions.parental.canAccessLocked()) return true
         pendingAfterPin = then
-        _ui.update { it.copy(needsPin = true, pinError = null) }
+        _ui.update { it.copy(needsPin = true, pinError = null, starting = null) }
         return false
     }
 
@@ -307,9 +348,11 @@ class PlayerViewModel @Inject constructor(
                 movieIndex = 0
                 // reprise partagée : la dernière position connue, quelle que soit la version regardée
                 val resume = if (route.fromStart) 0 else LibraryRepository.resumeFrom(vod.latestMovieProgress(p.id, movieVersions.map { it.id }))
+                // fiche TMDB en cache : logo de l'écran de lancement et œuvre à chercher sur Real-Debrid
+                val info = viewModelScope.async { runCatching { catalog.movieTmdb(m) }.getOrNull().also(::showArt) }
                 val tmdbQuery: suspend () -> com.sokoul.iptv.data.debrid.DebridQuery? = {
                     route.query?.let(com.sokoul.iptv.data.debrid.DebridQuery::decode)
-                        ?: runCatching { catalog.movieTmdb(m) }.getOrNull()?.id?.let { com.sokoul.iptv.data.debrid.DebridQuery(it, series = false) }
+                        ?: info.await()?.id?.let { com.sokoul.iptv.data.debrid.DebridQuery(it, series = false) }
                 }
                 // version Real-Debrid choisie sur la fiche, ou connexion IPTV occupée (enregistrement, pause après refus)
                 if (route.source != null || iptvBlocked()) {
@@ -321,10 +364,15 @@ class PlayerViewModel @Inject constructor(
                         return
                     }
                 }
+                // la meilleure version part directement (attente bornée de la recherche Real-Debrid)
+                movieUi(m, resume)
+                val best = bestDebridAtStart(tmdbQuery)
+                if (best != null && playDebrid(m.title, resume, best, movieSaver(p, m), single = true)) {
+                    watchFailures()
+                    return
+                }
                 playMovie(p, m, resume)
                 watchFailures()
-                // versions Real-Debrid chargées en fond : menu « Version » et secours
-                viewModelScope.launch { setDebridQuery(tmdbQuery()) }
             }
             PlayKind.EPISODE -> {
                 val sid = route.parentId ?: throw IllegalStateException("Série inconnue")
@@ -365,6 +413,7 @@ class PlayerViewModel @Inject constructor(
                         isLive = false, resumedFromMs = resume, seriesBackdrop = null, overview = null,
                     )
                 }
+                viewModelScope.launch { showArt(runCatching { catalog.tmdbById(q.series, q.tmdbId) }.getOrNull()) }
                 setDebridQuery(q)
                 // film aussi dans l'abonnement (sous un autre nom) : ses versions IPTV rejoignent la liste et le secours
                 if (!q.series) loadIptvTwin(p, q.tmdbId)
@@ -953,7 +1002,8 @@ class PlayerViewModel @Inject constructor(
         var notCached = 0
         for (s in order) {
             val label = com.sokoul.iptv.ui.components.SourceLabels.text(s.toSource())
-            _ui.update { it.copy(notice = "Préparation de la version $label sur $rdName…") }
+            // lancement : l'état s'affiche sous le logo, pas en bandeau
+            _ui.update { if (it.starting != null) it.copy(starting = "Préparation de la version $label…") else it.copy(notice = "Préparation de la version $label sur $rdName…") }
             val url = try {
                 rdResolver.resolve(s, q, keep = prepare && s.key == key)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -1262,7 +1312,10 @@ class PlayerViewModel @Inject constructor(
         // même source que l'épisode précédent (Real-Debrid choisi), version RD demandée par la fiche, ou IPTV occupée
         val wanted = route.source?.takeIf { e.id == route.id && !routeSourceUsed }
         val preferRd = wanted != null || currentDebrid != null || iptvBlocked()
+        // épisode suivant lancé depuis la carte : écran de lancement jusqu'à la première image
+        if (started && _ui.value.starting == null) startingStatus("Recherche de la meilleure version…")
         val q = seriesTmdbId()?.let { com.sokoul.iptv.data.debrid.DebridQuery(it, series = true, season = e.season, episode = e.episode) }
+        showArt(tmdbSeries)
         if (preferRd) {
             routeSourceUsed = true
             setDebridQuery(q)
@@ -1272,9 +1325,14 @@ class PlayerViewModel @Inject constructor(
                 return
             }
         }
+        // la meilleure version part directement (attente bornée de la recherche Real-Debrid)
+        val best = bestDebridAtStart { q }
+        if (best != null && playDebrid(e.title, resume, best, episodeSaver(p, e), single = true)) {
+            watchFailures()
+            return
+        }
         playEpisodeIptv(e, resume)
         watchFailures()
-        viewModelScope.launch { setDebridQuery(q) }
     }
 
     private var routeSourceUsed = false
@@ -1709,6 +1767,8 @@ class PlayerViewModel @Inject constructor(
     }
 
     companion object {
+        /** Films et épisodes : plusieurs versions possibles, la meilleure est cherchée avant de lancer. */
+        private val WORK_KINDS = setOf(PlayKind.MOVIE, PlayKind.EPISODE, PlayKind.DEBRID)
         const val FALLBACK_PAUSE_MS = 4_000L
         /** En dessous : vidéo d'attente ou d'erreur, pas un film ni un épisode. */
         const val PLACEHOLDER_MAX_MS = 180_000L

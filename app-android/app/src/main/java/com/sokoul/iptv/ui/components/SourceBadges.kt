@@ -30,7 +30,8 @@ object SourceLabels {
     fun quality(q: VideoQuality) = when (q) {
         VideoQuality.UHD_4K -> "4K"; VideoQuality.FHD_1080 -> "1080p"; VideoQuality.HD_720 -> "720p"; VideoQuality.SD -> "SD"
     }
-    fun hdr(h: HdrFormat) = when (h) { HdrFormat.HDR10 -> "HDR"; HdrFormat.DOLBY_VISION -> "Dolby Vision" }
+    /** Même nom partout (fiche, bouton, lecteur) : « HDR10 », « Dolby Vision ». */
+    fun hdr(h: HdrFormat) = when (h) { HdrFormat.HDR10 -> "HDR10"; HdrFormat.DOLBY_VISION -> "Dolby Vision" }
     fun language(a: AudioLanguage) = a.name
     /** « 18 Go », « 700 Mo ». */
     fun size(bytes: Long): String = if (bytes >= 1_000_000_000L) "${(bytes / 1e8).toLong().let { if (it % 10 == 0L) "${it / 10}" else "${it / 10},${it % 10}" }} Go" else "${bytes / 1_000_000} Mo"
@@ -49,6 +50,12 @@ object SourceLabels {
 
     /** Libellé court pour les menus et messages : « VF · 1080p », « AR · 4K », sinon « Version ». */
     fun text(s: PlaybackSource): String = tags(s).joinToString(" · ").ifEmpty { "Version" }
+
+    /** Bouton « Lecture » : langue, définition et HDR seulement (« MULTI · 4K HDR ») ; rip et taille restent au détail. */
+    fun short(s: PlaybackSource): String = listOfNotNull(
+        s.language?.let(::language) ?: s.region,
+        listOfNotNull(s.quality?.let(::quality), s.hdr?.let(::hdr)).joinToString(" ").ifEmpty { null },
+    ).joinToString(" · ").ifEmpty { "Version" }
 }
 
 /**

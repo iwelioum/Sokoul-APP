@@ -107,6 +107,25 @@ class SourceCatalogTest {
         assertEquals(listOf("h-tracks", "t0"), versionLines(one, emptyList(), emptySet(), live = true).map { it.key })
     }
 
+    @Test fun `panneau - une version depliee montre 8 sources, puis voir les autres`() {
+        val list = (0 until 12).map { src("rd:$it", AudioLanguage.VF, VideoQuality.FHD_1080, SourceOrigin.DEBRID) }
+        val g = SourceCatalog.group(list, langs)
+        val open = versionLines(emptyList(), g, setOf("VF|FHD_1080"), live = false)
+        assertEquals(com.sokoul.iptv.ui.screens.player.ALT_LIMIT, open.count { it is VersionLine.Alt })
+        assertEquals(3, (open.last() as VersionLine.More).hidden)
+        val all = versionLines(emptyList(), g, setOf("VF|FHD_1080"), live = false, showAll = setOf("VF|FHD_1080"))
+        assertEquals(11, all.count { it is VersionLine.Alt })
+        assertFalse(all.any { it is VersionLine.More })
+    }
+
+    @Test fun `ligne courte - l origine n est pas repetee, la rubrique brute IPTV n apparait pas`() {
+        val rd = src("rd:a", AudioLanguage.VF, VideoQuality.UHD_4K, SourceOrigin.DEBRID).copy(where = "Real-Debrid · Remux · 58,3 Go · prête")
+        assertEquals("Remux · 58,3 Go · prête", PlayerSources.facts(rd))
+        val iptv = PlayerSources.fromIptv(VodVersion("m1", "EN - Dune", "VO", "4K", "c1", categoryName = "[EN] SCI-FI/FANTASY"), current = false)
+        assertEquals(null, PlayerSources.facts(iptv))
+        assertFalse(com.sokoul.iptv.ui.screens.player.sourceNote(iptv).orEmpty().contains("SCI-FI"))
+    }
+
     @Test fun `mesures et echecs Real-Debrid relus depuis la base`() {
         val now = 1_000_000_000L
         val rows = listOf(

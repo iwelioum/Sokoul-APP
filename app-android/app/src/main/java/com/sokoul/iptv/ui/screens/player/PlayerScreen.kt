@@ -603,7 +603,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
         }
 
         if (!inPip) {
-            if (!ui.needsPin) StatusOverlay(streamState, ui.error, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() }, onStopRecording = vm::stopRecordings)
+            val starting = ui.starting
+            if (starting != null && !ui.needsPin && ui.error == null) LoadingLogo(ui, starting)
+            else if (!ui.needsPin) StatusOverlay(streamState, ui.error, retryFocus, onRetry = { vm.retry() }, onBack = { nav.popBackStack() }, onStopRecording = vm::stopRecordings)
             if (ui.needsPin) {
                 com.sokoul.iptv.ui.components.PinDialog(
                     "Contenu verrouillé — code parental",

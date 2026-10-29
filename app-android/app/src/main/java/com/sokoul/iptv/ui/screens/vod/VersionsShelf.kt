@@ -138,11 +138,9 @@ private fun VersionCard(g: VersionGroup, first: Boolean, preferred: Boolean, mod
                 if (preferred) Icon(Icons.Default.Star, "Lancée en premier", Modifier.size(18.dp), tint = SokoulColors.Gold)
                 else if (first) Icon(Icons.Default.PlayArrow, "Lancée par Lecture", Modifier.size(20.dp), tint = if (focused) SokoulColors.OnLight else SokoulColors.Accent)
             }
-            // « WEB-DL · 2,7 Go · prête » : l'origine est dans la puce, pas répétée ici
-            Text(
-                s.where.removePrefix(SourceLabels.originName(s.origin)).removePrefix(" · ").ifEmpty { s.category ?: "" },
-                Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = soft, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            )
+            // « Remux · 2,7 Go · prête » : l'origine est dans la puce, pas répétée ici ; pas de rubrique brute du fournisseur
+            val note = com.sokoul.iptv.ui.screens.player.PlayerSources.facts(s) ?: com.sokoul.iptv.ui.screens.player.PlayerSources.audioLine(s)
+            if (note != null) Text(note, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = soft, maxLines = 2, overflow = TextOverflow.Ellipsis)
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 SourceBadge(SourceLabels.originShort(s.origin), filled = true, onLight = focused)
@@ -150,9 +148,13 @@ private fun VersionCard(g: VersionGroup, first: Boolean, preferred: Boolean, mod
                 g.sources.map { it.origin }.distinct().filter { it != s.origin }.forEach {
                     SourceBadge(SourceLabels.originShort(it), filled = false, onLight = focused)
                 }
-                s.codec?.let { SourceBadge(it, filled = false, onLight = focused) }
+                // HDR / Dolby Vision présents parmi les autres sources de la version, mais pas dans celle lue
+                g.sources.mapNotNull { it.hdr }.distinct().filter { it != g.hdr }.take(1).forEach {
+                    SourceBadge("+$it", filled = false, onLight = focused)
+                }
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 val more = g.sources.size - 1
-                if (more > 0) Text("+$more", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft)
+                if (more > 0) Text("+$more", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft, maxLines = 1)
             }
         }
     }

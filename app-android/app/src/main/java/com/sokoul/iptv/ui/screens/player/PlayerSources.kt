@@ -199,6 +199,15 @@ object PlayerSources {
     fun short(s: PlayerSource?): String =
         s?.let { listOfNotNull(it.language?.name ?: it.region, it.quality?.let(SourceLabels::quality)).joinToString(" · ") }?.ifEmpty { null } ?: "Source"
 
+    /**
+     * Ce qui distingue une source, sans répéter son origine (déjà en badge) : « Remux · 12 Go · prête ».
+     * IPTV : rien, la rubrique brute du fournisseur (« [EN] SCI-FI ») n'apparaît qu'en petit sous la ligne.
+     */
+    fun facts(s: PlayerSource): String? = when (s.origin) {
+        SourceOrigin.IPTV -> null
+        else -> s.where.removePrefix(SourceLabels.originName(s.origin)).removePrefix(" · ").ifBlank { null }
+    }
+
     fun basisLabel(b: QualityBasis): String? = when (b) {
         QualityBasis.MEASURED -> "qualité mesurée"
         QualityBasis.NAME -> "qualité d'après le nom"

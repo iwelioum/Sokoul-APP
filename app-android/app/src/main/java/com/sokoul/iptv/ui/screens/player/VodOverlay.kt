@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -455,6 +456,45 @@ fun PauseScreen(ui: PlayerUi, position: Long, duration: Long) {
                 )
             }
             Text("OK pour reprendre  ·  Retour pour fermer  ·  autre touche : commandes", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextMuted)
+        }
+    }
+}
+
+/**
+ * Lancement d'un film ou d'un épisode, jusqu'à la première image : fond de l'œuvre assombri et logo qui pulse
+ * (titre à défaut de logo), avec ce qui se passe en dessous (« Recherche de la meilleure version… »).
+ */
+@Composable
+fun LoadingLogo(ui: PlayerUi, status: String) {
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "logo")
+    val alpha by pulse.animateFloat(
+        initialValue = 0.35f, targetValue = 1f, label = "logoAlpha",
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(tween(900, easing = LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse),
+    )
+    val art = ui.backdrop ?: ui.seriesBackdrop
+    Box(Modifier.fillMaxSize().background(SokoulColors.VideoBlack).semantics { contentDescription = "Chargement de ${ui.title}" }, contentAlignment = Alignment.Center) {
+        if (art != null) {
+            coil.compose.AsyncImage(art, null, Modifier.fillMaxSize().graphicsLayer { this.alpha = 0.35f }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(SokoulColors.black(0.35f), SokoulColors.black(0.85f)))))
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 32.dp)) {
+            var logoFailed by remember(ui.logo) { mutableStateOf(ui.logo == null) }
+            Box(Modifier.widthIn(max = 520.dp).height(150.dp).graphicsLayer { this.alpha = alpha }, contentAlignment = Alignment.Center) {
+                if (!logoFailed) {
+                    coil.compose.AsyncImage(
+                        ui.logo, ui.title, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        onError = { logoFailed = true },
+                    )
+                } else {
+                    Text(ui.title, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            ui.subtitle?.takeIf { ui.currentSe != null }?.let {
+                Text(it, Modifier.padding(top = 14.dp), style = MaterialTheme.typography.titleMedium, color = SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            AnimatedContent(status, label = "startStatus", transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) }) { s ->
+                Text(s, Modifier.padding(top = 18.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextMuted, textAlign = TextAlign.Center, maxLines = 2)
+            }
         }
     }
 }

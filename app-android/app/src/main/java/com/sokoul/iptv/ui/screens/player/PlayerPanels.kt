@@ -1,6 +1,7 @@
 package com.sokoul.iptv.ui.screens.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,6 +42,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -144,19 +146,18 @@ private fun RowTitle(text: String, selected: Boolean, focused: Boolean) = Text(
 )
 
 @Composable
-private fun RowNote(text: String, color: Color = SokoulColors.TextMuted) =
-    Text(text, Modifier.padding(top = 2.dp), color = color, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun RowNote(text: String, color: Color = SokoulColors.TextMuted, maxLines: Int = 1) =
+    Text(text, Modifier.padding(top = 2.dp), color = color, style = MaterialTheme.typography.labelMedium, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
 
 @Composable
 private fun RowNoteItem(text: String) = Text(text, Modifier.padding(horizontal = 8.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, color = SokoulColors.TextMuted)
 
 /** Puces : origine (pleine), puis HDR et codec (contour). */
 @Composable
-private fun OriginChips(s: PlayerSource, modifier: Modifier = Modifier, withQuality: Boolean = false) {
+private fun OriginChips(s: PlayerSource, modifier: Modifier = Modifier, withHdr: Boolean = false) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         SourceBadge(SourceLabels.originShort(s.origin), filled = true)
-        if (withQuality) s.quality?.let { SourceBadge(SourceLabels.quality(it), filled = false) }
-        listOfNotNull(if (withQuality) s.hdr else null, s.codec).forEach { SourceBadge(it, filled = false) }
+        listOfNotNull(if (withHdr) s.hdr else null, s.codec).forEach { SourceBadge(it, filled = false) }
     }
 }
 
@@ -183,8 +184,21 @@ internal sealed interface VersionLine {
     data class Track(val option: TrackOption, val i: Int) : VersionLine { override val key get() = "t$i" }
     data class Version(val group: VersionGroup, val main: Boolean = true) : VersionLine { override val key get() = "v" + SourceCatalog.versionKey(group.best) }
     data class Alt(val source: PlayerSource, val groupKey: String) : VersionLine { override val key get() = "a" + source.id }
+    /** Groupe déplié trop long : « Voir les n autres sources ». */
+    data class More(val groupKey: String, val hidden: Int) : VersionLine { override val key get() = "m$groupKey" }
     data class Note(val text: String, override val key: String) : VersionLine
 }
+
+/** Autres sources affichées quand une version est dépliée, avant « Voir les n autres ». */
+internal const val ALT_LIMIT = 8
+
+/** Ligne courte sous une source : ce qui la distingue, les langues annoncées, l'échec éventuel (sans l'origine, déjà en badge). */
+internal fun sourceNote(s: PlayerSource, withBasis: Boolean = false): String? = listOfNotNull(
+    PlayerSources.facts(s),
+    PlayerSources.audioLine(s),
+    if (withBasis) PlayerSources.basisLabel(s.basis) else null,
+    failLabel(s),
+).joinToString(" · ").ifEmpty { null }
 
 /** Titre d'une version : « 4K · HDR10 », « 1080p », « Qualité non indiquée ». */
 internal fun versionTitle(g: VersionGroup): String =
@@ -214,6 +228,7 @@ internal fun sourceDetail(s: PlayerSource): String = listOfNotNull(
 internal fun versionLines(
     tracks: List<TrackOption>, groups: List<VersionGroup>, expanded: Set<String>, live: Boolean,
     languages: List<String> = com.sokoul.iptv.data.repo.VersionPicker.DEFAULT_LANGUAGES,
+    showAll: Set<String> = emptySet(),
 ): List<VersionLine> = buildList {
     if (live || tracks.size > 1) {
         add(VersionLine.Header(if (live) "Pistes audio" else "Dans ce fichier", if (live) null else "Même image, changement immédiat", "h-tracks"))
@@ -231,7 +246,12 @@ internal fun versionLines(
         }
         add(VersionLine.Version(g, main))
         val vk = SourceCatalog.versionKey(g.best)
-        if (vk in expanded) g.others.forEach { add(VersionLine.Alt(it, vk)) }
+        if (vk in expanded) {
+            // des centaines de releases pour un même titre : les mieux classées d'abord, le reste sur demande
+            val shown = if (vk in showAll) g.others else g.others.take(ALT_LIMIT)
+            shown.forEach { add(VersionLine.Alt(it, vk)) }
+            if (shown.size < g.others.size) add(VersionLine.More(vk, g.others.size - shown.size))
+        }
     }
 }
 
@@ -281,9 +301,10 @@ fun VersionPanel(
     val live = sources.isEmpty() && (search == SourceSearch.DONE || search == SourceSearch.ACCOUNT)
     val entry = remember { FocusRequester() }
     val expanded = remember { mutableStateListOf<String>() }
+    val showAll = remember { mutableStateListOf<String>() }
     val groups = remember(sources, languages) { SourceCatalog.group(sources, languages) }
     val current = sources.firstOrNull { it.current }
-    val lines = versionLines(tracks, groups, expanded.toSet(), live, languages)
+    val lines = versionLines(tracks, groups, expanded.toSet(), live, languages, showAll.toSet())
     val groupFocus = remember(groups) { groups.associate { SourceCatalog.versionKey(it.best) to FocusRequester() } }
     val focusIndex = lines.indexOfFirst { it is VersionLine.Version && it.group.isCurrent }.takeIf { it >= 0 }
         ?: lines.indexOfFirst { it is VersionLine.Track && it.option.selected }.takeIf { it >= 0 }
@@ -339,8 +360,12 @@ fun VersionPanel(
                             OriginChips(s, Modifier.padding(start = 10.dp))
                         }
                         if (!g.isCurrent) QualityDelta(s, current)
-                        RowNote(listOfNotNull(s.where, PlayerSources.audioLine(s), failLabel(s)).joinToString(" · "), SokoulColors.TextSecondary)
-                        if (n > 0) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        sourceNote(s)?.let { RowNote(it, if (s.failed) SokoulColors.Warning else SokoulColors.TextSecondary, maxLines = 2) }
+                        // au doigt : toucher « n autres sources » déplie la version (la ligne, elle, lance la lecture)
+                        if (n > 0) Row(
+                            Modifier.padding(top = 4.dp).pointerInput(vk) { detectTapGestures { if (open) expanded -= vk else expanded += vk } },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Icon(if (open) Icons.Default.ExpandMore else Icons.Default.ChevronRight, null, Modifier.size(14.dp), tint = SokoulColors.TextMuted)
                             Text(
                                 (if (n == 1) "1 autre source" else "$n autres sources") + " (" +
@@ -364,17 +389,27 @@ fun VersionPanel(
                         },
                         indent = true,
                     ) { f ->
+                        // titre : ce qui distingue cette source dans la version (rip, taille, état), l'origine en badge
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                SourceLabels.originName(s.origin), Modifier.weight(1f, fill = false),
-                                color = if (f || s.current) SokoulColors.TextPrimary else SokoulColors.TextSecondary, maxLines = 1,
+                                PlayerSources.facts(s) ?: s.category?.let { "« $it »" } ?: SourceLabels.originName(s.origin), Modifier.weight(1f, fill = false),
+                                color = if (f || s.current) SokoulColors.TextPrimary else SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.titleSmall, fontWeight = if (s.current) FontWeight.Bold else FontWeight.Medium,
                             )
                             if (s.current) Text("  EN COURS", style = Type.Badge, color = SokoulColors.Accent, maxLines = 1)
-                            OriginChips(s, Modifier.padding(start = 10.dp), withQuality = true)
+                            OriginChips(s, Modifier.padding(start = 10.dp), withHdr = true)
                         }
-                        RowNote(sourceDetail(s), if (s.failed) SokoulColors.Warning else SokoulColors.TextSecondary)
+                        listOfNotNull(PlayerSources.audioLine(s), PlayerSources.basisLabel(s.basis), failLabel(s)).joinToString(" · ").ifEmpty { null }
+                            ?.let { RowNote(it, if (s.failed) SokoulColors.Warning else SokoulColors.TextMuted) }
                         s.fileName?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+                is VersionLine.More -> item(key = line.key) {
+                    PanelRow(false, "Voir les ${line.hidden} autres sources", e, { showAll += line.groupKey }, indent = true) { f ->
+                        Text(
+                            "Voir les ${line.hidden} autres sources", color = if (f) SokoulColors.TextPrimary else SokoulColors.TextMuted,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
                     }
                 }
             }

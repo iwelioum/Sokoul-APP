@@ -42,7 +42,10 @@ class PlaybackSourceTest {
     @Test fun `libelles - calcules a partir des valeurs typees`() {
         assertEquals("VF · 1080p", SourceLabels.text(PlaybackSources.fromIptv(v("FHD", "VF"))))
         assertEquals("MULTI · 4K", SourceLabels.text(PlaybackSources.fromIptv(v("4K", "MULTI"))))
-        assertEquals("VOSTFR · HDR", SourceLabels.text(PlaybackSources.fromIptv(v("HDR", "VOSTFR"))))
+        assertEquals("VOSTFR · HDR10", SourceLabels.text(PlaybackSources.fromIptv(v("HDR", "VOSTFR"))))
+        // bouton « Lecture » : langue, définition et HDR réunis, sans rip ni taille
+        assertEquals("VOSTFR · HDR10", SourceLabels.short(PlaybackSources.fromIptv(v("HDR", "VOSTFR"))))
+        assertEquals("MULTI · 4K", SourceLabels.short(PlaybackSources.fromIptv(v("4K", "MULTI"))))
         assertEquals("Version", SourceLabels.text(PlaybackSource("x", SourceOrigin.IPTV)))
         // langue inconnue : le pays du fournisseur
         assertEquals("AR · 720p", SourceLabels.text(PlaybackSources.fromIptv(v("HD", null, name = "AR - Le Film"))))

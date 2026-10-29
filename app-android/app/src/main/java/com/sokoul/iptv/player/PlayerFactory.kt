@@ -76,6 +76,7 @@ class PlayerFactory @Inject constructor(
 
         return ExoPlayer.Builder(context, renderers)
             .setLoadControl(loadControl)
+            .setBandwidthMeter(bandwidthMeter)
             .setMediaSourceFactory(mediaSourceFactory(settings.userAgent, null))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), !forMultiview)
             .setHandleAudioBecomingNoisy(true)
@@ -86,6 +87,16 @@ class PlayerFactory @Inject constructor(
                 trackSelectionParameters = params
                 playWhenReady = true
             }
+    }
+
+    /**
+     * Débit estimé partagé par tous les lecteurs : un flux HLS démarre dans une qualité haute (estimation de départ
+     * 20 Mb/s, réseau domestique) au lieu de la plus basse, puis l'estimation réelle prend le relais d'une lecture à l'autre.
+     */
+    private val bandwidthMeter by lazy {
+        androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context)
+            .setInitialBitrateEstimate(INITIAL_BITRATE)
+            .build()
     }
 
     fun mediaSourceFactory(userAgent: String, referrer: String?): MediaSource.Factory {
@@ -155,6 +166,10 @@ class PlayerFactory @Inject constructor(
             )
         }
         return builder.build()
+    }
+
+    private companion object {
+        const val INITIAL_BITRATE = 20_000_000L
     }
 }
 

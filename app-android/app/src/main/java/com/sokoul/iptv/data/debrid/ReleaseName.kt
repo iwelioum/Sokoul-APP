@@ -5,7 +5,7 @@ import com.sokoul.iptv.domain.HdrFormat
 import com.sokoul.iptv.domain.VideoQuality
 
 /** Origine du fichier, de la meilleure à la moins bonne. */
-enum class RipSource(val label: String) { REMUX("Remux"), BLURAY("Blu-ray"), WEBDL("WEB"), WEBRIP("WEBRip"), HDTV("TV") }
+enum class RipSource(val label: String) { REMUX("Remux"), BLURAY("Blu-ray"), WEBDL("WEB"), WEBRIP("WEBRip"), HDTV("HDTV") }
 
 /** Tout ce qu'on lit dans le nom d'une version (« Dune.2021.MULTi.2160p.UHD.BluRay.REMUX.DV.HDR.HEVC… »). */
 data class Release(

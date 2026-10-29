@@ -247,6 +247,10 @@ class CatalogRepository @Inject constructor(
     suspend fun seriesTmdb(series: SeriesEntity, tmdbHint: Int? = null): TmdbInfo? =
         tmdb.tv(settings.current().tmdbApiKey, series.title, series.year, series.tmdbId?.takeIf { it.isNotBlank() } ?: tmdbHint?.toString())
 
+    /** Fiche TMDB par identifiant (images seulement, cache) : titre lu hors abonnement. */
+    suspend fun tmdbById(series: Boolean, id: Int): TmdbInfo? =
+        tmdb.details(settings.current().tmdbApiKey, if (series) "tv" else "movie", id, full = false)
+
     /** Épisodes d'une saison en français (titres, résumés, vignettes TMDB). */
     suspend fun tmdbSeason(tvId: Int, season: Int) = tmdb.season(settings.current().tmdbApiKey, tvId, season)
 

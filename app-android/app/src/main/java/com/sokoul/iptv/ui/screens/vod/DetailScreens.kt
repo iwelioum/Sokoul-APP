@@ -203,12 +203,20 @@ class MovieDetailViewModel @Inject constructor(
         ranked.value = com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv, debridStreams.value, prefs)
     }
 
+    /** Recherche Real-Debrid en cours : la fiche l'annonce sous « Lecture ». */
+    val searching = MutableStateFlow(false)
+
     private fun loadDebrid(tmdbId: Int) = viewModelScope.launch {
         if (!debrid.enabled()) return@launch
         val q = com.sokoul.iptv.data.debrid.DebridQuery(tmdbId, series = false)
         debridQuery = q
-        debridStreams.value = runCatching { debrid.find(q) }.getOrDefault(emptyList())
-        rerank()
+        searching.value = true
+        try {
+            debridStreams.value = runCatching { debrid.find(q) }.getOrDefault(emptyList())
+            rerank()
+        } finally {
+            searching.value = false
+        }
     }
     val error = MutableStateFlow<String?>(null)
     /** Versions de l'œuvre dans l'ordre de lancement (la première est lancée par « Lecture »). */
@@ -318,6 +326,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val saga by vm.saga.collectAsStateWithLifecycle()
     val ranked by vm.ranked.collectAsStateWithLifecycle()
     val languages by vm.languages.collectAsStateWithLifecycle()
+    val searching by vm.searching.collectAsStateWithLifecycle()
     var groupMenu by remember { mutableStateOf<com.sokoul.iptv.ui.screens.player.VersionGroup?>(null) }
     var otherMenu by remember { mutableStateOf<List<com.sokoul.iptv.ui.screens.player.VersionGroup>?>(null) }
     val extras by vm.extras.collectAsStateWithLifecycle()
@@ -386,11 +395,12 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     )
     val primary = PrimaryAction(
         label = (when { resume != null -> "Reprendre"; watched -> "Revoir"; else -> "Lecture" }) + when {
-            topRd != null -> " · ${SourceLabels.text(topRd.source)} · " + SourceLabels.originShort(topRd.source.origin)
+            topRd != null -> " · ${SourceLabels.short(topRd.source)}"
             multi || sourceCount > 1 -> " · ${versionLabel(best)}"
             else -> ""
         },
-        detail = resume?.let { EpisodeResolver.remaining(it) },
+        // recherche Real-Debrid en cours : Lecture reste possible, le lecteur attendra la meilleure version
+        detail = resume?.let { EpisodeResolver.remaining(it) } ?: if (searching) "Recherche de la meilleure version…" else null,
         progress = resume?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs },
         onClick = { playBest(watched && resume == null) },
     )
@@ -487,7 +497,9 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
             "$lang · ${com.sokoul.iptv.ui.screens.player.versionTitle(g)}",
             buildList {
                 g.sources.forEach { s ->
-                    add(MenuOption("Lire : " + com.sokoul.iptv.ui.screens.player.sourceDetail(s), Icons.Default.PlayArrow, selected = s.id == detailSources.firstOrNull()?.id) { playSource(s.id) })
+                    // « Lire : RD · Remux · 12 Go · prête » ; IPTV : la rubrique du fournisseur à défaut d'autre détail
+                    val what = com.sokoul.iptv.ui.screens.player.sourceNote(s, withBasis = true) ?: s.category?.let { "« $it »" }
+                    add(MenuOption("Lire : " + SourceLabels.originShort(s.origin) + (what?.let { " · $it" } ?: ""), Icons.Default.PlayArrow, selected = s.id == detailSources.firstOrNull()?.id) { playSource(s.id) })
                 }
                 g.sources.filter { it.origin == com.sokoul.iptv.domain.SourceOrigin.IPTV }.forEach { s ->
                     versions.firstOrNull { it.id == s.id }?.let { v ->
@@ -948,8 +960,10 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
                         val s = g.best
                         val more = g.sources.size - 1
                         add(MenuOption(
+                            // même ligne que sur la fiche d'un film : langue · définition · origine · rip et taille
                             "Lire en " + com.sokoul.iptv.ui.screens.player.PlayerSources.languageName(g.language, g.region) + " · " + com.sokoul.iptv.ui.screens.player.versionTitle(g) +
-                                " · " + com.sokoul.iptv.ui.components.SourceLabels.originShort(s.origin) + if (more > 0) " (+$more)" else "",
+                                " · " + com.sokoul.iptv.ui.components.SourceLabels.originShort(s.origin) +
+                                (com.sokoul.iptv.ui.screens.player.PlayerSources.facts(s)?.let { " · $it" } ?: "") + if (more > 0) " (+$more)" else "",
                             Icons.Default.PlayArrow,
                         ) { if (s.id == EP_IPTV) playEpisode(e, false) else playEpisodeRd(e, s.id.removePrefix(RD_ITEM), false) })
                     }
@@ -995,23 +1009,6 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>, memory: com.sokoul
                     Text(person.name, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     person.role?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VersionChip(source: com.sokoul.iptv.domain.PlaybackSource, detail: String?, preferred: Boolean, first: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
-    FocusSurface(style = FocusStyle.Chip,
-        onClick = onClick, onLongClick = onLongClick, modifier = modifier, shape = Radius.Card,
-        color = if (first) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh,
-    ) { focused ->
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (preferred) Icons.Default.Star else Icons.Default.PlayArrow, null, Modifier.size(18.dp), tint = if (preferred) SokoulColors.Gold else if (focused) SokoulColors.OnLight else SokoulColors.TextSecondary)
-            Column(Modifier.padding(start = 8.dp).widthIn(max = 220.dp)) {
-                com.sokoul.iptv.ui.components.SourceBadges(source, onLight = focused)
-                val sub = listOfNotNull(if (first) "Lancée par Lecture" else null, detail?.takeIf { it.isNotBlank() }).joinToString(" · ")
-                if (sub.isNotEmpty()) Text(sub, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = if (focused) SokoulColors.OnLight.copy(alpha = 0.7f) else SokoulColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
