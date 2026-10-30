@@ -131,11 +131,18 @@ class RecordingsViewModel @Inject constructor(
     fun removeRule(r: RecordingRuleEntity) = viewModelScope.launch { scheduler.removeSeriesRule(r.id) }
 }
 
-/** Diffusions programmées par une règle, dans l'ordre chronologique. */
-private fun upcomingFor(rule: RecordingRuleEntity, recordings: List<RecordingEntity>) = recordings.filter {
-    it.status == RecordingStatus.SCHEDULED && it.playlistId == rule.playlistId && it.channelId == rule.channelId &&
+/** Diffusions d'une règle dans un état donné (programmées par défaut), dans l'ordre chronologique. */
+private fun upcomingFor(rule: RecordingRuleEntity, recordings: List<RecordingEntity>, status: RecordingStatus = RecordingStatus.SCHEDULED) = recordings.filter {
+    it.status == status && it.playlistId == rule.playlistId && it.channelId == rule.channelId &&
         RecordingRules.matchesSeries(it.channelName, it.title, rule.ruleKey)
 }.sortedBy { it.startAt }
+
+/** « en cours jusqu'à 09:30 » si un épisode s'enregistre, sinon la prochaine diffusion programmée. */
+private fun ruleStatus(rule: RecordingRuleEntity, recordings: List<RecordingEntity>, now: Long): String {
+    upcomingFor(rule, recordings, RecordingStatus.RECORDING).firstOrNull()?.let { return "en cours jusqu'à ${formatClock(it.endAt)}" }
+    return upcomingFor(rule, recordings).firstOrNull()?.let { "prochaine : ${dayLabel(it.startAt, now)} ${formatClock(it.startAt)}" }
+        ?: "aucune diffusion dans le guide"
+}
 
 @Composable
 fun RecordingsScreen(nav: NavHostController) {
@@ -198,18 +205,13 @@ fun RecordingsScreen(nav: NavHostController) {
                     com.sokoul.iptv.ui.components.RowHeader("Tous les épisodes", countLabel(rules.size, "règle"), kicker = "RÈGLES")
                     LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         items(rules, key = { it.id }) { rule ->
-                            val upcoming = upcomingFor(rule, recordings)
-                            val line = buildList {
-                                add(RecordingRules.channelLabel(rule.channelName))
-                                upcoming.firstOrNull()?.let { add("prochaine : ${dayLabel(it.startAt, now)} ${formatClock(it.startAt)}") }
-                                    ?: add("aucune diffusion dans le guide")
-                            }.joinToString(" · ")
+                            val line = "${RecordingRules.channelLabel(rule.channelName)} · ${ruleStatus(rule, recordings, now)}"
                             FocusSurface(onClick = { ruleMenu = rule }, style = FocusStyle.Row, color = SokoulColors.Surface, modifier = Modifier.width(l.landscape)) { _ ->
                                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.FiberManualRecord, null, Modifier.size(22.dp), tint = SokoulColors.Live)
                                     Column(Modifier.padding(start = 12.dp)) {
                                         Text(rule.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(line, style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(line, style = Type.Meta, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         if (rule.skipped > 0) Text(
                                             if (rule.skipped > 1) "${rule.skipped} diffusions ignorées (conflit)" else "1 diffusion ignorée (conflit)",
                                             style = MaterialTheme.typography.labelSmall, color = SokoulColors.Warning, maxLines = 1,
@@ -269,11 +271,13 @@ fun RecordingsScreen(nav: NavHostController) {
     }
     ruleMenu?.let { rule ->
         val n = upcomingFor(rule, recordings).size
+        val live = upcomingFor(rule, recordings, RecordingStatus.RECORDING).firstOrNull()
         OptionsDialog(
             rule.title,
             listOf(MenuOption("Supprimer la règle", Icons.Default.Delete) { vm.removeRule(rule) }),
             subtitle = "${RecordingRules.channelLabel(rule.channelName)} · " +
                 (if (n == 0) "aucune diffusion programmée" else "$n diffusion${if (n > 1) "s" else ""} programmée${if (n > 1) "s" else ""} (annulée${if (n > 1) "s" else ""} avec la règle)") +
+                (if (live != null) "\nL'épisode en cours d'enregistrement (jusqu'à ${formatClock(live.endAt)}) continue." else "") +
                 "\nLes enregistrements terminés sont conservés.",
             onDismiss = { ruleMenu = null },
         )

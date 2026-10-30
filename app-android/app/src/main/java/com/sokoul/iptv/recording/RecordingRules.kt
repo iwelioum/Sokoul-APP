@@ -111,6 +111,8 @@ object RecordingRules {
      * Diffusions d'une règle encore à programmer : programmes de la chaîne dont le titre correspond, pas encore finis,
      * et sans enregistrement déjà posé dessus (même chaîne, début à ±5 min, ou créneau couvert).
      * Une diffusion annulée par l'utilisateur après la création de la règle n'est pas reprogrammée.
+     * Deux diffusions qui se suivent (émission en deux parties) ne se chevauchent pas : la seconde commence
+     * à la fin de l'enregistrement précédent sur la chaîne, sans marge avant.
      */
     fun seriesAirings(
         ruleKey: String,
@@ -122,17 +124,25 @@ object RecordingRules {
         now: Long,
     ): List<Airing> {
         val onChannel = existing.filter { it.channelId == channelId && (it.status != RecordingStatus.CANCELLED || it.createdAt >= ruleCreatedAt) }
-        return programs.mapNotNull { p ->
+        // créneaux déjà occupés sur la chaîne : enregistrements en attente puis diffusions retenues pendant ce passage
+        val busy = onChannel.filter { it.isPending() }.map { it.startAt to it.endAt }.toMutableList()
+        val out = mutableListOf<Airing>()
+        for (p in programs.sortedBy { it.start }.distinctBy { it.start }) {
             val pStart = p.start
             val pEnd = p.end
-            val title = p.title
-            if (pEnd <= now + 60_000 || !matchesSeries(channelName, title, ruleKey)) return@mapNotNull null
-            val start = maxOf(pStart - MARGIN_BEFORE_MS, now)
+            if (pEnd <= now + 60_000 || !matchesSeries(channelName, p.title, ruleKey)) continue
+            var start = maxOf(pStart - MARGIN_BEFORE_MS, now)
+            // couvert = ce qui reste à diffuser est déjà enregistré (un enregistrement lancé en cours de programme compte)
             val taken = onChannel.any { r ->
-                kotlin.math.abs(r.startAt - start) <= SAME_AIRING_MS || (r.startAt <= pStart && r.endAt >= pEnd)
+                kotlin.math.abs(r.startAt - start) <= SAME_AIRING_MS || (r.startAt <= maxOf(pStart, start) && r.endAt >= pEnd)
             }
-            if (taken) null else Airing(title, start, pEnd + MARGIN_AFTER_MS, pStart)
-        }.distinctBy { it.programStart }
+            if (taken) continue
+            busy.filter { (s, e) -> s <= start && e > start && e < pEnd }.maxOfOrNull { it.second }?.let { start = it }
+            val airing = Airing(p.title, start, pEnd + MARGIN_AFTER_MS, pStart)
+            busy += airing.start to airing.end
+            out += airing
+        }
+        return out
     }
 
     private fun same(a: String, b: String) =

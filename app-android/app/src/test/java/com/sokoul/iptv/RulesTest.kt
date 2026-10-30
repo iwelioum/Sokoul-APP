@@ -178,6 +178,33 @@ class RecordingRulesTest {
         assertTrue(RecordingRules.seriesAirings(key, "m6", "M6", 0, programs, emptyList(), now).isEmpty())
     }
 
+    @Test fun `deux diffusions consecutives se suivent sans conflit`() {
+        val key = RecordingRules.seriesKey("FR| FRANCE 2 FHD", "N'oubliez pas les paroles")
+        val m = 60_000L
+        val programs = listOf(
+            prog("N'oubliez pas les paroles", now + 75 * m, now + 120 * m), // 2e partie, liste non triée
+            prog("N'oubliez pas les paroles", now + 40 * m, now + 75 * m),
+        )
+        val airings = RecordingRules.seriesAirings(key, "f2", "FR| FRANCE 2 FHD", 0, programs, emptyList(), now)
+        assertEquals(listOf(now + 38 * m, now + 80 * m), airings.map { it.start })
+        assertEquals(listOf(now + 80 * m, now + 125 * m), airings.map { it.end })
+        // acceptées par le planificateur l'une après l'autre (créneaux qui se touchent)
+        val first = rec("f2", airings[0].start, airings[0].end, RecordingStatus.SCHEDULED)
+        assertTrue(RecordingRules.check("f2", airings[1].start, airings[1].end, listOf(first), 1, now) is RecordingRules.Verdict.Ok)
+        // 1re partie déjà en base (passage précédent) : seule la 2e est ajoutée, sans chevauchement
+        val again = RecordingRules.seriesAirings(key, "f2", "FR| FRANCE 2 FHD", 0, programs, listOf(first), now)
+        assertEquals(listOf(now + 80 * m), again.map { it.start })
+    }
+
+    @Test fun `programme en cours deja enregistre depuis son milieu`() {
+        val key = RecordingRules.seriesKey("France 2", "Télématin")
+        val m = 60_000L
+        // Télématin 08:30–09:25, enregistrement lancé à 08:34 jusqu'à 09:30 ; règle créée à 09:00
+        val programs = listOf(prog("Télématin", now - 30 * m, now + 25 * m))
+        val live = rec("f2", now - 26 * m, now + 30 * m, RecordingStatus.RECORDING)
+        assertTrue(RecordingRules.seriesAirings(key, "f2", "France 2", 0, programs, listOf(live), now).isEmpty())
+    }
+
     @Test fun `apercu du direct seulement si la connexion est libre`() {
         val p = com.sokoul.iptv.ui.screens.live.LivePreviewPolicy
         assertTrue(p.canPlay(enabled = true, visible = true, recording = false, cooldownMs = 0))

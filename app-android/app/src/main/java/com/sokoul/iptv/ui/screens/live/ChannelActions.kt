@@ -43,7 +43,8 @@ class ChannelActions @Inject constructor(
         if (!rule.ok) return "Une règle existe déjà pour « ${p.title} » sur ${RecordingRules.channelLabel(c.name)}"
         val added = series.run(pid)
         return when (added) {
-            0 -> "${rule.message} : aucune diffusion à venir dans le guide pour l'instant"
+            // 0 : rien dans le guide, ou épisodes déjà enregistrés / programmés
+            0 -> "${rule.message} : aucune nouvelle diffusion à programmer pour l'instant"
             1 -> "${rule.message} : 1 diffusion programmée"
             else -> "${rule.message} : $added diffusions programmées"
         }

@@ -106,6 +106,11 @@ class PlayerUiTest {
         assertEquals("30 s", seekDeltaLabel(-30_000))
         assertEquals("1 min 30", seekDeltaLabel(90_000))
         assertEquals("2 min", seekDeltaLabel(120_000))
+        // tap sur la barre tactile : piste rentrée de la moitié du repère de chaque côté
+        assertEquals(0.5f, com.sokoul.iptv.ui.screens.player.scrubFraction(500f, 1000f, 20f), 0.001f)
+        assertEquals(0f, com.sokoul.iptv.ui.screens.player.scrubFraction(5f, 1000f, 20f), 0.001f)
+        assertEquals(1f, com.sokoul.iptv.ui.screens.player.scrubFraction(995f, 1000f, 20f), 0.001f)
+        assertEquals(0f, com.sokoul.iptv.ui.screens.player.scrubFraction(10f, 30f, 20f), 0.001f)
     }
 
     @Composable

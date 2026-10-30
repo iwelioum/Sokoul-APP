@@ -76,6 +76,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -355,19 +361,50 @@ fun seekDeltaLabel(ms: Long): String {
     return if (s < 60) "$s s" else "${s / 60} min" + if (s % 60 > 0) " ${s % 60}" else ""
 }
 
+private val ScrubberThumb = 16.dp
+
+/** Fraction visée par un tap à [x] sur une barre de largeur [width] dont la piste est rentrée de [inset] de chaque côté. */
+fun scrubFraction(x: Float, width: Float, inset: Float): Float {
+    val track = width - 2 * inset
+    return if (track <= 0f) 0f else ((x - inset) / track).coerceIn(0f, 1f)
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun TouchScrubber(position: Long, duration: Long, onSeekTo: (Long) -> Unit, onInteract: () -> Unit) {
     var drag by remember { mutableStateOf<Float?>(null) }
     val fraction = drag ?: if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val scope = rememberCoroutineScope()
+    // une seule requête au relâchement (pas de rafale de requêtes pendant le glissement)
+    val commit = { drag?.let { if (duration > 0) onSeekTo(clampSeek((it * duration).toLong(), duration)) }; drag = null }
     Slider(
         value = fraction,
         onValueChange = { drag = it; onInteract() },
-        // une seule requête au relâchement (pas de rafale de requêtes pendant le glissement)
-        onValueChangeFinished = { drag?.let { if (duration > 0) onSeekTo((it * duration).toLong()) }; drag = null },
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Position de lecture" },
+        onValueChangeFinished = commit,
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Position de lecture" }
+            // un tap bref ne fait rien sur le Slider (vu sur la tablette) : le geste est observé sans être consommé ;
+            // au relâchement, la position glissée est validée, ou à défaut celle du tap
+            .pointerInput(duration) {
+                val inset = ScrubberThumb.toPx() / 2
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var moved = false
+                    do {
+                        val e = awaitPointerEvent(PointerEventPass.Initial)
+                        e.changes.firstOrNull { it.id == down.id }?.let {
+                            if ((it.position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
+                        }
+                    } while (e.changes.any { it.pressed })
+                    val tapped = scrubFraction(down.position.x, size.width.toFloat(), inset)
+                    scope.launch {
+                        delay(60)
+                        if (drag != null) commit()
+                        else if (!moved && duration > 0) onSeekTo(clampSeek((tapped * duration).toLong(), duration))
+                    }
+                }
+            },
         // piste fine et repère rond (le style Material par défaut — piste épaisse, repère en trait — jure avec la TV)
-        thumb = { Box(Modifier.size(if (drag != null) 22.dp else 16.dp).background(SokoulColors.Accent, Radius.Round)) },
+        thumb = { Box(Modifier.size(if (drag != null) 22.dp else ScrubberThumb).background(SokoulColors.Accent, Radius.Round)) },
         track = {
             Box(Modifier.fillMaxWidth().height(if (drag != null) 6.dp else 4.dp).background(SokoulColors.GlassLight, Radius.Round)) {
                 Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(SokoulColors.Accent, Radius.Round))
