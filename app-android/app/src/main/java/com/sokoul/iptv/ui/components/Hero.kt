@@ -191,7 +191,13 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to SokoulColors.black(0.6f), 0.18f to Color.Transparent, 0.55f to Color.Transparent, 0.86f to SokoulColors.bg(0.95f), 1f to SokoulColors.Background)))
             } else {
                 Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to SokoulColors.Background, 0.30f to SokoulColors.bg(0.85f), 0.62f to Color.Transparent)))
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to SokoulColors.Background)))
+                // tablette portrait : le texte occupe 75 % de la largeur, au-delà du dégradé horizontal →
+                // voile plus haut sous le texte (méta et résumé illisibles sur une image claire sinon)
+                if (l.window == com.sokoul.iptv.ui.theme.WindowClass.MEDIUM) {
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.25f to Color.Transparent, 0.62f to SokoulColors.bg(0.78f), 1f to SokoulColors.Background)))
+                } else {
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to SokoulColors.Background)))
+                }
             }
         }
         // texte

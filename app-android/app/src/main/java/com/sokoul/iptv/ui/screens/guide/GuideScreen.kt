@@ -290,12 +290,20 @@ fun GuideScreen(nav: NavHostController) {
         LaunchedEffect(row, focusTime) { if (preview != row to focusTime) { delay(PREVIEW_SETTLE_MS); preview = row to focusTime } }
         val currentChannel = list?.getOrNull(preview.first)
         val currentProgram = currentChannel?.let { c -> programs[c.id]?.firstOrNull { preview.second >= it.start && preview.second < it.end } }
-        GuidePreview(
+        // tactile : pas de focus qui se déplace, l'aperçu resterait figé sur la 1re chaîne (et prend 40 % de la
+        // hauteur en paysage) ; le détail d'un programme s'ouvre au toucher → simple en-tête
+        if (isTv) GuidePreview(
             currentChannel, currentProgram, now, windowStart,
             catchup = currentChannel?.let { vm.supportsCatchup(it) } == true,
             reminded = currentChannel != null && currentProgram != null && "${currentChannel.id}|${currentProgram.start}" in reminders,
             compact = layout.isCompact, side = side,
-        )
+        ) else Row(
+            Modifier.fillMaxWidth().padding(start = side, end = side, top = if (layout.isCompact) 10.dp else 18.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Guide TV", Modifier.weight(1f), style = if (layout.isCompact) Type.Section else Type.ScreenTitle, maxLines = 1)
+            Text(formatClock(now), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, color = SokoulColors.TextSecondary)
+        }
 
         val pickCategory: (CategoryItem) -> Unit = { c ->
             if (c.locked && !vm.isUnlocked()) pinFor = c else {

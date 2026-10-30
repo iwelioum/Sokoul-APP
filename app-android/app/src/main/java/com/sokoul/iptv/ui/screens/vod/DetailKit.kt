@@ -462,10 +462,12 @@ private fun FactsLine(hero: DetailHeroData, modifier: Modifier) {
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (hero.rating != null && hero.rating >= MIN_RATING) RatingChip(hero.rating, Modifier.align(Alignment.CenterVertically))
         hero.externalRatings.forEach { (source, value) -> Box(Modifier.align(Alignment.CenterVertically)) { ExternalRating(source, value) } }
-        val lead = (hero.rating != null && hero.rating >= MIN_RATING) || hero.externalRatings.isNotEmpty()
-        hero.facts.forEachIndexed { i, f ->
-            if (i > 0 || lead) Dot()
-            Text(f, Modifier.align(Alignment.CenterVertically), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary)
+        // faits groupés en un seul bloc : au retour à la ligne (tablette portrait), pas de « · » orphelin en début de ligne
+        if (hero.facts.isNotEmpty()) Row(Modifier.align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            hero.facts.forEachIndexed { i, f ->
+                if (i > 0) Dot()
+                Text(f, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary, maxLines = 1)
+            }
         }
         hero.certification?.let { Badge(certificationLabel(it), filled = true) }
         hero.quality?.let { Badge(it, filled = false) }
