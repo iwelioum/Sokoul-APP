@@ -204,7 +204,10 @@ fun DetailScaffold(
     val entered = rememberSaveable { mutableStateOf(reduced) }
     LaunchedEffect(Unit) { delay(Motion.STAGGER * 8L + Motion.MEDIUM); entered.value = true }
 
-    val heroPx = with(density) { l.heightDp.dp.toPx() }
+    // tablette en paysage : le premier écran laisse dépasser la première section (versions, épisodes) sur le même
+    // fond plein cadre, pour qu'on voie qu'il y a une suite ; TV et portrait : premier écran plein
+    val heroHeight = if (detailPeek()) (l.heightDp * 0.74f).dp else l.heightDp.dp
+    val heroPx = with(density) { heroHeight.toPx() }
     // 0 = premier écran, 1 = sections au premier plan (fond assombri)
     val depth by remember { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else (listState.firstVisibleItemScrollOffset / (heroPx * 0.5f)).coerceIn(0f, 1f) } }
     val deep by remember { derivedStateOf { depth > 0f } }
@@ -220,10 +223,6 @@ fun DetailScaffold(
 
     if (l.isCompact) {
         PhoneDetail(nav, hero, primary, primaryLoading, actions, memory, entered, kb, listState, onSynopsis, sections)
-        return
-    }
-    if (detailTwoColumn()) {
-        TabletLandscapeDetail(nav, hero, primary, primaryLoading, actions, memory, entered, kb, listState, onSynopsis, sections)
         return
     }
 
@@ -252,7 +251,7 @@ fun DetailScaffold(
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 72.dp)) {
                 item("hero") {
                     androidx.compose.runtime.CompositionLocalProvider(LocalBringIntoViewSpec provides defaultSpec) {
-                        Box(Modifier.fillMaxWidth().height(l.heightDp.dp)) {
+                        Box(Modifier.fillMaxWidth().height(heroHeight)) {
                             Column(
                                 Modifier.align(Alignment.BottomStart)
                                     .padding(start = l.margin, end = l.margin, bottom = 36.dp)
@@ -276,60 +275,14 @@ fun DetailScaffold(
     }
 }
 
-/** Fiche en deux colonnes : tablette (ou grand écran tactile) tenue en paysage. TV, portrait et téléphone : non. */
-@Composable
-fun detailTwoColumn(): Boolean {
-    val l = LocalLayout.current
-    return l.isTouch && !l.isCompact && l.widthDp > l.heightDp
-}
-
 /**
- * Tablette en paysage : à gauche l'image de l'œuvre, le titre, les repères, le résumé et les boutons (défilant seuls
- * si besoin) ; à droite, les sections (versions, épisodes, distribution…) défilent à part. L'essentiel tient sur un écran.
+ * Tablette (ou grand écran tactile) tenue en paysage : la fiche garde son fond plein cadre, mais le premier écran
+ * laisse dépasser la première section. TV, portrait et téléphone : non.
  */
 @Composable
-private fun TabletLandscapeDetail(
-    nav: NavHostController, hero: DetailHeroData, primary: PrimaryAction?, primaryLoading: Boolean, actions: List<SecondaryAction>,
-    memory: FocusMemory, entered: MutableState<Boolean>, kb: Animatable<Float, *>, listState: androidx.compose.foundation.lazy.LazyListState,
-    onSynopsis: () -> Unit, sections: LazyListScope.() -> Unit,
-) {
+fun detailPeek(): Boolean {
     val l = LocalLayout.current
-    val reduced = LocalReducedMotion.current
-    Row(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-        // clip : le fond agrandi (Ken Burns) ne déborde pas sur la colonne des sections
-        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(0.44f).fillMaxHeight().clipToBounds()) {
-            DetailBackdrop(hero, kb, depthProvider = { 0f }, reduced = reduced)
-            // fondu vers la colonne des sections
-            Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0.55f to Color.Transparent, 1f to SokoulColors.Background)))
-            val h = maxHeight
-            Column(
-                Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())
-                    .heightIn(min = h).padding(start = l.margin, end = 20.dp, top = 72.dp, bottom = 28.dp),
-                verticalArrangement = Arrangement.Bottom,
-            ) {
-                HeroBlock(hero, primary, primaryLoading, actions, memory, entered, onSynopsis, fullWidth = true)
-            }
-        }
-        // à l'ouverture, pas de défilement automatique vers un élément qui reçoit le focus par programme (mémoire du
-        // focus, bouton Lecture) : la colonne s'ouvrait décalée, versions à moitié sous la barre d'état. Ensuite,
-        // comportement normal (clavier, manette, TalkBack sur tablette : le focus reste visible).
-        val opening = remember { mutableStateOf(true) }
-        LaunchedEffect(Unit) { delay(1_000); opening.value = false }
-        val defaultSpec = LocalBringIntoViewSpec.current
-        val spec = remember(defaultSpec) {
-            object : BringIntoViewSpec {
-                override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
-                    if (opening.value) 0f else defaultSpec.calculateScrollDistance(offset, size, containerSize)
-            }
-        }
-        androidx.compose.runtime.CompositionLocalProvider(LocalBringIntoViewSpec provides spec) {
-            LazyColumn(
-                Modifier.weight(0.56f).fillMaxHeight(), state = listState,
-                contentPadding = PaddingValues(top = 64.dp, bottom = 72.dp),
-            ) { sections() }
-        }
-    }
-    com.sokoul.iptv.ui.components.TouchTopBar(onBack = { nav.popBackStack() }, scrimProvider = { 0f })
+    return l.isTouch && !l.isCompact && l.widthDp > l.heightDp
 }
 
 private const val KB_MAX = 1.08f

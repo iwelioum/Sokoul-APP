@@ -2,20 +2,20 @@
 
 ## Purpose
 
-Adapter la disposition de la fiche d'un film ou d'une série à l'appareil, pour que l'essentiel (titre, repères, boutons, versions ou épisodes) soit visible sans faire défiler une page entière.
+Adapter la disposition de la fiche d'un film ou d'une série à l'appareil, sans casser le fond plein cadre de l'œuvre, pour qu'on voie dès l'ouverture qu'il y a une suite (versions, épisodes) sous les boutons.
 
 ## ADDED Requirements
 
-### Requirement: Deux colonnes en paysage tactile
-Sur tablette en paysage, la fiche SHALL être disposée en deux colonnes : à gauche, l'image de l'œuvre, le titre ou logo, les repères, le résumé et les boutons ; à droite, défilant indépendamment, les sections (versions, épisodes, distribution, saga, suggestions).
+### Requirement: Première section visible en paysage tactile
+Sur tablette en paysage, la fiche SHALL garder l'image de l'œuvre en plein cadre derrière le titre, les repères, le résumé et les boutons, et le premier écran SHALL laisser apparaître le début de la première section (« Versions disponibles » ou « Épisodes ») sur ce même fond, sans découper l'écran en colonnes.
 
 #### Scenario: Fiche film en paysage (tablette)
 - **WHEN** l'utilisateur ouvre la fiche d'un film qui a plusieurs versions, la tablette tenue en paysage
-- **THEN** le bouton Lecture et l'étagère « Versions disponibles » sont visibles ensemble, sans défilement
+- **THEN** l'image occupe tout l'écran, et le titre « Versions disponibles » avec le haut des cartes de versions est visible sous les boutons sans défilement
 
 #### Scenario: Fiche série en paysage (tablette)
 - **WHEN** l'utilisateur ouvre la fiche d'une série en paysage
-- **THEN** la liste des épisodes de la saison s'affiche dans la colonne de droite, en liste verticale, à côté du titre et des boutons
+- **THEN** le début de la section « Épisodes » apparaît en bas du premier écran, sur l'image de la série
 
 ### Requirement: Dispositions inchangées ailleurs
 En portrait, sur téléphone et sur TV, la fiche SHALL garder sa disposition actuelle.

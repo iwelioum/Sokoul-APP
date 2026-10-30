@@ -12,9 +12,9 @@
 - [x] 2.2 Ligne de source partagée et `SourcesDialog` (origine en badge une fois, titre type · taille, note langues · état, 8 au plus puis « Voir les n autres ») à la place du `groupMenu` texte ; vérifier par capture de l'appui long sur une version et par les tests existants du panneau — *capture : « WEB · 994 Mo · prête PAR DÉFAUT [RD] [H.264] », base de la qualité et nom du fichier en petit*
 - [x] 2.3 Panneau du lecteur en paysage tactile (40 %, max 520 dp, fondu en bas) et puce « +n sources » touchable sur les cartes de version ; vérifier par captures tablette en paysage — *puce « +1 source » : ouvre la fenêtre des sources ; panneau du lecteur non recapturé (même composant, largeur seule changée)*
 
-## 3. Fiche en deux colonnes
+## 3. Fiche en paysage tactile
 
-- [x] 3.1 Branche `TabletLandscapeDetail` dans `DetailScaffold` (héros à gauche défilant seul, sections à droite) et épisodes en liste verticale ; vérifier par captures d'une fiche film (bouton Lecture et versions visibles ensemble) et d'une fiche série en paysage, puis rotation en portrait (disposition actuelle) — *captures film et série ; portrait : disposition plein écran retrouvée*
+- [x] 3.1 Fond plein cadre conservé, premier écran à 74 % de la hauteur en paysage tactile (`detailPeek`) pour laisser apparaître la première section ; vérifier par capture d'une fiche film (boutons et début de « Versions disponibles » visibles ensemble, image non découpée) puis rotation en portrait (disposition actuelle) — *capture Clayface en paysage ; la version en deux colonnes, essayée d'abord, a été retirée à la demande de l'utilisateur (image découpée)*
 
 ## 4. Titre jamais en double
 
@@ -26,13 +26,10 @@
 
 ## Notes de mise en œuvre
 
-- Colonne de droite de la fiche : défilement automatique vers le focus désactivé (`BringIntoViewSpec` à 0). La mémoire du focus ouvrait la colonne décalée, versions à moitié sous la barre d'état.
-- Fond de la colonne de gauche découpé (`clipToBounds`) : l'effet Ken Burns débordait en une bande claire sur la colonne de droite.
 - Le titre sous les cartes paysage sans logo ne vaut qu'en tactile ; la TV garde le titre généré dans l'image au focus.
 - Corrections après relecture (`android-reviewer`) :
   - seuil des petits fichiers relatif : sous 50 Mio **et** sous le dixième de la plus grosse source du titre (un dessin animé de 35 Mo reste proposé) ; la source en cours de lecture n'est jamais écartée (`keep`) ;
   - recherche : la redécoration repart de la valeur vue avant la décoration (`dropWhile`), une fiche écrite pendant la recherche Real-Debrid n'est plus perdue ;
-  - colonne de droite : défilement automatique coupé seulement pendant l'ouverture (1 s), puis normal (clavier, manette, TalkBack) ;
   - cartes paysage tactiles : ligne de titre toujours réservée (rangées de hauteur égale), comptée dans l'aperçu du clavier de la recherche ; Top 10 paysage : titre dans l'image (`caption = false`) ;
   - fondu du panneau des sources en tactile seulement (la ligne focalisée à la télécommande n'est plus recouverte) ;
   - puce « +n sources » : action TalkBack propre, rappel à jour (`rememberUpdatedState`).

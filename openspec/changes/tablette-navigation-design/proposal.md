@@ -16,9 +16,7 @@ Dans la recherche, certaines cartes dessinent le titre par-dessus une image qui 
   - année, durée, heure de fin et nombre de saisons, chacun avec son icône ;
   - genres en puces discrètes ;
   - **badge d'âge en couleur** selon la tranche (Tous publics, -10, -12, -16, -18).
-- **Fiche en deux colonnes en paysage tactile** :
-  - à gauche, l'image, le titre, les repères, le résumé et les boutons ;
-  - à droite, défilant à part, les versions, les épisodes, la distribution et les suggestions.
+- **Fiche en paysage tactile** : l'image de l'œuvre reste en plein cadre, mais le premier écran est moins haut et laisse apparaître le début des versions ou des épisodes, pour qu'on voie qu'il y a une suite (une version en deux colonnes, essayée d'abord, découpait l'image et a été écartée).
 
   Portrait, téléphone et TV ne changent pas.
 - **Fenêtre Sources lisible**. Chaque source tient sur une ligne structurée :
@@ -34,7 +32,7 @@ Dans la recherche, certaines cartes dessinent le titre par-dessus une image qui 
 
 ### New Capabilities
 - `meta-chips` : affichage des repères d'une œuvre (année, durée, fin, saisons, genres, âge) avec icônes et badge d'âge coloré.
-- `detail-layout` : disposition de la fiche film ou série selon l'appareil (deux colonnes en paysage tactile).
+- `detail-layout` : disposition de la fiche film ou série selon l'appareil (première section visible en paysage tactile, fond plein cadre).
 - `artwork` : choix des images et du titre des cartes (image sans texte, logo, titre jamais en double).
 
 ### Modified Capabilities
@@ -58,4 +56,4 @@ Dans la recherche, certaines cartes dessinent le titre par-dessus une image qui 
 - Filtres et tri dans le panneau des sources.
 - Nouvelles sources de métadonnées (autres que TMDB).
 - Changement de la mise en page du héros sur TV.
-- Fiche en deux colonnes sur téléphone en paysage.
+- Fiche découpée en colonnes (essayée, écartée).

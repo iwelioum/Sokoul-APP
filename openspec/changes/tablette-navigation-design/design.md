@@ -29,7 +29,7 @@ Voir proposal.md (Why) et les specs `meta-chips`, `detail-layout`, `artwork` et 
 **Goals :**
 - un composant de repères partagé (héros, carte dévoilée, fiche) ;
 - une ligne de source unique, partagée par le dialogue de la fiche et le panneau du lecteur ;
-- la fiche en deux colonnes ajoutée en nouvelle branche de `DetailScaffold`, sans toucher aux sections.
+- la fiche garde son fond plein cadre ; seule la hauteur du premier écran change en paysage tactile.
 
 **Non-Goals :**
 - aucun changement de navigation TV ;
@@ -51,12 +51,11 @@ Voir proposal.md (Why) et les specs `meta-chips`, `detail-layout`, `artwork` et 
 
 *Écarté* : reconnaître le type à partir du texte (« 2026 », « 1 h 49 »). C'est fragile, car le format de la durée change selon l'écran.
 
-### 2. Fiche en deux colonnes
-- Condition `twoColumn = l.isTouch && !l.isCompact && l.widthDp > l.heightDp`.
-- Nouvelle branche `TabletLandscapeDetail` de `DetailScaffold` : une `Row`.
-  - **Colonne de gauche (44 %)** : `DetailBackdrop` en fond, un dégradé vers la droite, puis le `HeroBlock` en `verticalScroll`, avec sa limite de largeur levée par un paramètre `fullWidth`.
-  - **Colonne de droite** : un `LazyColumn` des `sections()`, à partir du haut, sur fond `Background`.
-- Les épisodes suivent ce même drapeau pour passer en liste verticale (`DetailScreens.kt:865/873`).
+### 2. Première section visible en paysage tactile (fond plein cadre conservé)
+- Condition `detailPeek() = l.isTouch && !l.isCompact && l.widthDp > l.heightDp`.
+- `DetailScaffold` garde sa branche plein écran. Le premier écran (item « hero ») passe de `l.heightDp` à 74 % de la hauteur, et `heroPx` (assombrissement au défilement) suit. Le titre de la première section et le haut de ses cartes apparaissent sur le même fond.
+
+*Essayé puis écarté (retour de l'utilisateur sur la tablette, 30/10)* : deux colonnes, image et texte à gauche, sections à droite. L'image était découpée et la bordure franche entre les colonnes faisait « deux écrans collés ». La fiche doit rester une image plein cadre.
 
 ### 3. Ligne de source partagée
 - `SourceLineContent(s, selected)` est rendu `internal` dans `PlayerPanels.kt` :

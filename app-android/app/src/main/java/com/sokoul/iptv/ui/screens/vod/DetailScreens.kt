@@ -753,8 +753,8 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val rankPrefs by vm.rankPrefs.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
-    // épisodes en liste verticale : téléphone, et tablette en paysage (colonne de droite de la fiche)
-    val episodeList = l.isCompact || detailTwoColumn()
+    // épisodes en liste verticale sur téléphone ; ailleurs, rangée sur le fond plein cadre
+    val episodeList = l.isCompact
     val memory = rememberFocusMemory()
     var season by rememberSaveable { mutableStateOf<Int?>(null) }
     var episodeMenu by remember { mutableStateOf<EpisodeEntity?>(null) }
@@ -868,7 +868,6 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
                         )
                     }
                 }
-                // téléphone et tablette en paysage (colonne de droite) : liste verticale ; TV et portrait : rangée
                 if (!episodeList) {
                     EpisodeShelf(
                         currentSeason, seasonEpisodes, { ev -> bySe[ev.entity.season to ev.entity.episode] },
@@ -1025,7 +1024,7 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>, memory: com.sokoul
 @Composable
 private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
     val l = LocalLayout.current
-    val thumbW = if (l.isCompact) 136.dp else if (detailTwoColumn()) 200.dp else (l.landscape * 0.9f)
+    val thumbW = if (l.isCompact) 136.dp else (l.landscape * 0.9f)
     val watched = progress?.finished == true
     Box(Modifier.padding(horizontal = l.margin, vertical = 5.dp)) {
         FocusSurface(style = FocusStyle.Row,
