@@ -80,6 +80,7 @@ import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
 import com.sokoul.iptv.ui.components.SokoulButton as IptvButton
+import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.screens.player.DelayedSpinner
 import com.sokoul.iptv.ui.screens.player.ErrorCard
 import com.sokoul.iptv.ui.screens.player.LiveInfoBar

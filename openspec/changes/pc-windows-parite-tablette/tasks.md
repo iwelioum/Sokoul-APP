@@ -28,6 +28,9 @@
 - [x] 3.4 Réglages (`SettingsPanes` : rubriques Compte et playlists, Lecture, Télévision et guide, Films et séries, Real-Debrid, Contrôle parental, Profils, Sources de données, Sauvegarde, À propos). Lignes de la tablette, avec seulement ce que fait le PC (rien de factice). Masquer et verrouiller un groupe d'un clic droit dans le Direct ; changer le code exige l'ancien. Vérifié par captures r1 et par le test d'interface.
 - [x] 3.5 Surimpression du lecteur (`VodOverlay`, direct), avec le rendu vidéo Compose actuel. Copiés : `VodTopBar`, `VodControls`, `LiveInfoBar`, `LoadingLogo`, `ErrorCard`, et choix des pistes par `OptionsDialog`. Piste audio : le français, sinon l'anglais (`AudioChoice`, avec test). Film vérifié par les captures v1 et v3 ; le direct n'est pas essayé en réel, faute de pouvoir vérifier que la tablette ne lit rien.
 
+- [x] 3.6 « Reprendre la lecture » de la tablette : accroche « Là où vous vous étiez arrêté. », logo et fond TMDB, « S1 · É3 · Reste 18 min » (aussi sur le bouton de la fiche). Tuiles de saga : logo du film qui porte le nom (`SagaLogic`), « N au catalogue » = films sortis, part déjà vue. Vérifié par captures c1 et par un test.
+- [x] 3.7 Fenêtre des sources au format de la tablette (`TabletSources` : « Langue et qualité », sections par langue, « n autres sources »). Anciens écrans PC supprimés (`HomeScreen`, `CatalogScreen`, `DetailScreen`, `LiveScreen`, `GuideScreen`, `SetupScreens`, `TopNav`, `Hero`, `Cards`, `Theme`, `Components`) ; agent `desktop-designer` réécrit pour la parité. Vérifié par capture s3.
+
 ## 4. Vérification
 
 - [x] 4.1 `:desktop:test` au vert : tests de logique et tests d'interface du rail et de Ma liste.

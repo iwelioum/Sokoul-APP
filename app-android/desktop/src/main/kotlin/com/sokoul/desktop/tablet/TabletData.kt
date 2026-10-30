@@ -54,16 +54,18 @@ class TabletData(private val app: AppState) {
             )
         }
         val resume = withContext(Dispatchers.IO) { app.db.resumeList(20) }
-        val continueRow = BrowseRow(
-            "continue", "Reprendre la lecture", style = RowStyle.CONTINUE,
-            works = resume.filter { kind == BrowseKind.HOME || (kind == BrowseKind.MOVIES) == (it.kind == "movie") }.map { r ->
-                Work(
-                    if (r.kind == "tv") ContentType.SERIES else ContentType.MOVIE, r.tmdbId.toString(), r.key, r.title, null, null, r.image,
-                    tmdbId = r.tmdbId, progress = r.fraction, resume = r,
-                    subtitle = listOfNotNull(r.season?.let { "S${"%02d".format(it)}E${"%02d".format(r.episode ?: 1)}" }, "reste ${remaining(r.durationMs - r.positionMs)}").joinToString(" · "),
+        // comme `continueWorks` de la tablette : fond et logo TMDB de l'œuvre, « S1 · É3 · Reste 1 h 49 »
+        val continueWorks = resume.filter { kind == BrowseKind.HOME || (kind == BrowseKind.MOVIES) == (it.kind == "movie") }.map { r ->
+            async {
+                val info = t.details(k, r.kind, r.tmdbId, full = false)
+                val base = info?.toWork(r.kind) ?: Work(if (r.kind == "tv") ContentType.SERIES else ContentType.MOVIE, r.tmdbId.toString(), r.key, r.title, null, null, r.image, tmdbId = r.tmdbId)
+                base.copy(
+                    key = r.key, backdrop = base.backdrop ?: r.image, progress = r.fraction, resume = r,
+                    subtitle = continueCaption(r.season, r.episode, r.durationMs - r.positionMs),
                 )
-            },
-        )
+            }
+        }.map { it.await() }
+        val continueRow = BrowseRow("continue", "Reprendre la lecture", "Là où vous vous étiez arrêté.", RowStyle.CONTINUE, continueWorks)
         val last = resume.firstOrNull()
         val because = last?.let { r -> async { r to works(t.recommendations(k, r.kind, r.tmdbId), r.kind) } }
         val sagas = if (kind == BrowseKind.SERIES) null else async { sagas() }
@@ -126,16 +128,29 @@ class TabletData(private val app: AppState) {
         BrowsePage(hero, rows.filter { !it.isEmpty }).also { pages[kind] = it }
     }
 
-    /** Grandes sagas (collections TMDB) : fond, nombre de films, années et note moyenne. */
+    /**
+     * Grandes sagas (collections TMDB) : fond, logo, films, années, note moyenne et part déjà vue.
+     * « N au catalogue » = films sortis (sur PC, Real-Debrid les lit tous ; les annoncés ne comptent pas).
+     */
     private suspend fun sagas(): List<SagaCard> = coroutineScope {
-        SAGAS.map { id -> async { cat.tmdb.collection(cat.key(), id) } }.mapNotNull { it.await() }.map { c ->
-            val released = c.parts.filter { it.year != null && it.year!! <= java.time.Year.now().value }
-            SagaCard(
-                c.id, c.name, c.backdrop, c.poster, c.parts.size,
-                facts = SagaFacts(released.size, released.mapNotNull { it.year }.minOrNull(), released.mapNotNull { it.year }.maxOrNull(), released.mapNotNull { it.rating }.average().takeIf { !it.isNaN() }),
-                minis = c.parts.mapNotNull { it.poster }.take(3).map { it.replace("/w342/", "/w154/") }, overview = c.overview,
-            )
-        }
+        val k = cat.key()
+        val seen = withContext(Dispatchers.IO) { app.db.finishedMovies() }
+        SAGAS.map { id -> async { cat.tmdb.collection(k, id) } }.mapNotNull { it.await() }.map { c ->
+            async {
+                val released = c.parts.filter { it.year != null && it.year!! <= java.time.Year.now().value }
+                // logo de la saga : celui du film qui porte son nom (comme la tablette), sinon le nom écrit
+                val logo = com.sokoul.iptv.data.repo.SagaLogic.logoPart(c.name, c.parts)?.let { id ->
+                    val en = com.sokoul.iptv.data.repo.SagaLogic.englishLogo(c.name, c.parts, id)
+                    cat.tmdb.details(k, "movie", id, full = false)?.let { if (en) it.logoEn ?: it.logo else it.logo }
+                }
+                SagaCard(
+                    c.id, c.name, c.backdrop, c.poster, released.size,
+                    facts = SagaFacts(released.size, released.mapNotNull { it.year }.minOrNull(), released.mapNotNull { it.year }.maxOrNull(), released.mapNotNull { it.rating?.takeIf { r -> r >= 1.0 } }.average().takeIf { !it.isNaN() }),
+                    seen = released.count { it.id in seen },
+                    minis = c.parts.mapNotNull { it.poster }.take(3).map { it.replace("/w342/", "/w154/") }, logo = logo, overview = c.overview,
+                )
+            }
+        }.map { it.await() }
     }
 
     // --- notes OMDb (IMDb, Rotten Tomatoes, Metacritic), comme la fiche de la tablette -----------------------
@@ -170,10 +185,15 @@ class TabletData(private val app: AppState) {
         /** Sagas populaires (identifiants de collections TMDB). */
         val SAGAS = listOf(10, 1241, 119, 9485, 87359, 645, 86311, 263, 328, 2150, 10194, 8091, 131635, 748, 295)
 
+        /** « Reste 1 h 05 », « Reste 18 min » (libellé de la tablette, `EpisodeResolver.remaining`). */
         fun remaining(ms: Long): String {
             val m = (ms / 60_000).coerceAtLeast(1)
-            return if (m >= 60) "${m / 60} h ${"%02d".format(m % 60)}" else "$m min"
+            return if (m >= 60) "Reste ${m / 60} h ${"%02d".format(m % 60)}" else "Reste $m min"
         }
+
+        /** Légende d'une carte « Reprendre » : « S1 · É3 · Reste 18 min » (série) ou « Reste 1 h 49 » (film). */
+        fun continueCaption(season: Int?, episode: Int?, leftMs: Long): String =
+            listOfNotNull(season?.let { "S$it · É${episode ?: 1}" }, remaining(leftMs)).joinToString(" · ")
     }
 }
 

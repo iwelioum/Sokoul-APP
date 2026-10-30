@@ -25,12 +25,7 @@ import com.sokoul.desktop.data.DesktopDb
 import com.sokoul.desktop.data.DesktopSync
 import com.sokoul.desktop.data.Settings
 import com.sokoul.desktop.player.DesktopPlayer
-import com.sokoul.desktop.ui.GuideScreen
-import com.sokoul.desktop.ui.LiveScreen
 import com.sokoul.desktop.ui.PlayerScreen
-import com.sokoul.desktop.ui.SearchScreen
-import com.sokoul.desktop.ui.SettingsScreen
-import com.sokoul.desktop.ui.SourcesDialog
 
 /** Erreur non rattrapée : écrite dans `%APPDATA%\Sokoul\crash.log` (l'app installée n'a pas de console). */
 private fun logCrash(t: Throwable) = runCatching {
@@ -122,7 +117,7 @@ fun AppContent(app: AppState) {
             }
         }
         if (app.playing != null) PlayerScreen(app)
-        app.sources?.let { SourcesDialog(app, it) }
+        app.sources?.let { com.sokoul.desktop.tablet.TabletSources(app, it) }
     }
 }
 

@@ -297,9 +297,9 @@ private fun HeroBlock(
             else -> "Lecture"
         } + (best?.let { " · " + SourceLabels.short(it) } ?: "")
         val progress = resume?.takeIf { !it.finished && it.positionMs > 30_000 }
-        DetailPrimaryButton(label, progress?.fraction, progress?.let { "reste " + TabletData.remaining(it.durationMs - it.positionMs) }, onPlay)
+        DetailPrimaryButton(label, progress?.fraction, progress?.let { TabletData.remaining(it.durationMs - it.positionMs) }, onPlay)
         DetailActionButton(if (inList) "Dans ma liste" else "Ma liste", if (inList) Icons.Default.Check else Icons.Default.Add) { app.toggleMyList(kind, i.id) }
-        i.trailerYoutubeKey?.let { k -> DetailActionButton("Bande-annonce", Icons.Default.Movie) { com.sokoul.desktop.ui.openBrowser("https://www.youtube.com/watch?v=$k") } }
+        i.trailerYoutubeKey?.let { k -> DetailActionButton("Bande-annonce", Icons.Default.Movie) { openBrowser("https://www.youtube.com/watch?v=$k") } }
         DetailActionButton("Plus", Icons.Default.MoreHoriz, onSources)
     }
     val credit = i.director?.let { (if (tv) "Création : " else "Réalisation : ") + it }
@@ -424,4 +424,9 @@ private fun EpisodeCard(e: TmdbEpisode, r: Resume?, current: Boolean, onClick: (
         Text("${e.episode}. ${e.name ?: "Épisode ${e.episode}"}", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(listOfNotNull(e.runtimeMin?.let(::formatRuntime), e.overview).joinToString(" · "), Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
+}
+
+/** Ouvre [url] dans le navigateur de Windows (bande-annonce YouTube). */
+private fun openBrowser(url: String) {
+    runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }
 }

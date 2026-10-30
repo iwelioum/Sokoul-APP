@@ -137,6 +137,14 @@ class DesktopTest {
         assertFalse(LiveLogic.guideStart(now) > now)
     }
 
+    @Test fun `reprendre - libelles de la tablette`() {
+        val d = com.sokoul.desktop.tablet.TabletData
+        assertEquals("Reste 1 h 05", d.remaining(65 * 60_000L))
+        assertEquals("Reste 1 min", d.remaining(59_000L))
+        assertEquals("Reste 1 h 49", d.continueCaption(null, null, 109 * 60_000L))
+        assertEquals("S1 · É3 · Reste 18 min", d.continueCaption(1, 3, 18 * 60_000L))
+    }
+
     @Test fun `piste audio - francais, sinon anglais, jamais la premiere au hasard`() {
         val pick = com.sokoul.desktop.player.AudioChoice::pick
         // pistes réelles d'une version « MULTI » sans français : l'anglais plutôt que le turc

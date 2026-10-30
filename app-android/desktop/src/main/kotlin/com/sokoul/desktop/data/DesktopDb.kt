@@ -345,6 +345,11 @@ class DesktopDb(file: File) : AutoCloseable {
         query("SELECT * FROM resume WHERE finished=0 AND position_ms > 0 ORDER BY updated_at DESC LIMIT ?", limit * 3) { it.toResume() }
             .distinctBy { "${it.kind}:${it.tmdbId}" }.take(limit)
 
+    /** Films vus jusqu'au bout (identifiants TMDB) : part déjà vue d'une saga. */
+    @Synchronized
+    fun finishedMovies(): Set<Int> =
+        query("SELECT tmdb_id FROM resume WHERE kind='movie' AND finished=1") { it.getInt(1) }.toHashSet()
+
     /** Dernière lecture d'une œuvre (épisode terminé compris) : point de départ de « Reprendre » sur une série. */
     @Synchronized
     fun lastOf(kind: String, tmdbId: Int): Resume? =
