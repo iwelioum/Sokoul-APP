@@ -1,5 +1,6 @@
 package com.sokoul.iptv.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -281,6 +282,20 @@ data class RecordingEntity(
     val sizeBytes: Long = 0,
     val error: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "recording_rules", indices = [Index("playlistId", "ruleKey", unique = true)])
+data class RecordingRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val playlistId: Long,
+    val channelId: String,
+    val channelName: String,
+    val title: String,
+    val ruleKey: String,
+    val enabled: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+    /** Diffusions refusées au dernier passage (conflit, limite de connexions, espace). */
+    @ColumnInfo(defaultValue = "0") val skipped: Int = 0,
 )
 
 @Entity(tableName = "reminders", primaryKeys = ["playlistId", "channelId", "start"])

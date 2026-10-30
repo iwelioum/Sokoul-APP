@@ -15,6 +15,7 @@ import com.sokoul.iptv.data.db.PlaylistEntity
 import com.sokoul.iptv.data.db.PlaylistType
 import com.sokoul.iptv.data.db.ProfileEntity
 import com.sokoul.iptv.data.db.ProgressEntity
+import com.sokoul.iptv.data.db.RecordingRuleEntity
 import com.sokoul.iptv.parser.ServerUrl
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -57,9 +58,12 @@ data class PlaylistBackup(
     val groups: List<GroupBackup> = emptyList(),
     /** Reprise de lecture et vus (v3). */
     val progress: List<ProgressBackup> = emptyList(),
+    /** Règles « tous les épisodes » (titre + chaîne). */
+    val recordingRules: List<RecordingRuleBackup> = emptyList(),
 )
 
 @Serializable data class FavoriteBackup(val type: String, val id: String, val addedAt: Long, val profile: Long = 0)
+@Serializable data class RecordingRuleBackup(val channelId: String, val channelName: String, val title: String, val createdAt: Long = 0)
 @Serializable data class GroupBackup(val type: String, val id: String, val hidden: Boolean, val locked: Boolean, val kids: Int = 0)
 @Serializable data class ProgressBackup(
     val type: String, val id: String, val parentId: String? = null, val title: String, val subtitle: String? = null, val image: String? = null,
@@ -78,6 +82,7 @@ data class SettingsBackup(
     val autoplayNextEpisode: Boolean = true,
     val groupDuplicates: Boolean = true,
     val vodLanguages: String? = null,
+    val livePreview: Boolean = true,
 )
 
 /** Enveloppe d'une sauvegarde chiffrée (voir [BackupCrypto]). */
@@ -170,6 +175,8 @@ class BackupManager @Inject constructor(
                 progress = db.profiles().allProgress(p.id).sortedByDescending { it.updatedAt }.take(MAX_ITEMS).map {
                     ProgressBackup(it.type.name, it.itemId, it.parentId, it.title, it.subtitle, it.image, it.positionMs, it.durationMs, it.updatedAt, it.finished, it.season, it.episode, it.manual, it.profileId)
                 },
+                recordingRules = db.recordings().allRules().filter { it.playlistId == p.id }
+                    .map { RecordingRuleBackup(it.channelId, it.channelName, it.title, it.createdAt) },
             )
         }
         val file = BackupFile(
@@ -184,6 +191,7 @@ class BackupManager @Inject constructor(
                 autoplayNextEpisode = s.autoplayNextEpisode,
                 groupDuplicates = s.groupDuplicates,
                 vodLanguages = s.vodLanguages,
+                livePreview = s.livePreview,
             ),
         )
         val plain = json.encodeToString(file)
@@ -254,6 +262,17 @@ class BackupManager @Inject constructor(
                         r.updatedAt.coerceAtLeast(0), r.finished, r.season, r.episode, r.manual, profileMap[r.profile] ?: ProfileEntity.MAIN,
                     )
                 })
+                pb.recordingRules.take(MAX_RULES).forEach { r ->
+                    val title = r.title.trim().take(200)
+                    if (title.isEmpty() || r.channelId.isBlank() || r.channelId.length > 64) return@forEach
+                    db.recordings().insertRule(
+                        RecordingRuleEntity(
+                            playlistId = id, channelId = r.channelId, channelName = r.channelName.take(200), title = title,
+                            ruleKey = com.sokoul.iptv.recording.RecordingRules.seriesKey(r.channelName, title),
+                            createdAt = r.createdAt.coerceAtLeast(0),
+                        )
+                    )
+                }
                 added += id
                 if (p.type == PlaylistType.M3U || password != null) toSync += id
             }
@@ -273,6 +292,7 @@ class BackupManager @Inject constructor(
                 autoplayNextEpisode = sb.autoplayNextEpisode,
                 groupDuplicates = sb.groupDuplicates,
                 vodLanguages = sb.vodLanguages ?: s.vodLanguages,
+                livePreview = sb.livePreview,
                 activePlaylistId = if (s.activePlaylistId == 0L) added.firstOrNull() ?: 0 else s.activePlaylistId,
             )
         }
@@ -306,6 +326,7 @@ class BackupManager @Inject constructor(
         const val MAX_BYTES = 5 * 1024 * 1024
         const val MAX_PLAYLISTS = 50
         const val MAX_ITEMS = 20_000
+        const val MAX_RULES = 200
     }
 }
 

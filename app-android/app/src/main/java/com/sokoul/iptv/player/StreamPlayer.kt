@@ -128,6 +128,7 @@ class StreamPlayer(
         PlaybackActivity.started()
         scope.launch {
             gate.recording.collect { channel ->
+                if (released.get()) return@collect
                 val s = stream ?: return@collect
                 if (!s.provider || local) return@collect
                 if (channel != null) busy(channel)

@@ -35,6 +35,12 @@ internal fun LazyListScope.televisionSection(c: SettingsCtx) {
             "⏯ met la chaîne en pause : elle s'enregistre sur la box (30 min, 2,5 Go au plus, effacé en changeant de chaîne)",
         ) { v -> c.vm.update { it.copy(timeshift = v) } }
     }
+    item("tv-preview") {
+        ToggleRow(
+            "Aperçu dans l'écran Direct", s.livePreview,
+            "Sur TV, la chaîne sélectionnée se lit en petit, sans le son ; l'aperçu s'arrête avant le plein écran (une seule connexion)",
+        ) { v -> c.vm.update { it.copy(livePreview = v) } }
+    }
     subsection("Guide des programmes")
     item("tv-offset") {
         SettingRow("Décalage horaire du guide", offsetLabel(s.epgOffsetMinutes), "À ajuster si les programmes sont décalés", icon = Icons.Default.Schedule) {

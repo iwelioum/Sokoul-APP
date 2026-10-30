@@ -143,4 +143,20 @@ class MigrationTest {
         assertEquals(2L, long("SELECT COUNT(*) FROM favorites"))
         db.close()
     }
+
+    @Test fun `migrations 8 vers 10 ajoutent les regles d'enregistrement en serie`() {
+        val name = dbName + "10"
+        helper.createDatabase(name, 8).close()
+        helper.runMigrationsAndValidate(name, 9, true, *Migrations.ALL).apply {
+            execSQL("INSERT INTO recording_rules (playlistId, channelId, channelName, title, ruleKey, enabled, createdAt) VALUES (1, 'c', 'TF1', 'Journal', 'tf1|journal', 1, 5)")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(name, 10, true, *Migrations.ALL)
+        db.query("SELECT title, skipped FROM recording_rules WHERE ruleKey = 'tf1|journal'").use {
+            it.moveToFirst()
+            assertEquals("Journal", it.getString(0))
+            assertEquals(0L, it.getLong(1))
+        }
+        db.close()
+    }
 }

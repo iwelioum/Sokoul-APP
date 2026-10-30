@@ -140,6 +140,59 @@ class BackupRulesTest {
 }
 
 class RecordingRulesTest {
+    @Test fun `titre de serie sans numero d'episode`() {
+        assertEquals("plus belle la vie", RecordingRules.seriesTitle("Plus belle la vie - Épisode 4512"))
+        assertEquals("plus belle la vie", RecordingRules.seriesTitle("Plus belle la vie (4513)"))
+        assertEquals("grey s anatomy", RecordingRules.seriesTitle("Grey's Anatomy S19E03"))
+        assertEquals("grey s anatomy", RecordingRules.seriesTitle("Grey's Anatomy - Saison 19 Épisode 4 : Le retour"))
+        assertEquals("koh lanta", RecordingRules.seriesTitle("Koh-Lanta (3/12)"))
+        // titres sans numéro : intacts
+        assertEquals("le 20h", RecordingRules.seriesTitle("Le 20h"))
+        assertEquals("journal", RecordingRules.seriesTitle("Journal"))
+        assertEquals("episode 3", RecordingRules.seriesTitle("Épisode 3"))
+    }
+
+    private fun prog(title: String, start: Long, end: Long) =
+        com.sokoul.iptv.data.db.ProgramEntity(1, "k", start, end, title, null, null, null, null, 0)
+
+    @Test fun `diffusions d'une regle avec marges et sans doublon`() {
+        val key = RecordingRules.seriesKey("France 2", "Le Journal de 20h")
+        val h = 3_600_000L
+        val programs = listOf(
+            prog("Le journal de 20h", now + h, now + 2 * h),
+            prog("Météo", now + 2 * h, now + 3 * h),
+            prog("Le Journal de 20h", now + 24 * h, now + 25 * h),
+            prog("Le Journal de 20h", now - 2 * h, now - h), // fini
+        )
+        val airings = RecordingRules.seriesAirings(key, "f2", "France 2", 0, programs, emptyList(), now)
+        assertEquals(listOf(now + h - RecordingRules.MARGIN_BEFORE_MS, now + 24 * h - RecordingRules.MARGIN_BEFORE_MS), airings.map { it.start })
+        assertEquals(now + 2 * h + RecordingRules.MARGIN_AFTER_MS, airings.first().end)
+        // déjà programmé (à la main, avec les marges) : pas de doublon au rafraîchissement suivant
+        val manual = RecordingEntity(playlistId = 1, channelId = "f2", channelName = "France 2", title = "Le Journal de 20h",
+            startAt = now + h - 120_000, endAt = now + 2 * h + 300_000, status = RecordingStatus.SCHEDULED)
+        assertEquals(1, RecordingRules.seriesAirings(key, "f2", "France 2", 0, programs, listOf(manual), now).size)
+        // annulé par l'utilisateur après la création de la règle : pas reprogrammé
+        val cancelled = manual.copy(status = RecordingStatus.CANCELLED, createdAt = 10)
+        assertEquals(1, RecordingRules.seriesAirings(key, "f2", "France 2", 5, programs, listOf(cancelled), now).size)
+        // autre chaîne : rien
+        assertTrue(RecordingRules.seriesAirings(key, "m6", "M6", 0, programs, emptyList(), now).isEmpty())
+    }
+
+    @Test fun `apercu du direct seulement si la connexion est libre`() {
+        val p = com.sokoul.iptv.ui.screens.live.LivePreviewPolicy
+        assertTrue(p.canPlay(enabled = true, visible = true, recording = false, cooldownMs = 0))
+        assertFalse(p.canPlay(enabled = false, visible = true, recording = false, cooldownMs = 0))
+        assertFalse(p.canPlay(enabled = true, visible = false, recording = false, cooldownMs = 0))
+        assertFalse(p.canPlay(enabled = true, visible = true, recording = true, cooldownMs = 0))
+        assertFalse(p.canPlay(enabled = true, visible = true, recording = false, cooldownMs = 12_000))
+    }
+
+    @Test fun series_key_ignores_accents_and_punctuation() {
+        val key = RecordingRules.seriesKey("FR|TF1 HD", "L'été est à nous !")
+        assertTrue(RecordingRules.matchesSeries("tf1", "L ETE EST A NOUS", key))
+        assertFalse(RecordingRules.matchesSeries("M6", "L'été est à nous", key))
+    }
+
     private val now = 1_000_000_000L
     private fun rec(ch: String, start: Long, end: Long, status: RecordingStatus = RecordingStatus.SCHEDULED) =
         RecordingEntity(playlistId = 1, channelId = ch, channelName = ch, title = "T-$ch", startAt = start, endAt = end, status = status)

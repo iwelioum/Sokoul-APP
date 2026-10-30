@@ -28,6 +28,7 @@ import javax.inject.Singleton
         FavoriteEntity::class,
         ProgressEntity::class,
         RecordingEntity::class,
+        RecordingRuleEntity::class,
         ReminderEntity::class,
         TmdbCacheEntity::class,
         TmdbLinkEntity::class,
@@ -38,7 +39,7 @@ import javax.inject.Singleton
         ProfileEntity::class,
         CurrentProfileEntity::class,
     ],
-    version = 8,
+    version = 10,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -215,11 +216,30 @@ object Migrations {
         }
     }
 
+    /** v9 : règles d'enregistrement en série, indexées par playlist et clé titre + chaîne. */
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `recording_rules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`playlistId` INTEGER NOT NULL, `channelId` TEXT NOT NULL, `channelName` TEXT NOT NULL, " +
+                    "`title` TEXT NOT NULL, `ruleKey` TEXT NOT NULL, `enabled` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)"
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_recording_rules_playlistId_ruleKey` ON `recording_rules` (`playlistId`, `ruleKey`)")
+        }
+    }
+
+    /** v10 : diffusions refusées au dernier passage d'une règle (conflit, connexions, espace). */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `recording_rules` ADD COLUMN `skipped` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
     /** Profil « Principal » et profil courant : posés à la création de la base comme après la migration. */
     fun seed(db: SupportSQLiteDatabase) {
         db.execSQL("INSERT OR IGNORE INTO `profiles` (`id`, `name`, `color`, `kids`, `position`) VALUES (0, 'Principal', 0, 0, 0)")
         db.execSQL("INSERT OR IGNORE INTO `current_profile` (`k`, `profileId`) VALUES (0, 0)")
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
 }

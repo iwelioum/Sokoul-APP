@@ -34,6 +34,7 @@ class SyncWorker @AssistedInject constructor(
     private val settings: SettingsStore,
     private val channelDb: com.sokoul.iptv.data.net.providers.ChannelDbClient,
     private val newEpisodes: NewEpisodeNotifier,
+    private val series: com.sokoul.iptv.recording.SeriesRecorder,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -45,10 +46,11 @@ class SyncWorker @AssistedInject constructor(
                     sync.syncPlaylist(id)
                     notifyNew(id)
                     if (inputData.getBoolean(KEY_WITH_EPG, false)) runCatching { sync.syncEpg(id) }
+                    recordSeries(id)
                     fillLogos(id)
                     CatalogIndexWorker.start(applicationContext)
                 }
-                MODE_EPG -> { sync.syncEpg(id); fillLogos(id) }
+                MODE_EPG -> { sync.syncEpg(id); recordSeries(id); fillLogos(id) }
                 else -> periodic()
             }
             Result.success()
@@ -63,6 +65,13 @@ class SyncWorker @AssistedInject constructor(
     /** Séries suivies avec du nouveau : notification (une fois par mise à jour) ; jamais bloquant. */
     private suspend fun notifyNew(pid: Long) {
         runCatching { newEpisodes.check(pid) }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it else Timber.w(it, "Nouveaux épisodes") }
+    }
+
+    /** Règles « tous les épisodes » : programme les diffusions du guide à jour ; jamais bloquant. */
+    private suspend fun recordSeries(pid: Long) {
+        runCatching { series.run(pid) }
+            .onSuccess { if (it > 0) Timber.i("%d diffusions programmées par les règles", it) }
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it else Timber.w(it, "Règles d'enregistrement") }
     }
 
     /** Logos de secours (guide TV, puis iptv-org) pour les chaînes livrées sans logo ; jamais bloquant. */
@@ -80,6 +89,7 @@ class SyncWorker @AssistedInject constructor(
         for (p in db.playlists().getAll()) {
             if (now - p.lastSync > s.playlistRefreshHours * 3600_000L) runCatching { sync.syncPlaylist(p.id) }.onSuccess { notifyNew(p.id) }
             if (now - p.lastEpgSync > s.epgRefreshHours * 3600_000L) runCatching { sync.syncEpg(p.id) }
+            recordSeries(p.id)
             fillLogos(p.id)
         }
     }

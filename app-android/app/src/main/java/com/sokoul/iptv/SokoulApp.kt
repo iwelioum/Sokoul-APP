@@ -24,6 +24,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var okHttp: OkHttpClient
     @Inject lateinit var recordingScheduler: RecordingScheduler
+    @Inject lateinit var seriesRecorder: com.sokoul.iptv.recording.SeriesRecorder
     @Inject lateinit var parentalGate: com.sokoul.iptv.ui.ParentalGate
     @Inject lateinit var vod: com.sokoul.iptv.data.repo.VodRepository
     @Inject lateinit var profiles: com.sokoul.iptv.data.repo.ProfileRepository
@@ -49,6 +50,11 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
         com.sokoul.iptv.data.AppScope.launch {
             kotlinx.coroutines.delay(3_000)
             runCatching { vod.regroupIfNeeded() }.onFailure { Timber.w(it, "Regroupement initial") }
+        }
+        // Règles « tous les épisodes » : le guide a pu avancer pendant que l'appareil était éteint (aussi au démarrage de l'appareil).
+        com.sokoul.iptv.data.AppScope.launch {
+            kotlinx.coroutines.delay(5_000)
+            runCatching { seriesRecorder.runAll() }.onFailure { Timber.w(it, "Règles d'enregistrement") }
         }
         // Contrôle parental : l'app passée en arrière-plan (touche Accueil, veille) se reverrouille.
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {

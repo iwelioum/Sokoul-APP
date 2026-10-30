@@ -229,6 +229,7 @@ class GuideViewModel @Inject constructor(
     fun remind(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.remind(it, c, p)) }
     fun removeReminder(c: ChannelEntity, p: ProgramEntity) = launch { recordings.removeReminder(it, c.id, p.start) }
     fun record(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.recordProgram(it, c, p)) }
+    fun recordSeries(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.recordSeries(it, c, p)) }
     fun toggleFavorite(c: ChannelEntity) = launch { actions.toggleFavorite(it, c) }
     suspend fun unlock(pin: String) = actions.parental.tryUnlock(pin)
     fun isUnlocked() = actions.parental.isOpen()
@@ -477,6 +478,9 @@ fun GuideScreen(nav: NavHostController) {
             }
             if (p != null && p.end > t) add(MenuOption(if (p.start > t) "Programmer l'enregistrement" else "Enregistrer jusqu'à la fin", Icons.Default.FiberManualRecord) {
                 vm.record(c, p) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+            })
+            if (p != null && p.end > t) add(MenuOption("Enregistrer tous les épisodes", Icons.Default.FiberManualRecord) {
+                vm.recordSeries(c, p) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             })
             add(MenuOption("Favori (ajouter / retirer)", Icons.Default.Star) { vm.toggleFavorite(c) })
             add(MenuOption("Mettre à jour le guide", Icons.Default.Schedule) { vm.refreshEpg() })

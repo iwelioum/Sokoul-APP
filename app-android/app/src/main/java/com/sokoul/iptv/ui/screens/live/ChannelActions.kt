@@ -5,7 +5,9 @@ import com.sokoul.iptv.data.db.ContentType
 import com.sokoul.iptv.data.db.ProgramEntity
 import com.sokoul.iptv.data.repo.CatalogRepository
 import com.sokoul.iptv.data.repo.LibraryRepository
+import com.sokoul.iptv.recording.RecordingRules
 import com.sokoul.iptv.recording.RecordingScheduler
+import com.sokoul.iptv.recording.SeriesRecorder
 import com.sokoul.iptv.ui.MultiviewSession
 import com.sokoul.iptv.ui.ParentalGate
 import javax.inject.Inject
@@ -16,6 +18,7 @@ import javax.inject.Singleton
 class ChannelActions @Inject constructor(
     private val library: LibraryRepository,
     private val recordings: RecordingScheduler,
+    private val series: SeriesRecorder,
     private val catalog: CatalogRepository,
     val multiview: MultiviewSession,
     val parental: ParentalGate,
@@ -30,7 +33,21 @@ class ChannelActions @Inject constructor(
 
     suspend fun recordProgram(pid: Long, c: ChannelEntity, p: ProgramEntity): String =
         // marge de 2 min avant / 5 min après : les horaires EPG sont rarement exacts
-        recordings.schedule(pid, c, p.title, maxOf(p.start - 120_000, System.currentTimeMillis()), p.end + 300_000).message
+        recordings.schedule(
+            pid, c, p.title, maxOf(p.start - RecordingRules.MARGIN_BEFORE_MS, System.currentTimeMillis()), p.end + RecordingRules.MARGIN_AFTER_MS,
+        ).message
+
+    /** Règle « tous les épisodes » (titre + chaîne) ; les diffusions déjà dans le guide sont programmées aussitôt. */
+    suspend fun recordSeries(pid: Long, c: ChannelEntity, p: ProgramEntity): String {
+        val rule = recordings.addSeriesRule(pid, c, p.title)
+        if (!rule.ok) return "Une règle existe déjà pour « ${p.title} » sur ${RecordingRules.channelLabel(c.name)}"
+        val added = series.run(pid)
+        return when (added) {
+            0 -> "${rule.message} : aucune diffusion à venir dans le guide pour l'instant"
+            1 -> "${rule.message} : 1 diffusion programmée"
+            else -> "${rule.message} : $added diffusions programmées"
+        }
+    }
 
     suspend fun remind(pid: Long, c: ChannelEntity, p: ProgramEntity): String = recordings.addReminder(pid, c, p.start, p.title)
 

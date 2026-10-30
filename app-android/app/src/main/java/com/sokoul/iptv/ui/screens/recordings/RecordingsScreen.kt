@@ -50,6 +50,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
 import com.sokoul.iptv.data.db.AppDatabase
 import com.sokoul.iptv.data.db.RecordingEntity
+import com.sokoul.iptv.data.db.RecordingRuleEntity
 import com.sokoul.iptv.data.db.RecordingStatus
 import com.sokoul.iptv.data.db.ReminderEntity
 import com.sokoul.iptv.recording.RecordingRules
@@ -124,7 +125,17 @@ class RecordingsViewModel @Inject constructor(
     fun cancel(r: RecordingEntity) = viewModelScope.launch { scheduler.cancel(r.id) }
     fun delete(r: RecordingEntity) = viewModelScope.launch { scheduler.delete(r.id) }
     fun removeReminder(r: ReminderEntity) = viewModelScope.launch { scheduler.removeReminder(r.playlistId, r.channelId, r.start) }
+
+    /** Règles « tous les épisodes » de toutes les playlists. */
+    val rules: StateFlow<List<RecordingRuleEntity>> = scheduler.seriesRules().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun removeRule(r: RecordingRuleEntity) = viewModelScope.launch { scheduler.removeSeriesRule(r.id) }
 }
+
+/** Diffusions programmées par une règle, dans l'ordre chronologique. */
+private fun upcomingFor(rule: RecordingRuleEntity, recordings: List<RecordingEntity>) = recordings.filter {
+    it.status == RecordingStatus.SCHEDULED && it.playlistId == rule.playlistId && it.channelId == rule.channelId &&
+        RecordingRules.matchesSeries(it.channelName, it.title, rule.ruleKey)
+}.sortedBy { it.startAt }
 
 @Composable
 fun RecordingsScreen(nav: NavHostController) {
@@ -135,10 +146,12 @@ fun RecordingsScreen(nav: NavHostController) {
     val art by vm.art.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf<RecordingEntity?>(null) }
     var reminderMenu by remember { mutableStateOf<ReminderEntity?>(null) }
+    val rules by vm.rules.collectAsStateWithLifecycle()
+    var ruleMenu by remember { mutableStateOf<RecordingRuleEntity?>(null) }
     val l = LocalLayout.current
     val now = rememberNow(10_000)
 
-    if (recordings.isEmpty() && reminders.isEmpty()) {
+    if (recordings.isEmpty() && reminders.isEmpty() && rules.isEmpty()) {
         EmptyState(
             Icons.Default.FiberManualRecord, "Aucun enregistrement",
             if (com.sokoul.iptv.ui.theme.LocalLayout.current.isTouch) "Depuis le guide TV, appui long sur un programme à venir pour le programmer, ou touchez « Enregistrer » pendant la lecture d'une chaîne."
@@ -175,6 +188,34 @@ fun RecordingsScreen(nav: NavHostController) {
                         LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                             items(list, key = { it.id }) { r ->
                                 RecordingCard(r, logos["${r.playlistId}|${r.channelId}"], art[r.id], now, onClick = { open(r) }, onLongClick = { menu = r })
+                            }
+                        }
+                    }
+                }
+            }
+            if (rules.isNotEmpty()) item(key = "rules") {
+                Column {
+                    com.sokoul.iptv.ui.components.RowHeader("Tous les épisodes", countLabel(rules.size, "règle"), kicker = "RÈGLES")
+                    LazyRow(contentPadding = PaddingValues(horizontal = l.margin), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        items(rules, key = { it.id }) { rule ->
+                            val upcoming = upcomingFor(rule, recordings)
+                            val line = buildList {
+                                add(RecordingRules.channelLabel(rule.channelName))
+                                upcoming.firstOrNull()?.let { add("prochaine : ${dayLabel(it.startAt, now)} ${formatClock(it.startAt)}") }
+                                    ?: add("aucune diffusion dans le guide")
+                            }.joinToString(" · ")
+                            FocusSurface(onClick = { ruleMenu = rule }, style = FocusStyle.Row, color = SokoulColors.Surface, modifier = Modifier.width(l.landscape)) { _ ->
+                                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.FiberManualRecord, null, Modifier.size(22.dp), tint = SokoulColors.Live)
+                                    Column(Modifier.padding(start = 12.dp)) {
+                                        Text(rule.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(line, style = Type.Meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (rule.skipped > 0) Text(
+                                            if (rule.skipped > 1) "${rule.skipped} diffusions ignorées (conflit)" else "1 diffusion ignorée (conflit)",
+                                            style = MaterialTheme.typography.labelSmall, color = SokoulColors.Warning, maxLines = 1,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -225,6 +266,17 @@ fun RecordingsScreen(nav: NavHostController) {
     }
     reminderMenu?.let { r ->
         OptionsDialog(r.title, listOf(MenuOption("Supprimer le rappel", Icons.Default.Delete) { vm.removeReminder(r) }), onDismiss = { reminderMenu = null })
+    }
+    ruleMenu?.let { rule ->
+        val n = upcomingFor(rule, recordings).size
+        OptionsDialog(
+            rule.title,
+            listOf(MenuOption("Supprimer la règle", Icons.Default.Delete) { vm.removeRule(rule) }),
+            subtitle = "${RecordingRules.channelLabel(rule.channelName)} · " +
+                (if (n == 0) "aucune diffusion programmée" else "$n diffusion${if (n > 1) "s" else ""} programmée${if (n > 1) "s" else ""} (annulée${if (n > 1) "s" else ""} avec la règle)") +
+                "\nLes enregistrements terminés sont conservés.",
+            onDismiss = { ruleMenu = null },
+        )
     }
 }
 

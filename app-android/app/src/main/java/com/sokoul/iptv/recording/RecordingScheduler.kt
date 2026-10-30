@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import com.sokoul.iptv.data.db.AppDatabase
 import com.sokoul.iptv.data.db.ChannelEntity
 import com.sokoul.iptv.data.db.RecordingEntity
+import com.sokoul.iptv.data.db.RecordingRuleEntity
 import com.sokoul.iptv.data.db.RecordingStatus
 import com.sokoul.iptv.data.db.ReminderEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -38,6 +39,35 @@ class RecordingScheduler @Inject constructor(
 
     fun recordings() = db.recordings().observeAll()
     fun reminders(pid: Long) = db.recordings().observeRemindersFor(pid)
+    fun seriesRules() = db.recordings().observeAllRules()
+
+    suspend fun addSeriesRule(pid: Long, channel: ChannelEntity, title: String): ScheduleOutcome {
+        val cleanTitle = title.trim().take(200)
+        if (cleanTitle.isEmpty()) return ScheduleOutcome(null, "Titre du programme manquant")
+        val key = RecordingRules.seriesKey(channel.name, cleanTitle)
+        if (db.recordings().findRule(pid, key) != null) return ScheduleOutcome(null, "Règle déjà active")
+        val id = db.recordings().insertRule(
+            RecordingRuleEntity(
+                playlistId = pid,
+                channelId = channel.id,
+                channelName = channel.name,
+                title = cleanTitle,
+                ruleKey = key,
+            )
+        )
+        return if (id > 0) ScheduleOutcome(id, "Enregistrement de tous les épisodes activé") else ScheduleOutcome(null, "Règle déjà active")
+    }
+
+    /** Supprime la règle et annule ses diffusions programmées non commencées ; les enregistrements faits restent. */
+    suspend fun removeSeriesRule(id: Long) {
+        val rule = db.recordings().getRule(id) ?: return
+        for (r in db.recordings().forPlaylist(rule.playlistId)) {
+            if (r.status == RecordingStatus.SCHEDULED && r.channelId == rule.channelId && r.createdAt >= rule.createdAt &&
+                RecordingRules.matchesSeries(r.channelName, r.title, rule.ruleKey)
+            ) cancel(r.id)
+        }
+        db.recordings().deleteRule(rule)
+    }
 
     /** Enregistrement immédiat ou programmé, refusé s'il est incohérent ou en conflit. */
     suspend fun schedule(pid: Long, channel: ChannelEntity, title: String, start: Long, end: Long): ScheduleOutcome = mutex.withLock {

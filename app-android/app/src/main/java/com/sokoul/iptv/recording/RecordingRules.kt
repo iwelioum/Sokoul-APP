@@ -1,5 +1,6 @@
 package com.sokoul.iptv.recording
 
+import com.sokoul.iptv.data.db.ProgramEntity
 import com.sokoul.iptv.data.db.RecordingEntity
 import com.sokoul.iptv.data.db.RecordingStatus
 import java.util.zip.CRC32
@@ -67,6 +68,71 @@ object RecordingRules {
     fun channelLabel(name: String): String {
         val noCountry = com.sokoul.iptv.data.repo.VodGrouping.stripCountry(name.trim()).trim()
         return noCountry.replace(QUALITY_SUFFIX, "").trim().ifEmpty { name.trim() }
+    }
+
+    /**
+     * Clé stable d'une règle de série : chaîne et titre du programme, sans accents ni ponctuation,
+     * sans numéro d'épisode final (« Plus belle la vie - Épisode 4512 » = « Plus belle la vie »).
+     */
+    fun seriesKey(channelName: String, title: String): String =
+        "${normalizeRulePart(channelLabel(channelName))}|${seriesTitle(title)}"
+
+    /** Vérifie qu'un programme du guide appartient à une règle d'enregistrement en série. */
+    fun matchesSeries(channelName: String, title: String, ruleKey: String): Boolean =
+        seriesKey(channelName, title) == ruleKey
+
+    // « (12) », « (3/6) » en fin de titre, avant normalisation (les parenthèses disparaissent ensuite)
+    private val EPISODE_PARENS = Regex("""\s*\(\s*\d+(?:\s*/\s*\d+)?\s*\)\s*$""")
+    // après normalisation : « episode 12 », « ep 4 », « saison 2 episode 3 », « s2e3 », « s02 e03 », « partie 2 »…
+    private val EPISODE_TAIL = Regex("""\s+(?:(?:saison|season|episode|ep|partie|part|vol)\s*\d+|s\d+\s*e\d+)\b.*$""")
+
+    /** Titre d'émission normalisé, sans numéro d'épisode : « Le 20h » et « Journal » restent intacts. */
+    fun seriesTitle(title: String): String {
+        val core = normalizeRulePart(title.replace(EPISODE_PARENS, ""))
+        return core.replace(EPISODE_TAIL, "").trim().ifEmpty { core }
+    }
+
+    private fun normalizeRulePart(value: String): String =
+        java.text.Normalizer.normalize(value.trim().lowercase(), java.text.Normalizer.Form.NFD)
+            .replace("\\p{M}+".toRegex(), "")
+            .replace("[^\\p{L}\\p{N}]+".toRegex(), " ")
+            .trim()
+            .replace("\\s+".toRegex(), " ")
+
+    /** Marges d'un enregistrement d'après le guide : les horaires EPG sont rarement exacts. */
+    const val MARGIN_BEFORE_MS = 120_000L
+    const val MARGIN_AFTER_MS = 300_000L
+    private const val SAME_AIRING_MS = 5 * 60_000L
+
+    /** Diffusion du guide à programmer pour une règle, marges comprises. */
+    data class Airing(val title: String, val start: Long, val end: Long, val programStart: Long)
+
+    /**
+     * Diffusions d'une règle encore à programmer : programmes de la chaîne dont le titre correspond, pas encore finis,
+     * et sans enregistrement déjà posé dessus (même chaîne, début à ±5 min, ou créneau couvert).
+     * Une diffusion annulée par l'utilisateur après la création de la règle n'est pas reprogrammée.
+     */
+    fun seriesAirings(
+        ruleKey: String,
+        channelId: String,
+        channelName: String,
+        ruleCreatedAt: Long,
+        programs: List<ProgramEntity>,
+        existing: List<RecordingEntity>,
+        now: Long,
+    ): List<Airing> {
+        val onChannel = existing.filter { it.channelId == channelId && (it.status != RecordingStatus.CANCELLED || it.createdAt >= ruleCreatedAt) }
+        return programs.mapNotNull { p ->
+            val pStart = p.start
+            val pEnd = p.end
+            val title = p.title
+            if (pEnd <= now + 60_000 || !matchesSeries(channelName, title, ruleKey)) return@mapNotNull null
+            val start = maxOf(pStart - MARGIN_BEFORE_MS, now)
+            val taken = onChannel.any { r ->
+                kotlin.math.abs(r.startAt - start) <= SAME_AIRING_MS || (r.startAt <= pStart && r.endAt >= pEnd)
+            }
+            if (taken) null else Airing(title, start, pEnd + MARGIN_AFTER_MS, pStart)
+        }.distinctBy { it.programStart }
     }
 
     private fun same(a: String, b: String) =

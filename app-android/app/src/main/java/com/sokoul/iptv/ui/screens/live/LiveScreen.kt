@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
@@ -106,6 +107,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -120,11 +124,27 @@ class LiveViewModel @Inject constructor(
     library: LibraryRepository,
     val actions: ChannelActions,
     private val settings: com.sokoul.iptv.data.SettingsStore,
+    playerFactory: com.sokoul.iptv.player.PlayerFactory,
+    private val gate: com.sokoul.iptv.player.ProviderGate,
 ) : ViewModel() {
 
     val playlist: StateFlow<PlaylistEntity?> = playlists.active.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val selected = MutableStateFlow(SpecialCategory.ALL)
     private val focused = MutableStateFlow<ChannelEntity?>(null)
+
+    private val preview = LivePreview(playerFactory, gate, resolver, settings, viewModelScope)
+    /** Aperçu en cours (chaîne et lecteur), null quand rien ne joue. */
+    val previewing: StateFlow<LivePreview.Current?> = preview.current
+    /** Écran Direct visible sur TV (posé par l'écran : ON_START / ON_STOP). */
+    private val previewVisible = MutableStateFlow(false)
+
+    fun setPreviewVisible(visible: Boolean) {
+        previewVisible.value = visible
+        if (!visible) preview.stop()
+    }
+
+    /** Avant le plein écran : l'aperçu rend la connexion (abonnement à une seule connexion). */
+    fun stopPreview() = preview.stop()
 
     init {
         // Rouvre le dernier groupe consulté (avec des centaines de groupes, revenir à « Tout » est pénible)
@@ -136,6 +156,23 @@ class LiveViewModel @Inject constructor(
             launch { selected.drop(1).collect { focused.value = null; lastPlayed = null } }
             selected.drop(1).collect { settings.setLastGroup("live", p.id, it) }
         }
+        // Aperçu : le focus doit se poser ; changer de chaîne, masquer l'écran ou couper le réglage arrête le flux.
+        viewModelScope.launch {
+            combine(focused, previewVisible, settings.settings.map { it.livePreview }.distinctUntilChanged(), gate.recording) { c, v, on, rec ->
+                c.takeIf { LivePreviewPolicy.canPlay(on, v, rec != null, 0) }
+            }.distinctUntilChanged { a, b -> a?.id == b?.id }
+                .onEach { c -> if (c?.id != preview.current.value?.channel?.id) preview.stop() }
+                .debounce(LivePreviewPolicy.DEBOUNCE_MS)
+                .collectLatest { c ->
+                    val p = playlist.value
+                    if (c == null || p == null || preview.busy()) preview.stop() else preview.show(p, c)
+                }
+        }
+    }
+
+    override fun onCleared() {
+        preview.stop()
+        super.onCleared()
     }
 
     val categories: StateFlow<List<CategoryItem>> = playlist.filterNotNull()
@@ -169,6 +206,7 @@ class LiveViewModel @Inject constructor(
 
     fun toggleFavorite(c: ChannelEntity) = launch { actions.toggleFavorite(it, c) }
     fun record(c: ChannelEntity, minutes: Int, done: (String) -> Unit) = launch { done(actions.recordNow(it, c, minutes)) }
+    fun recordSeries(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.recordSeries(it, c, p)) }
     fun addToMultiview(c: ChannelEntity): String? = playlist.value?.let { actions.addToMultiview(it.id, c) }
     fun hideCategory(id: String) = launch { actions.setCategoryHidden(it, id, true) }
     fun setKids(id: String, v: Int) = launch { catalog.setCategoryKids(it, ContentType.LIVE, id, v) }
@@ -210,12 +248,32 @@ fun LiveScreen(nav: NavHostController) {
     }
     val play: (ChannelEntity) -> Unit = { c ->
         vm.lastPlayed = c.id
+        // l'aperçu rend la connexion avant que le plein écran ouvre la sienne
+        vm.stopPreview()
         nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
     }
     val kidsProfile = com.sokoul.iptv.ui.screens.profiles.isKidsProfile()
     var kidsMenu by remember { mutableStateOf<CategoryItem?>(null) }
     // profil Enfant : pas de menu de groupe (masquer, verrouiller, autoriser)
     val openCategoryMenu: (CategoryItem) -> Unit = { if (!it.id.startsWith("__") && !kidsProfile) categoryMenu = it }
+
+    // aperçu : seulement sur TV, tant que l'écran est visible (Accueil, veille ou autre écran → flux fermé)
+    val isTv = com.sokoul.iptv.ui.theme.LocalLayout.current.isTv && wide
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle, isTv) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> vm.setPreviewVisible(isTv)
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> vm.setPreviewVisible(false)
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            vm.setPreviewVisible(false)
+        }
+    }
 
     if (wide) {
         val l = com.sokoul.iptv.ui.theme.LocalLayout.current
@@ -231,7 +289,10 @@ fun LiveScreen(nav: NavHostController) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it }, vm.lastPlayed) { vm.lastPlayed = null }
             }
-            if (showDetails) DetailsPanel(details, Modifier.width(if (l.isTv) 300.dp else 340.dp).fillMaxHeight(), vm::supportsCatchup)
+            if (showDetails) {
+                val previewing by vm.previewing.collectAsStateWithLifecycle()
+                DetailsPanel(details, previewing, Modifier.width(if (l.isTv) 300.dp else 340.dp).fillMaxHeight(), vm::supportsCatchup)
+            }
         }
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -244,13 +305,19 @@ fun LiveScreen(nav: NavHostController) {
         val fav = c.id in favorites
         OptionsDialog(
             c.name,
-            listOf(
+            listOfNotNull(
                 MenuOption(if (fav) "Retirer des favoris" else "Ajouter aux favoris", if (fav) Icons.Default.StarBorder else Icons.Default.Star) { vm.toggleFavorite(c) },
                 MenuOption("Enregistrer 1 h", Icons.Default.FiberManualRecord) {
                     vm.record(c, 60) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 },
                 MenuOption("Enregistrer 2 h", Icons.Default.FiberManualRecord) {
                     vm.record(c, 120) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                },
+                // programme en cours d'après le guide : toutes ses diffusions sur cette chaîne
+                nowPlaying[c.id]?.let { p ->
+                    MenuOption("Enregistrer tous les épisodes de « ${p.title} »", Icons.Default.FiberManualRecord) {
+                        vm.recordSeries(c, p) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                    }
                 },
                 MenuOption("Ajouter au multi-écran", Icons.Default.GridView) {
                     vm.addToMultiview(c)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -387,14 +454,40 @@ private fun ChannelRow(
 }
 
 @Composable
-private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modifier, supportsCatchup: (ChannelEntity) -> Boolean) {
+private fun DetailsPanel(
+    details: Pair<ChannelEntity, NowNext>?,
+    preview: LivePreview.Current?,
+    modifier: Modifier,
+    supportsCatchup: (ChannelEntity) -> Boolean,
+) {
     val time = rememberNow()
     Column(modifier.background(Brush.horizontalGradient(listOf(SokoulColors.Surface.copy(alpha = 0.55f), SokoulColors.Surface))).padding(start = 26.dp, end = 30.dp, top = 30.dp, bottom = 20.dp)) {
         val (c, nn) = details ?: run {
             Text("Choisissez une chaîne", color = SokoulColors.TextMuted)
             return@Column
         }
-        ChannelLogo(c.logo, c.name, Modifier.size(150.dp, 84.dp))
+        val live = preview?.takeIf { it.channel.id == c.id }
+        if (live != null) {
+            // aperçu sans le son ; le logo reprend sa place dès que l'aperçu s'arrête
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(com.sokoul.iptv.ui.theme.Radius.Card).background(SokoulColors.VideoBlack)) {
+                AndroidView(
+                    factory = { ctx ->
+                        androidx.media3.ui.PlayerView(ctx).apply {
+                            useController = false
+                            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_NEVER)
+                            isFocusable = false
+                            isFocusableInTouchMode = false
+                        }
+                    },
+                    update = { it.player = live.player.player },
+                    onRelease = { it.player = null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        } else {
+            ChannelLogo(c.logo, c.name, Modifier.size(150.dp, 84.dp))
+        }
         Text(c.name, Modifier.padding(top = 14.dp), style = com.sokoul.iptv.ui.theme.Type.Section, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Tag("N° ${c.number}")
@@ -404,7 +497,7 @@ private fun DetailsPanel(details: Pair<ChannelEntity, NowNext>?, modifier: Modif
         val now = nn.now
         if (now != null) {
             val art = now.icon?.takeIf(String::isNotBlank)
-            if (art != null) {
+            if (art != null && live == null) {
                 // image du programme fournie par le guide
                 com.sokoul.iptv.ui.components.NetImage(art, null, Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(com.sokoul.iptv.ui.theme.Radius.Card))
                 Spacer(Modifier.height(14.dp))

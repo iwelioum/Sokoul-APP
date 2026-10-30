@@ -200,6 +200,44 @@ class DataTest {
         assertEquals(1, result.skippedWithCredentials)
     }
 
+    @Test fun `regles tous les episodes sauvegardees et restaurees`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "m", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        val scheduler = com.sokoul.iptv.recording.RecordingScheduler(context, db)
+        val tf1 = channel(pid, "1", "news", "FR| TF1 HD")
+        assertTrue(scheduler.addSeriesRule(pid, tf1, "Plus belle la vie - Épisode 4512").ok)
+        // même émission, autre épisode : règle déjà là
+        assertFalse(scheduler.addSeriesRule(pid, tf1, "Plus belle la vie - Épisode 4513").ok)
+        val (text, _) = backup().exportText(null)
+        db.playlists().delete(pid)
+        db.recordings().allRules().forEach { db.recordings().deleteRule(it) }
+        val r = backup().importText(text, null)
+        val rule = db.recordings().allRules().single()
+        assertEquals(r.added.single(), rule.playlistId)
+        assertEquals("1", rule.channelId)
+        assertEquals(com.sokoul.iptv.recording.RecordingRules.seriesKey("TF1", "Plus belle la vie"), rule.ruleKey)
+    }
+
+    @Test fun `supprimer une regle annule ses programmations et garde les enregistrements faits`() = runBlocking {
+        val pid = db.playlists().insert(PlaylistEntity(name = "m", type = PlaylistType.M3U, url = "http://h/x.m3u"))
+        val scheduler = com.sokoul.iptv.recording.RecordingScheduler(context, db)
+        val c = channel(pid, "1", "news", "France 2")
+        scheduler.addSeriesRule(pid, c, "Le Journal de 20h")
+        val rule = db.recordings().allRules().single()
+        val now = System.currentTimeMillis()
+        fun rec(title: String, start: Long, status: com.sokoul.iptv.data.db.RecordingStatus) = com.sokoul.iptv.data.db.RecordingEntity(
+            playlistId = pid, channelId = "1", channelName = "France 2", title = title, startAt = start, endAt = start + 3_600_000,
+            status = status, createdAt = rule.createdAt + 1,
+        )
+        val upcoming = db.recordings().insert(rec("Le Journal de 20h", now + 86_400_000, com.sokoul.iptv.data.db.RecordingStatus.SCHEDULED))
+        val other = db.recordings().insert(rec("Météo", now + 90_000_000, com.sokoul.iptv.data.db.RecordingStatus.SCHEDULED))
+        val done = db.recordings().insert(rec("Le Journal de 20h", now - 86_400_000, com.sokoul.iptv.data.db.RecordingStatus.COMPLETED))
+        scheduler.removeSeriesRule(rule.id)
+        assertTrue(db.recordings().allRules().isEmpty())
+        assertEquals(com.sokoul.iptv.data.db.RecordingStatus.CANCELLED, db.recordings().get(upcoming)!!.status)
+        assertEquals(com.sokoul.iptv.data.db.RecordingStatus.SCHEDULED, db.recordings().get(other)!!.status)
+        assertEquals(com.sokoul.iptv.data.db.RecordingStatus.COMPLETED, db.recordings().get(done)!!.status)
+    }
+
     @Test fun `export chiffre puis restauration`() = runBlocking {
         val secrets = SecretBox()
         db.playlists().insert(PlaylistEntity(name = "x", type = PlaylistType.XTREAM, url = "http://srv:8080", username = "jean", passwordEnc = secrets.encrypt("motdepasse")))

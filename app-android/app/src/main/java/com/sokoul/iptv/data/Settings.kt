@@ -70,6 +70,8 @@ data class AppSettings(
     val apiKeys: Map<String, String> = emptyMap(),
     /** Guide TV complémentaire xmltv.fr (France, Belgique, Suisse) : gros fichier, désactivé par défaut. */
     val epgXmltvFr: Boolean = false,
+    /** Écran Direct (TV) : la chaîne sélectionnée se lit en petit, sans le son. */
+    val livePreview: Boolean = true,
     /** Adresse de l'extension de recherche de sources (protocole Stremio), utilisée avec Real-Debrid. */
     val debridAddon: String = "",
     /** Taille maximale d'un fichier Real-Debrid en Go (0 = automatique : 25 Go en Wi-Fi, sans limite en câble). */
@@ -153,6 +155,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val group = booleanPreferencesKey("group_duplicates")
         val vodLangs = stringPreferencesKey("vod_languages")
         val xmltvFr = booleanPreferencesKey("epg_xmltv_fr")
+        val livePreview = booleanPreferencesKey("live_preview")
         val debridAddon = stringPreferencesKey("debrid_addon")
         val debridMaxGb = intPreferencesKey("debrid_max_gb")
         // nouvelle clé : la priorité Real-Debrid s'applique aussi à ceux qui n'avaient jamais touché l'ancien réglage
@@ -199,6 +202,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             if (k.name.startsWith(API_KEY_PREFIX) && v is String) k.name.removePrefix(API_KEY_PREFIX) to v else null
         }.toMap(),
         epgXmltvFr = this[K.xmltvFr] ?: false,
+        livePreview = this[K.livePreview] ?: true,
         debridAddon = this[K.debridAddon] ?: "",
         debridMaxGb = this[K.debridMaxGb] ?: 0,
         sourceTie = this[K.sourceTie] ?: "DEBRID",
@@ -305,6 +309,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             prefs[K.group] = s.groupDuplicates
             prefs[K.vodLangs] = s.vodLanguages
             prefs[K.xmltvFr] = s.epgXmltvFr
+            prefs[K.livePreview] = s.livePreview
             prefs[K.debridAddon] = s.debridAddon
             prefs[K.debridMaxGb] = s.debridMaxGb
             prefs[K.sourceTie] = s.sourceTie
