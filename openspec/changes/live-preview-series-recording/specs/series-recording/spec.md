@@ -31,12 +31,24 @@ Une diffusion trouvée par une règle SHALL être soumise aux mêmes contrôles 
 - **WHEN** une diffusion suivie chevauche un enregistrement déjà programmé sur une autre chaîne et que l'abonnement n'autorise qu'une connexion
 - **THEN** cette diffusion n'est pas programmée et la règle indique « 1 diffusion ignorée (conflit) »
 
+#### Scenario: Émission en deux parties
+- **WHEN** deux diffusions du titre suivi se suivent sur la même chaîne (18:35–19:10 puis 19:10–19:55)
+- **THEN** la seconde commence à la fin de l'enregistrement de la première (19:15, sans marge avant) et aucune n'est ignorée
+
+#### Scenario: Épisode déjà en cours d'enregistrement
+- **WHEN** la règle est créée alors que l'épisode du moment s'enregistre déjà depuis son milieu
+- **THEN** il n'est ni programmé une deuxième fois ni compté comme conflit
+
 ### Requirement: Gestion des règles
 L'écran Enregistrements SHALL lister les règles (titre, chaîne, prochaine diffusion programmée) et permettre d'en supprimer une ; supprimer une règle annule ses enregistrements à venir non commencés et garde ceux déjà faits.
 
 #### Scenario: Suppression d'une règle
 - **WHEN** l'utilisateur supprime une règle qui a 3 diffusions programmées et 2 enregistrements terminés
 - **THEN** les 3 programmations sont annulées et les 2 enregistrements restent disponibles
+
+#### Scenario: Épisode en cours (tablette)
+- **WHEN** un épisode de la règle est en train d'être enregistré
+- **THEN** la règle affiche « en cours jusqu'à HH:MM » et sa suppression laisse cet enregistrement continuer
 
 ### Requirement: Règles conservées
 Les règles SHALL survivre au redémarrage de l'appareil et à la mise à jour de l'app, et figurer dans la sauvegarde de configuration.

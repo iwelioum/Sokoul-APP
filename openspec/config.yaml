@@ -5,24 +5,42 @@ context: |
   All artifacts must be written in fr.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always state what is out of scope
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Projet : Sokoul TV, application Android (IPTV Xtream/M3U, films et séries TMDB, Real-Debrid, Trakt).
+  Pile : Kotlin, Jetpack Compose, Room (migrations exportées dans app-android/app/schemas), Hilt, Media3/ExoPlayer, WorkManager.
+  Code : app-android/app/src/main/java/com/sokoul/iptv/ ; tests JVM dans app-android/app/src/test/.
+  Appareils de référence :
+    - tablette Galaxy Tab S7 FE (800 dp de large en portrait = WindowClass.MEDIUM, 1280 dp en paysage = EXPANDED), tactile ;
+    - Fire TV Stick 4K (Fire OS 6.7, API 25, 192 Mo par application), télécommande ;
+    - téléphone (COMPACT) et Google TV.
+  Contraintes permanentes :
+    - l'abonnement IPTV n'autorise qu'une connexion simultanée (ProviderGate, enregistrements prioritaires) ;
+    - un seul StreamPlayer actif par usage, toujours libéré (stop + release) quand l'écran n'est plus visible ;
+    - jetons de design obligatoires dans ui/ (DesignTokensTest : pas de Color(0x…), Color.White/Black, RoundedCornerShape, .sp en dur) ;
+    - seule la version debug com.sokoul.iptv.debug est installée sur les appareils (pas de keystore release) ;
+    - aucune clé API dans le dépôt (local.properties, ignoré par Git).
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+rules:
+  proposal:
+    - Moins de 500 mots.
+    - Toujours une section « Hors périmètre ».
+    - Dire quels appareils sont concernés (tablette, TV, téléphone).
+  specs:
+    - Scénarios séparés pour le tactile (tablette) et la télécommande (TV) quand le comportement diffère.
+    - Chaque exigence a au moins un scénario vérifiable sur un appareil ou par un test JVM.
+  design:
+    - Nommer les fichiers et fonctions existants réutilisés (chemin:ligne).
+    - Préciser l'impact sur la connexion IPTV unique et la mémoire du Fire TV quand un lecteur est en jeu.
+  tasks:
+    - Chaque tâche indique comment elle est vérifiée (test JVM nommé, capture adb, logcat, dumpsys).
+    - Logique pure extraite en fonctions testables plutôt que testée par l'interface.
+
+operations:
+  apply:
+    guidance:
+      - Après chaque groupe de tâches, lancer gradlew testDebugUnitTest assembleDebug (JDK 17) et ne cocher qu'avec un résultat vert.
+      - Vérifier sur la tablette avec le skill sokoul-device-check (captures avant / après) ; noter dans tasks.md ce qui reste à essayer sur la TV.
+      - Faire relire le diff par l'agent android-reviewer avant chaque commit.
+  archive:
+    guidance:
+      - Résumer ce qui a été livré et l'état des essais sur chaque appareil avant d'archiver.
+      - Ne pas archiver un changement dont un essai sur appareil a échoué.
