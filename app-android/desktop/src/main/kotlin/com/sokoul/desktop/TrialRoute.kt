@@ -69,6 +69,9 @@ object TrialRoute {
                 val info = app.catalog.details(p[1], p[2].toInt())
                 app.playTitle(NowPlaying.Title(p[1], p[2].toInt(), info?.title ?: "", info?.year?.toString(), info?.backdrop,
                     p.getOrNull(3)?.toInt(), p.getOrNull(4)?.toInt()))
+                // essai : pistes vues par libVLC (choix de la langue)
+                delay(30_000)
+                app.player?.status?.value?.let { s -> System.err.println("Pistes audio : ${s.audio} · choisie ${s.audioId}") }
             }
         }
     }

@@ -26,10 +26,10 @@
 - [x] 3.2 Direct (`LiveScreen` de la tablette : groupes, chaînes, aperçu). Vérifié par capture p3.
 - [x] 3.3 Guide TV (`GuideScreen` de la tablette). Vérifié par capture p3.
 - [x] 3.4 Réglages (`SettingsPanes` : rubriques Compte et playlists, Lecture, Télévision et guide, Films et séries, Real-Debrid, Contrôle parental, Profils, Sources de données, Sauvegarde, À propos). Lignes de la tablette, avec seulement ce que fait le PC (rien de factice). Masquer et verrouiller un groupe d'un clic droit dans le Direct ; changer le code exige l'ancien. Vérifié par captures r1 et par le test d'interface.
-- [ ] 3.5 Surimpression du lecteur (`VodOverlay`, direct), avec le rendu vidéo Compose actuel.
+- [x] 3.5 Surimpression du lecteur (`VodOverlay`, direct), avec le rendu vidéo Compose actuel. Copiés : `VodTopBar`, `VodControls`, `LiveInfoBar`, `LoadingLogo`, `ErrorCard`, et choix des pistes par `OptionsDialog`. Piste audio : le français, sinon l'anglais (`AudioChoice`, avec test). Film vérifié par les captures v1 et v3 ; le direct n'est pas essayé en réel, faute de pouvoir vérifier que la tablette ne lit rien.
 
 ## 4. Vérification
 
 - [x] 4.1 `:desktop:test` au vert : tests de logique et tests d'interface du rail et de Ma liste.
-- [ ] 4.2 Comparaison côte à côte avec la tablette en paysage, dès que l'adb répond (débogage sans fil coupé pendant ce changement).
-- [ ] 4.3 Réinstallation, commit et push.
+- [x] 4.2 Comparaison côte à côte avec la tablette en paysage : captures de référence (recherche, direct, guide, réglages) prises sur la tablette, puis comparées aux captures du PC.
+- [x] 4.3 Réinstallation, commit et push.

@@ -119,6 +119,8 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     /** Avance à chaque ouverture ou arrêt ; [accepted] = génération du média qui envoie actuellement ses événements. */
     @Volatile private var generation = 0
     @Volatile private var accepted = -1
+    /** Piste audio choisie dans le menu : la langue n'est plus imposée pour ce titre. */
+    @Volatile private var audioChosenByUser = false
     private val timer = Timer("sokoul-reconnect", true)
 
     private inline fun ifCurrent(block: () -> Unit) { if (accepted == generation) block() }
@@ -169,6 +171,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         player.controls().stop()
         current = req
         retries = 0
+        audioChosenByUser = false
         _status.update { PlayerStatus(title = req.title, buffering = true, volume = it.volume, muted = it.muted) }
         open(req)
     }
@@ -234,7 +237,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         _status.update { it.copy(timeMs = t) }
     }
 
-    fun setAudio(id: Int) { player.audio().setTrack(id); refreshTracks() }
+    fun setAudio(id: Int) { audioChosenByUser = true; player.audio().setTrack(id); refreshTracks() }
     fun setSubtitles(id: Int) { player.subpictures().setTrack(id); refreshTracks() }
 
     fun volume(delta: Int) = setVolume(_status.value.volume + delta)
@@ -254,6 +257,10 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
 
     private fun refreshTracks() {
         val audio = player.audio().trackDescriptions().filter { it.id() >= 0 }.map { it.id() to it.description() }
+        // les pistes arrivent une à une : la langue est revue à chaque ajout, tant que l'utilisateur n'a rien choisi
+        if (!audioChosenByUser) AudioChoice.pick(audio)?.takeIf { it != player.audio().track() }?.let { id ->
+            player.submit { if (!released) { player.audio().setTrack(id); refreshTracks() } }
+        }
         val subs = player.subpictures().trackDescriptions().map { it.id() to if (it.id() < 0) "Désactivés" else it.description() }
         val dim = player.video().videoDimension()
         // pixels non carrés (SD anamorphosée) : rapport appliqué au dessin

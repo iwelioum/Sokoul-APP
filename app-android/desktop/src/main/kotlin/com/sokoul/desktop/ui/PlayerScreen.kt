@@ -75,6 +75,20 @@ import com.sokoul.desktop.player.VideoFrame
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import androidx.compose.material.icons.filled.Replay
+import com.sokoul.iptv.ui.components.ButtonKind
+import com.sokoul.iptv.ui.components.MenuOption
+import com.sokoul.iptv.ui.components.OptionsDialog
+import com.sokoul.iptv.ui.components.SokoulButton as IptvButton
+import com.sokoul.iptv.ui.screens.player.DelayedSpinner
+import com.sokoul.iptv.ui.screens.player.ErrorCard
+import com.sokoul.iptv.ui.screens.player.LiveInfoBar
+import com.sokoul.iptv.ui.screens.player.LiveProgram
+import com.sokoul.iptv.ui.screens.player.LoadingLogo
+import com.sokoul.iptv.ui.screens.player.PlayerAction
+import com.sokoul.iptv.ui.screens.player.PlayerButton
+import com.sokoul.iptv.ui.screens.player.VodControls
+import com.sokoul.iptv.ui.screens.player.VodTopBar
 
 private val hiddenCursor: PointerIcon by lazy {
     PointerIcon(java.awt.Toolkit.getDefaultToolkit().createCustomCursor(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB), java.awt.Point(0, 0), "sans"))
@@ -107,8 +121,9 @@ fun VideoSurface(frame: VideoFrame, modifier: Modifier = Modifier) {
 }
 
 /**
- * Lecteur plein cadre : la vidéo est dessinée par Compose, la barre passe par-dessus et se masque après 3 s sans
- * mouvement de souris (le curseur aussi). Clic = pause, double-clic = plein écran.
+ * Lecteur plein cadre avec la surimpression de la tablette : la vidéo est dessinée par Compose, le bandeau du haut
+ * (`VodTopBar`) et les commandes (`VodControls`, ou `LiveInfoBar` en direct) passent par-dessus et se masquent après
+ * 3 s sans mouvement de souris (le curseur aussi). Clic = pause, double-clic = plein écran, molette = volume.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -116,11 +131,10 @@ fun PlayerScreen(app: AppState) {
     val player = app.player
     val now = app.playing ?: return
     if (player == null) {
-        Box(Modifier.fillMaxSize().background(SokoulColors.Background), contentAlignment = Alignment.Center) {
-            EmptyState(
-                "Lecteur indisponible", "Le lecteur vidéo (libVLC) n'a pas été trouvé dans le dossier de l'application. Réinstallez Sokoul.",
-                action = "Retour", onAction = app::closePlayer,
-            )
+        Box(Modifier.fillMaxSize().background(SokoulColors.VideoBlack), contentAlignment = Alignment.Center) {
+            ErrorCard("Lecteur indisponible", "Le lecteur vidéo (libVLC) n'a pas été trouvé dans le dossier de l'application.", "Réinstallez Sokoul.") {
+                IptvButton("Retour", app::closePlayer, icon = Icons.AutoMirrored.Filled.ArrowBack)
+            }
         }
         return
     }
@@ -135,208 +149,114 @@ fun PlayerScreen(app: AppState) {
         if (!keep && !st.paused && menu == null && st.playing) { delay(3_000); visible = false }
     }
     LaunchedEffect(now) { while (true) { delay(10_000); app.saveProgress() } }
+    val touch = { lastMove = System.currentTimeMillis() }
 
     Box(
         Modifier.fillMaxSize().background(SokoulColors.VideoBlack)
-            .onPointerEvent(PointerEventType.Move) { lastMove = System.currentTimeMillis() }
-            .onPointerEvent(PointerEventType.Scroll) { e -> e.changes.firstOrNull()?.scrollDelta?.y?.let { player.volume(if (it < 0) 5 else -5); lastMove = System.currentTimeMillis() } }
+            .onPointerEvent(PointerEventType.Move) { touch() }
+            .onPointerEvent(PointerEventType.Scroll) { e -> e.changes.firstOrNull()?.scrollDelta?.y?.let { player.volume(if (it < 0) 5 else -5); touch() } }
             .pointerHoverIcon(if (visible) PointerIcon.Default else hiddenCursor),
     ) {
         VideoSurface(
             player.frame,
             Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = { app.fullscreen = !app.fullscreen }, onTap = { if (menu != null) menu = null else player.togglePause() })
+                detectTapGestures(onDoubleTap = { app.fullscreen = !app.fullscreen }, onTap = { player.togglePause() })
             },
         )
         Center(app, now, st)
         AnimatedVisibility(visible, enter = fadeIn(tween(160)), exit = fadeOut(tween(400)), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
-                TopBar(app, now, st, Modifier.align(Alignment.TopStart))
-                BottomBar(app, player, now, st, { menu = if (menu == it) null else it }, Modifier.align(Alignment.BottomStart))
-                menu?.let { m -> TrackMenu(m, st, player, { menu = null }, Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = 120.dp)) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TopBar(app: AppState, now: NowPlaying, st: PlayerStatus, modifier: Modifier) {
-    Row(
-        modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)))
-            .padding(horizontal = 32.dp, vertical = 26.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RoundIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Retour (Échap)", app::closePlayer)
-        Column(Modifier.padding(start = 18.dp).weight(1f)) {
-            when (now) {
-                is NowPlaying.Live -> {
-                    val c = now.list[now.index]
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Badge("EN DIRECT", SokoulColors.Live, Color.White)
-                        Text("  ${c.number}  ${c.name}", style = Type.PlayerTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val back = PlayerAction("Retour", Icons.AutoMirrored.Filled.ArrowBack, onClick = app::closePlayer)
+                val tracks = trackActions(st) { menu = it }
+                val screen = PlayerAction(if (app.fullscreen) "Quitter le plein écran" else "Plein écran", if (app.fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, iconOnly = true) { app.fullscreen = !app.fullscreen }
+                val mute = PlayerAction(if (st.muted) "Rétablir le son" else "Couper le son", if (st.muted || st.volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, iconOnly = true, onClick = player::toggleMute)
+                when (now) {
+                    is NowPlaying.Live -> {
+                        Box(Modifier.align(Alignment.TopStart).padding(16.dp)) { PlayerButton(back, compact = true) }
+                        Box(Modifier.align(Alignment.BottomStart)) {
+                            LiveBar(app, now, st, listOf(
+                                PlayerAction("Chaîne précédente", Icons.Filled.KeyboardArrowUp) { app.zap(-1) },
+                                PlayerAction("Chaîne suivante", Icons.Filled.KeyboardArrowDown) { app.zap(1) },
+                            ) + tracks + listOf(mute, screen))
+                        }
+                    }
+                    else -> {
+                        val t = now as? NowPlaying.Title
+                        val title = t?.title ?: (now as NowPlaying.Iptv).movie.name
+                        val badge = listOfNotNull(t?.stream?.release?.let { r -> listOfNotNull(r.language?.name, r.source?.label).joinToString(" · ").ifBlank { null } }, st.video)
+                            .joinToString(" · ").ifBlank { null }
+                        Box(Modifier.align(Alignment.TopStart)) { VodTopBar(title, t?.subtitle, badge, listOf(back)) }
+                        Box(Modifier.align(Alignment.BottomStart)) {
+                            VodControls(
+                                position = st.timeMs, duration = st.lengthMs, playing = st.playing && !st.paused,
+                                onBack10 = { player.seekBy(-10_000) }, onPlayPause = player::togglePause, onFwd30 = { player.seekBy(30_000) },
+                                pills = tracks + listOfNotNull(
+                                    t?.let { PlayerAction("Versions", Icons.Outlined.Layers) { app.sources = it } },
+                                    mute, screen,
+                                ),
+                                onSeekTo = { ms -> if (st.lengthMs > 0) player.seekTo(ms.toFloat() / st.lengthMs) },
+                                onInteract = touch,
+                            )
+                        }
                     }
                 }
-                is NowPlaying.Title -> {
-                    Text(now.title, style = Type.PlayerTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    now.subtitle?.let { Text(it, style = Type.Small) }
-                }
-                is NowPlaying.Iptv -> Text(now.movie.name, style = Type.PlayerTitle, maxLines = 1)
-            }
-        }
-        listOfNotNull(st.video, (now as? NowPlaying.Title)?.stream?.release?.let { r -> listOfNotNull(r.source?.label, r.language?.name).joinToString(" · ").ifBlank { null } })
-            .forEach { Badge(it, SokoulColors.GlassLight, modifier = Modifier.padding(start = 8.dp)) }
-    }
-}
-
-/** Au centre : chargement, étape de préparation, ou erreur avec actions. */
-@Composable
-private fun Center(app: AppState, now: NowPlaying, st: PlayerStatus) {
-    val t = now as? NowPlaying.Title
-    val error = t?.error ?: st.error
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        when {
-            error != null -> Column(
-                Modifier.widthIn(max = 520.dp).background(SokoulColors.Panel, Radius.Panel).padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text("Lecture impossible", style = Type.Section)
-                Text(error, Modifier.padding(top = 8.dp), style = Type.Body, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                Row(Modifier.padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SokoulButton("Réessayer", { if (t != null) app.playTitle(t, t.stream.takeIf { st.error != null }) else app.player?.retry() })
-                    if (t != null) SokoulButton("Autre version", { app.sources = t }, style = ButtonStyle.Glass)
-                    SokoulButton("Fermer", app::closePlayer, style = ButtonStyle.Ghost)
-                }
-            }
-            t?.step != null || st.buffering || (!st.playing && st.error == null) -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(Modifier.size(54.dp), color = SokoulColors.Accent, strokeWidth = 4.dp, trackColor = SokoulColors.GlassLight)
-                Text(t?.step ?: if (st.playing) "Mise en mémoire…" else "Ouverture du flux…", Modifier.padding(top = 18.dp), style = Type.BodyStrong)
-                t?.stream?.let { Text(it.title, Modifier.padding(top = 6.dp).widthIn(max = 640.dp), style = Type.Small, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }
     }
+    menu?.let { m -> TrackDialog(m, st, player) { menu = null } }
 }
 
-@Composable
-private fun BottomBar(app: AppState, player: DesktopPlayer, now: NowPlaying, st: PlayerStatus, onMenu: (String) -> Unit, modifier: Modifier) {
-    val live = now is NowPlaying.Live
-    Column(
-        modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
-            .padding(start = 32.dp, end = 32.dp, top = 60.dp, bottom = 24.dp),
-    ) {
-        if (live) LiveProgramme(app, now as NowPlaying.Live) else Seekbar(st, player::seekTo)
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            RoundIconButton(if (st.paused || !st.playing) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Lecture / pause (Espace)", player::togglePause, filled = true, size = 52.dp)
-            HSpace(12.dp)
-            if (live) {
-                RoundIconButton(Icons.Filled.KeyboardArrowUp, "Chaîne précédente (Page préc.)", { app.zap(-1) })
-                HSpace(8.dp)
-                RoundIconButton(Icons.Filled.KeyboardArrowDown, "Chaîne suivante (Page suiv.)", { app.zap(1) })
-            } else {
-                RoundIconButton(Icons.Filled.Replay10, "Reculer de 10 s (←)", { player.seekBy(-10_000) })
-                HSpace(8.dp)
-                RoundIconButton(Icons.Filled.Forward10, "Avancer de 10 s (→)", { player.seekBy(10_000) })
-            }
-            HSpace(16.dp)
-            RoundIconButton(if (st.muted || st.volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, "Muet (M)", player::toggleMute)
-            VolumeBar(if (st.muted) 0 else st.volume) { player.setVolume(it) }
-            Spacer(Modifier.weight(1f))
-            if (st.audio.size > 1) { RoundIconButton(Icons.Outlined.Audiotrack, "Pistes audio", { onMenu("audio") }); HSpace(8.dp) }
-            if (st.subtitles.size > 1) { RoundIconButton(Icons.Outlined.Subtitles, "Sous-titres", { onMenu("subs") }); HSpace(8.dp) }
-            (now as? NowPlaying.Title)?.let { t -> RoundIconButton(Icons.Outlined.Layers, "Sources", { app.sources = t }); HSpace(8.dp) }
-            RoundIconButton(if (app.fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, "Plein écran (F)", { app.fullscreen = !app.fullscreen })
-        }
-    }
-}
+/** Pastilles « Audio » et « Sous-titres » (seulement s'il y a un choix), avec la piste en cours en texte. */
+private fun trackActions(st: PlayerStatus, open: (String) -> Unit): List<PlayerAction> = listOfNotNull(
+    if (st.audio.size > 1) PlayerAction("Audio", Icons.Outlined.Audiotrack, text = st.audio.firstOrNull { it.first == st.audioId }?.second?.let(::shortTrack)) { open("audio") } else null,
+    if (st.subtitles.size > 1) PlayerAction("Sous-titres", Icons.Outlined.Subtitles, text = st.subtitles.firstOrNull { it.first == st.subtitleId }?.second?.let(::shortTrack) ?: "Désactivés") { open("subs") } else null,
+)
 
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-private fun Seekbar(st: PlayerStatus, onSeek: (Float) -> Unit) {
-    var width by remember { mutableStateOf(1) }
-    var hover by remember { mutableStateOf<Float?>(null) }
-    val fraction = if (st.lengthMs > 0) st.timeMs.toFloat() / st.lengthMs else 0f
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(timecode(st.timeMs), style = Type.Meta.copy(color = SokoulColors.TextPrimary))
-        Box(
-            Modifier.weight(1f).padding(horizontal = 16.dp).height(22.dp).onSizeChanged { width = it.width }
-                .onPointerEvent(PointerEventType.Move) { e -> hover = (e.changes.first().position.x / width).coerceIn(0f, 1f) }
-                .onPointerEvent(PointerEventType.Exit) { hover = null }
-                .pointerHoverIcon(PointerIcon.Hand)
-                .pointerInput(width) { detectTapGestures { o -> onSeek((o.x / width).coerceIn(0f, 1f)) } },
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            val thick = if (hover != null) 6.dp else 4.dp
-            Box(Modifier.fillMaxWidth().height(thick).background(Color.White.copy(alpha = 0.22f), Radius.Tiny))
-            hover?.let { Box(Modifier.fillMaxWidth(it).height(thick).background(Color.White.copy(alpha = 0.25f), Radius.Tiny)) }
-            Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(thick).background(SokoulColors.Accent, Radius.Tiny))
-            // au survol : pastille sur la position courante, temps visé au-dessus du curseur
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (hover != null) {
-                    Box(Modifier.offset(x = maxWidth * fraction.coerceIn(0f, 1f) - 6.dp).size(12.dp).background(Color.White, Radius.Round))
-                    if (st.lengthMs > 0) Badge(
-                        timecode((hover!! * st.lengthMs).toLong()), SokoulColors.Panel,
-                        modifier = Modifier.offset(x = (maxWidth * hover!! - 24.dp).coerceAtLeast(0.dp), y = (-30).dp),
-                    )
-                }
-            }
-        }
-        Text("-" + timecode((st.lengthMs - st.timeMs).coerceAtLeast(0)), style = Type.Meta)
-    }
-}
+/** « Piste 1 - [Français] » → « Français » : le nom lisible d'une piste libVLC. */
+private fun shortTrack(label: String): String =
+    Regex("""\[([^\]]+)]""").find(label)?.groupValues?.get(1) ?: label.substringAfter(" - ").ifBlank { label }
 
 @Composable
-private fun VolumeBar(volume: Int, onChange: (Int) -> Unit) {
-    var width by remember { mutableStateOf(1) }
-    Box(
-        Modifier.padding(start = 10.dp).width(110.dp).height(22.dp).onSizeChanged { width = it.width }.pointerHoverIcon(PointerIcon.Hand)
-            .pointerInput(width) { detectTapGestures { o -> onChange((o.x / width * 100).toInt()) } },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Box(Modifier.fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = 0.22f), Radius.Tiny))
-        Box(Modifier.fillMaxWidth((volume / 100f).coerceIn(0f, 1f)).height(4.dp).background(Color.White, Radius.Tiny))
-    }
-}
-
-@Composable
-private fun LiveProgramme(app: AppState, live: NowPlaying.Live) {
+private fun LiveBar(app: AppState, live: NowPlaying.Live, st: PlayerStatus, actions: List<PlayerAction>) {
     val c = live.list[live.index]
     val nn by produceState<LiveLogic.NowNext?>(null, c.id) {
         val p = app.playlist ?: return@produceState
         val t = System.currentTimeMillis()
         value = withContext(Dispatchers.IO) { c.epgKey?.let { LiveLogic.nowNext(app.db.programs(p.id, listOf(it), t - 6 * 3600_000L, t + 6 * 3600_000L), t) } }
     }
-    val cur = nn?.now
-    Column {
-        Text(cur?.title ?: "Programme non communiqué", style = Type.ItemTitle.copy(fontSize = Type.ItemTitle.fontSize * 1.2f))
-        if (cur != null) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(clock(cur.start), style = Type.Meta)
-            Box(Modifier.weight(1f).padding(horizontal = 14.dp).height(4.dp).background(Color.White.copy(alpha = 0.22f), Radius.Tiny)) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(nn!!.progress(System.currentTimeMillis())).background(SokoulColors.Live, Radius.Tiny))
+    val favorite = remember(c.id, app.dataVersion) { app.playlist?.let { c.id in app.db.favoriteIds(it.id) } ?: false }
+    fun prog(p: com.sokoul.desktop.data.Program?) = p?.let { LiveProgram(it.title, it.start, it.end, it.description) }
+    LiveInfoBar(c.number, c.logo, c.name, favorite, prog(nn?.now), prog(nn?.next), st.video, actions)
+}
+
+/** Au centre : ouverture du titre (fond de l'œuvre), mise en mémoire, ou erreur avec actions. */
+@Composable
+private fun Center(app: AppState, now: NowPlaying, st: PlayerStatus) {
+    val t = now as? NowPlaying.Title
+    val error = t?.error ?: st.error
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        when {
+            error != null -> ErrorCard("Lecture impossible", error, null) {
+                IptvButton("Réessayer", { if (t != null) app.playTitle(t, t.stream.takeIf { st.error != null }) else app.player?.retry() }, icon = Icons.Filled.Replay, kind = ButtonKind.Primary)
+                if (t != null) IptvButton("Autre version", { app.sources = t }, icon = Icons.Outlined.Layers)
+                IptvButton("Retour", app::closePlayer, icon = Icons.AutoMirrored.Filled.ArrowBack)
             }
-            Text(clock(cur.end), style = Type.Meta)
-            nn?.next?.let { Text("   Ensuite : ${it.title}", style = Type.Small, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            t != null && (t.step != null || !st.playing) -> LoadingLogo(t.title, t.image,t.step ?: "Ouverture du flux…", t.stream?.title)
+            st.buffering || (!st.playing && st.error == null) -> DelayedSpinner()
         }
     }
 }
 
+/** Choix d'une piste audio ou de sous-titres (`OptionsDialog` de la tablette). */
 @Composable
-private fun TrackMenu(kind: String, st: PlayerStatus, player: DesktopPlayer, onClose: () -> Unit, modifier: Modifier) {
-    val items = if (kind == "audio") st.audio else st.subtitles
-    val selected = if (kind == "audio") st.audioId else st.subtitleId
-    Column(modifier.width(320.dp).background(SokoulColors.Panel, Radius.Panel).padding(vertical = 10.dp)) {
-        Text(if (kind == "audio") "Piste audio" else "Sous-titres", Modifier.padding(horizontal = 18.dp, vertical = 8.dp), style = Type.Overline)
-        Column(Modifier.verticalScroll(rememberScrollState()).height((items.size.coerceAtMost(8) * 44).dp)) {
-            items.forEach { (id, label) ->
-                val h = rememberHover()
-                Row(
-                    Modifier.fillMaxWidth().background(if (h.active) SokoulColors.SurfaceHigher else Color.Transparent)
-                        .interactive(h) { if (kind == "audio") player.setAudio(id) else player.setSubtitles(id); onClose() }
-                        .padding(horizontal = 18.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(8.dp).background(if (id == selected) SokoulColors.Accent else Color.Transparent, Radius.Round))
-                    Text(label, Modifier.padding(start = 12.dp), style = Type.Small.copy(color = SokoulColors.TextPrimary), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
-    }
+private fun TrackDialog(kind: String, st: PlayerStatus, player: DesktopPlayer, onClose: () -> Unit) {
+    val audio = kind == "audio"
+    val items = if (audio) st.audio else st.subtitles
+    val selected = if (audio) st.audioId else st.subtitleId
+    OptionsDialog(
+        if (audio) "Audio" else "Sous-titres",
+        items.map { (id, label) -> MenuOption(shortTrack(label), selected = id == selected) { if (audio) player.setAudio(id) else player.setSubtitles(id) } },
+        onClose,
+    )
 }
+

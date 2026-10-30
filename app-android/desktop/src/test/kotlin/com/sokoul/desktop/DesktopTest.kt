@@ -137,6 +137,15 @@ class DesktopTest {
         assertFalse(LiveLogic.guideStart(now) > now)
     }
 
+    @Test fun `piste audio - francais, sinon anglais, jamais la premiere au hasard`() {
+        val pick = com.sokoul.desktop.player.AudioChoice::pick
+        // pistes réelles d'une version « MULTI » sans français : l'anglais plutôt que le turc
+        assertEquals(2, pick(listOf(1 to "HDM UHD Bluray AUDIO - [Turkish]", 2 to "HDM - [English]")))
+        assertEquals(3, pick(listOf(1 to "Piste 1 - [English]", 3 to "TrueFrench AC3 - [Français]")))
+        assertEquals(5, pick(listOf(4 to "Track 1 - [eng]", 5 to "VFF 5.1")))
+        assertEquals(null, pick(listOf(1 to "Piste 1 - [Japanese]", 2 to "Piste 2 - [German]")))
+    }
+
     @Test fun `recherche au programme - pas fini, chaine visible, sans casse`() {
         val pid = db.upsertPlaylist(Playlist(0, "P", PlaylistType.M3U, "http://x/list.m3u", null, null, null, null))
         val h = 3600_000L
