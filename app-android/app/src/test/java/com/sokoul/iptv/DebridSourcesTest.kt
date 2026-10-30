@@ -92,6 +92,25 @@ class DebridSourcesTest {
         """{"streams":[{"name":"${if (cached == true) "[RD+] " else if (cached == false) "[RD download] " else ""}x","title":"$name${size?.let { "\\n💾 ${it / 1_000_000_000} GB" } ?: ""}","infoHash":"${name.hashCode().toUInt().toString(16).padStart(8, '0').repeat(5)}"}]}"""
     ).single()
 
+    @Test fun `fichiers trop petits ecartes, taille nulle jamais affichee`() {
+        assertTrue(SourceRanker.tooSmall(0, 9_000_000_000))
+        assertTrue(SourceRanker.tooSmall(12_000_000, 9_000_000_000))
+        assertFalse(SourceRanker.tooSmall(800_000_000, 9_000_000_000))
+        assertFalse("taille inconnue : gardée", SourceRanker.tooSmall(null, 9_000_000_000))
+        // dessin animé de 6 min : toutes ses sources font 30–50 Mo, aucune n'est écartée
+        assertFalse(SourceRanker.tooSmall(35_000_000, 48_000_000))
+        val cartoon = stream("Cartoon.S01E03.FRENCH.720p.WEB.x264", size = null).let { it.copy(release = it.release.copy(sizeBytes = 35_000_000)) }
+        assertEquals(1, SourceRanker.rank(emptyList(), listOf(cartoon), SourceRanker.Prefs()).size)
+        assertEquals(null, com.sokoul.iptv.ui.components.SourceLabels.sizeOrNull(0))
+        assertEquals(null, com.sokoul.iptv.ui.components.SourceLabels.sizeOrNull(null))
+        assertEquals("823 Mo", com.sokoul.iptv.ui.components.SourceLabels.sizeOrNull(823_000_000))
+        val film = stream("Film.2024.FRENCH.1080p.WEB.x264", size = 9_000_000_000)
+        val sample = film.copy(key = "sample", release = film.release.copy(sizeBytes = 0))
+        assertEquals(listOf(film.key), SourceRanker.rank(emptyList(), listOf(film, sample), SourceRanker.Prefs()).map { it.source.id })
+        // fichier en cours de lecture : gardé même s'il est minuscule (ligne « EN COURS » du lecteur)
+        assertEquals(2, SourceRanker.rank(emptyList(), listOf(film, sample), SourceRanker.Prefs(), keep = "sample").size)
+    }
+
     @Test fun `classement langue puis definition, limite de taille`() {
         val iptvVf1080 = VodVersion("101", "Film FHD", "VF", "FHD", "c")
         val rdVf4k = stream("Film.2024.FRENCH.2160p.WEB.DV.HEVC", size = 18_000_000_000)

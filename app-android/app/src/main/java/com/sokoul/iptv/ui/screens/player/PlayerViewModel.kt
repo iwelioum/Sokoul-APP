@@ -951,7 +951,7 @@ class PlayerViewModel @Inject constructor(
         val currentIptv = iptv.firstOrNull { it.second }?.first?.id
         val streams = (debridStreams.orEmpty() + listOfNotNull(rd)).distinctBy { it.key }
         val prefs = rankPrefs()
-        return com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv.map { it.first }, streams, prefs).map { c ->
+        return com.sokoul.iptv.data.debrid.SourceRanker.rank(iptv.map { it.first }, streams, prefs, keep = rd?.key).map { c ->
             when (c) {
                 is com.sokoul.iptv.data.debrid.Candidate.Iptv ->
                     PlayerSources.fromIptv(c.version, current = c.version.id == currentIptv).copy(failed = c.version.id in failedIptv, failReason = failReasons[c.version.id])

@@ -1,6 +1,8 @@
 package com.sokoul.iptv.ui.screens.vod
 
 import com.sokoul.iptv.ui.components.SourceLabels
+import com.sokoul.iptv.ui.components.MetaItem
+import com.sokoul.iptv.ui.components.MetaKind
 import com.sokoul.iptv.ui.components.onChip
 import com.sokoul.iptv.ui.components.FocusStyle
 import com.sokoul.iptv.ui.theme.Radius
@@ -386,8 +388,14 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     val hero = DetailHeroData(
         title = title, logo = tm?.logo ?: extras.art?.logo, backdrop = tm?.backdrop ?: xt?.backdrop ?: extras.art?.background, poster = tm?.poster ?: xt?.poster ?: m.poster,
         rating = tm?.rating ?: xt?.rating ?: m.rating,
-        facts = listOfNotNull((m.year ?: tm?.year)?.toString(), formatRuntime(durationMin), durationMin?.takeIf { it > 0 }?.let { com.sokoul.iptv.ui.util.endsAt(it) }, topRd?.source?.language?.name ?: best.language),
-        certification = tm?.certification, quality = topRd?.let { (listOfNotNull(it.source.quality?.let(SourceLabels::quality), it.source.hdr?.let(SourceLabels::hdr)) + SourceLabels.originName(it.source.origin)).joinToString(" · ") } ?: qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
+        facts = listOfNotNull(
+            (m.year ?: tm?.year)?.let { MetaItem(MetaKind.YEAR, it.toString()) },
+            formatRuntime(durationMin)?.let { MetaItem(MetaKind.DURATION, it) },
+            durationMin?.takeIf { it > 0 }?.let { MetaItem(MetaKind.ENDS, com.sokoul.iptv.ui.util.endsAt(it)) },
+            (topRd?.source?.language?.name ?: best.language)?.let { MetaItem(MetaKind.LANGUAGE, it) },
+        ),
+        // qualité seule : l'origine est déjà dans le bouton Lecture et dans les versions
+        certification = tm?.certification, quality = topRd?.let { listOfNotNull(it.source.quality?.let(SourceLabels::quality), it.source.hdr?.let(SourceLabels::hdr)).joinToString(" · ").ifEmpty { null } } ?: qualities[best.id]?.let { q -> listOfNotNull(q.resolution, q.hdr).joinToString(" ").ifEmpty { null } } ?: versionSource(best).let { s -> listOfNotNull(s.quality?.let(SourceLabels::quality), s.hdr?.let(SourceLabels::hdr)).joinToString(" ").ifEmpty { null } },
         genres = tm?.genres?.joinToString(", ")?.ifEmpty { null } ?: xt?.genre,
         tagline = tm?.tagline, synopsis = synopsis,
         credit = director?.let { "Réalisation : $it" } ?: xt?.cast?.takeIf { tm?.cast.isNullOrEmpty() && it.isNotBlank() }?.let { "Avec : $it" },
@@ -423,7 +431,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
             detailSection(
                 "versions", "Versions disponibles",
                 com.sokoul.iptv.ui.screens.player.sourceCountLine(detailSources, com.sokoul.iptv.ui.screens.player.SourceSearch.DONE) + " · " +
-                    if (l.isTouch) "touchez pour lire, appui long : toutes les sources" else "OK pour lire, appui long : toutes les sources",
+                    if (l.isTouch) "touchez pour lire" else "OK pour lire, appui long : toutes les sources",
             ) {
                 VersionsShelf(
                     groups, languages, firstId = detailSources.firstOrNull()?.id, preferredId = preferredId, memory = memory, below = belowVersions,
@@ -460,7 +468,7 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
                     else MenuOption("Marquer comme vu", Icons.Default.CheckCircle) { vm.setWatched(true) }
                 )
             },
-            subtitle = hero.facts.joinToString(" · ").ifEmpty { null },
+            subtitle = hero.facts.joinToString(" · ") { it.text }.ifEmpty { null },
             onDismiss = { moreMenu = false },
         )
     }
@@ -493,21 +501,17 @@ fun MovieDetailScreen(nav: NavHostController, id: String) {
     }
     groupMenu?.let { g ->
         val lang = com.sokoul.iptv.ui.screens.player.PlayerSources.languageName(g.language, g.region)
-        OptionsDialog(
+        com.sokoul.iptv.ui.screens.player.SourcesDialog(
             "$lang · ${com.sokoul.iptv.ui.screens.player.versionTitle(g)}",
-            buildList {
-                g.sources.forEach { s ->
-                    // « Lire : RD · Remux · 12 Go · prête » ; IPTV : la rubrique du fournisseur à défaut d'autre détail
-                    val what = com.sokoul.iptv.ui.screens.player.sourceNote(s, withBasis = true) ?: s.category?.let { "« $it »" }
-                    add(MenuOption("Lire : " + SourceLabels.originShort(s.origin) + (what?.let { " · $it" } ?: ""), Icons.Default.PlayArrow, selected = s.id == detailSources.firstOrNull()?.id) { playSource(s.id) })
-                }
-                g.sources.filter { it.origin == com.sokoul.iptv.domain.SourceOrigin.IPTV }.forEach { s ->
-                    versions.firstOrNull { it.id == s.id }?.let { v ->
-                        add(MenuOption("Toujours lancer en premier : " + s.where, Icons.Default.Star, selected = v.id == preferredId) { vm.prefer(v) })
-                    }
+            subtitle = if (g.sources.size == 1) "Une seule source pour cette version" else "${g.sources.size} sources · la première est lue par défaut",
+            sources = g.sources,
+            defaultId = g.sources.firstOrNull()?.id,
+            onPlay = { s -> playSource(s.id) },
+            extra = g.sources.filter { it.origin == com.sokoul.iptv.domain.SourceOrigin.IPTV }.mapNotNull { s ->
+                versions.firstOrNull { it.id == s.id }?.let { v ->
+                    MenuOption("Toujours lancer en premier : " + s.where, Icons.Default.Star, selected = v.id == preferredId) { vm.prefer(v) }
                 }
             },
-            subtitle = if (g.sources.size == 1) "Une seule source pour cette version" else "${g.sources.size} sources pour cette version, la première est lue par défaut",
             onDismiss = { groupMenu = null },
         )
     }
@@ -749,6 +753,8 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
     val rankPrefs by vm.rankPrefs.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val l = LocalLayout.current
+    // épisodes en liste verticale : téléphone, et tablette en paysage (colonne de droite de la fiche)
+    val episodeList = l.isCompact || detailTwoColumn()
     val memory = rememberFocusMemory()
     var season by rememberSaveable { mutableStateOf<Int?>(null) }
     var episodeMenu by remember { mutableStateOf<EpisodeEntity?>(null) }
@@ -799,9 +805,9 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
         title = title, logo = tmdb?.logo ?: extras.art?.logo, backdrop = backdrop, poster = tmdb?.poster ?: series.poster,
         rating = tmdb?.rating ?: series.rating,
         facts = listOfNotNull(
-            (series.year ?: tmdb?.year)?.toString(),
+            (series.year ?: tmdb?.year)?.let { MetaItem(MetaKind.YEAR, it.toString()) },
             // TMDB connaît souvent plus de saisons que le fournisseur n'en propose : on affiche celles disponibles
-            seasons.size.takeIf { it > 0 }?.let { if (it > 1) "$it saisons" else "1 saison" } ?: tmdb?.seasons?.let { if (it > 1) "$it saisons" else "1 saison" },
+            (seasons.size.takeIf { it > 0 } ?: tmdb?.seasons)?.let { MetaItem(MetaKind.SEASONS, if (it > 1) "$it saisons" else "1 saison") },
         ),
         certification = tmdb?.certification, quality = null,
         genres = tmdb?.genres?.joinToString(", ")?.ifEmpty { null } ?: details?.genre ?: series.genre,
@@ -862,7 +868,8 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
                         )
                     }
                 }
-                if (!l.isCompact) {
+                // téléphone et tablette en paysage (colonne de droite) : liste verticale ; TV et portrait : rangée
+                if (!episodeList) {
                     EpisodeShelf(
                         currentSeason, seasonEpisodes, { ev -> bySe[ev.entity.season to ev.entity.episode] },
                         currentKey = action?.episode?.let { it.season to it.episode }, memory = memory,
@@ -870,7 +877,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
                     )
                 }
             }
-            if (l.isCompact) {
+            if (episodeList) {
                 items(seasonEpisodes, key = { "ep:" + it.entity.id }) { ev ->
                     val p = bySe[ev.entity.season to ev.entity.episode]
                     EpisodeItem(
@@ -906,7 +913,7 @@ fun SeriesDetailScreen(nav: NavHostController, id: String) {
                 }
                 add(MenuOption("Actualiser les épisodes", Icons.Default.Refresh) { vm.load(id, force = true) })
             },
-            subtitle = hero.facts.joinToString(" · ").ifEmpty { null },
+            subtitle = hero.facts.joinToString(" · ") { it.text }.ifEmpty { null },
             onDismiss = { moreMenu = false },
         )
     }
@@ -1018,7 +1025,7 @@ private fun LazyListScope.castSection(cast: List<TmdbPerson>, memory: com.sokoul
 @Composable
 private fun EpisodeItem(ev: EpisodeView, progress: ProgressEntity?, current: Boolean, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
     val l = LocalLayout.current
-    val thumbW = if (l.isCompact) 136.dp else (l.landscape * 0.9f)
+    val thumbW = if (l.isCompact) 136.dp else if (detailTwoColumn()) 200.dp else (l.landscape * 0.9f)
     val watched = progress?.finished == true
     Box(Modifier.padding(horizontal = l.margin, vertical = 5.dp)) {
         FocusSurface(style = FocusStyle.Row,

@@ -61,6 +61,12 @@ object SokoulColors {
     val AccentEnd = Color(0xFFB36CFF)
     /** Jaune IMDb (badge de note). */
     val Imdb = Color(0xFFF5C518)
+    /** Tranches d'âge (badge de classification) : tons foncés saturés, texte clair lisible sur chacun. */
+    val AgeAll = Color(0xFF1E8E4E)
+    val Age10 = Color(0xFF1F6FB8)
+    val Age12 = Color(0xFFC46A0A)
+    val Age16 = Color(0xFFC62835)
+    val Age18 = Color(0xFF141414)
     /** Dégradé des cartes sans image. */
     val PlaceholderTop = Color(0xFF262638)
     val PlaceholderBottom = Color(0xFF15151F)

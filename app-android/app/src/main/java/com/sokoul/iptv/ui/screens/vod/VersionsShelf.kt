@@ -1,6 +1,13 @@
 package com.sokoul.iptv.ui.screens.vod
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -126,6 +133,7 @@ private val VersionCardHeight = 118.dp
 @Composable
 private fun VersionCard(g: VersionGroup, first: Boolean, preferred: Boolean, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
     val s = g.best
+    val openSources = androidx.compose.runtime.rememberUpdatedState(onLongClick)
     FocusSurface(
         style = FocusStyle.Chip, onClick = onClick, onLongClick = onLongClick, modifier = modifier.width(244.dp).height(VersionCardHeight),
         shape = Radius.Card, color = if (first) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh,
@@ -154,7 +162,21 @@ private fun VersionCard(g: VersionGroup, first: Boolean, preferred: Boolean, mod
                 }
                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 val more = g.sources.size - 1
-                if (more > 0) Text("+$more", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft, maxLines = 1)
+                if (more > 0) {
+                    if (LocalLayout.current.isTouch) {
+                        // au doigt : cible visible qui ouvre la fenêtre des sources (l'appui long n'est pas découvrable) ;
+                        // le toucher est consommé ici, la carte ne lance pas la lecture
+                        Text(
+                            "+$more source" + if (more > 1) "s" else "",
+                            Modifier.sizeIn(minWidth = 48.dp, minHeight = 36.dp)
+                                .pointerInput(g) { detectTapGestures { openSources.value() } }
+                                .border(1.dp, soft.copy(alpha = 0.5f), Radius.Pill).padding(horizontal = 10.dp, vertical = 8.dp)
+                                // TalkBack : double-tap sur la puce = la fenêtre des sources (pas la lecture de la carte)
+                                .semantics { contentDescription = "Voir les $more autres sources"; onClick(label = "Voir les sources") { openSources.value(); true } },
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = ink, maxLines = 1,
+                        )
+                    } else Text("+$more", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft, maxLines = 1)
+                }
             }
         }
     }

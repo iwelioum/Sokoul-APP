@@ -116,7 +116,7 @@ object PlayerSources {
             quality = r.quality,
             hdr = r.hdr?.let(SourceLabels::hdr)?.let { if (it == "HDR") "HDR10" else it },
             codec = r.codec,
-            where = listOfNotNull(SourceLabels.originName(SourceOrigin.DEBRID), r.source?.label, r.sizeBytes?.let(SourceLabels::size), state).joinToString(" · "),
+            where = listOfNotNull(SourceLabels.originName(SourceOrigin.DEBRID), r.source?.label, SourceLabels.sizeOrNull(r.sizeBytes), state).joinToString(" · "),
             fileName = name,
             sameFile = if (name != null && r.sizeBytes != null) normalize(name) + "|" + r.sizeBytes else s.infoHash?.let { it.lowercase() + ":" + (s.fileIdx ?: 0) },
             sizeBytes = r.sizeBytes,

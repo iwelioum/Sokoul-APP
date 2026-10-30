@@ -57,7 +57,10 @@ class DetailUiTest {
 
     private val hero = DetailHeroData(
         title = "Someone, Someday", logo = null, backdrop = null, poster = null, rating = 7.4,
-        facts = listOf("2026", "1 saison", "2 versions"), certification = "12", quality = "HD",
+        facts = listOf(
+            com.sokoul.iptv.ui.components.MetaItem(com.sokoul.iptv.ui.components.MetaKind.YEAR, "2026"),
+            com.sokoul.iptv.ui.components.MetaItem(com.sokoul.iptv.ui.components.MetaKind.SEASONS, "1 saison"),
+        ), certification = "12", quality = "HD",
         genres = "Mystère, Drame", tagline = null,
         synopsis = Synopsis("Une patronne d'application de rencontre se lie d'amitié avec quelqu'un qui veut se venger. " .repeat(4), true),
         credit = "Création : Chad Vidanes",

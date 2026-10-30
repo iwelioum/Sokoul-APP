@@ -142,8 +142,8 @@ data class DetailHeroData(
     val backdrop: String?,
     val poster: String?,
     val rating: Double?,
-    /** Année, durée ou saisons, nombre de versions… séparés par « · ». */
-    val facts: List<String>,
+    /** Année, durée ou saisons, heure de fin, langue : repères avec icônes. */
+    val facts: List<com.sokoul.iptv.ui.components.MetaItem>,
     val certification: String?,
     /** Qualité principale (HD, 4K) affichée dans un cadre. */
     val quality: String?,
@@ -222,6 +222,10 @@ fun DetailScaffold(
         PhoneDetail(nav, hero, primary, primaryLoading, actions, memory, entered, kb, listState, onSynopsis, sections)
         return
     }
+    if (detailTwoColumn()) {
+        TabletLandscapeDetail(nav, hero, primary, primaryLoading, actions, memory, entered, kb, listState, onSynopsis, sections)
+        return
+    }
 
     // défilement piloté par le focus : en-tête → tout en haut ; sections → placées vers le haut de l'écran
     val heroFocused = remember { booleanArrayOf(true) }
@@ -270,6 +274,62 @@ fun DetailScaffold(
         }
         if (l.isTouch) com.sokoul.iptv.ui.components.TouchTopBar(onBack = { nav.popBackStack() }, scrimProvider = { (depth * 6f).coerceAtMost(1f) })
     }
+}
+
+/** Fiche en deux colonnes : tablette (ou grand écran tactile) tenue en paysage. TV, portrait et téléphone : non. */
+@Composable
+fun detailTwoColumn(): Boolean {
+    val l = LocalLayout.current
+    return l.isTouch && !l.isCompact && l.widthDp > l.heightDp
+}
+
+/**
+ * Tablette en paysage : à gauche l'image de l'œuvre, le titre, les repères, le résumé et les boutons (défilant seuls
+ * si besoin) ; à droite, les sections (versions, épisodes, distribution…) défilent à part. L'essentiel tient sur un écran.
+ */
+@Composable
+private fun TabletLandscapeDetail(
+    nav: NavHostController, hero: DetailHeroData, primary: PrimaryAction?, primaryLoading: Boolean, actions: List<SecondaryAction>,
+    memory: FocusMemory, entered: MutableState<Boolean>, kb: Animatable<Float, *>, listState: androidx.compose.foundation.lazy.LazyListState,
+    onSynopsis: () -> Unit, sections: LazyListScope.() -> Unit,
+) {
+    val l = LocalLayout.current
+    val reduced = LocalReducedMotion.current
+    Row(Modifier.fillMaxSize().background(SokoulColors.Background)) {
+        // clip : le fond agrandi (Ken Burns) ne déborde pas sur la colonne des sections
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(0.44f).fillMaxHeight().clipToBounds()) {
+            DetailBackdrop(hero, kb, depthProvider = { 0f }, reduced = reduced)
+            // fondu vers la colonne des sections
+            Box(Modifier.matchParentSize().background(Brush.horizontalGradient(0.55f to Color.Transparent, 1f to SokoulColors.Background)))
+            val h = maxHeight
+            Column(
+                Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())
+                    .heightIn(min = h).padding(start = l.margin, end = 20.dp, top = 72.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.Bottom,
+            ) {
+                HeroBlock(hero, primary, primaryLoading, actions, memory, entered, onSynopsis, fullWidth = true)
+            }
+        }
+        // à l'ouverture, pas de défilement automatique vers un élément qui reçoit le focus par programme (mémoire du
+        // focus, bouton Lecture) : la colonne s'ouvrait décalée, versions à moitié sous la barre d'état. Ensuite,
+        // comportement normal (clavier, manette, TalkBack sur tablette : le focus reste visible).
+        val opening = remember { mutableStateOf(true) }
+        LaunchedEffect(Unit) { delay(1_000); opening.value = false }
+        val defaultSpec = LocalBringIntoViewSpec.current
+        val spec = remember(defaultSpec) {
+            object : BringIntoViewSpec {
+                override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+                    if (opening.value) 0f else defaultSpec.calculateScrollDistance(offset, size, containerSize)
+            }
+        }
+        androidx.compose.runtime.CompositionLocalProvider(LocalBringIntoViewSpec provides spec) {
+            LazyColumn(
+                Modifier.weight(0.56f).fillMaxHeight(), state = listState,
+                contentPadding = PaddingValues(top = 64.dp, bottom = 72.dp),
+            ) { sections() }
+        }
+    }
+    com.sokoul.iptv.ui.components.TouchTopBar(onBack = { nav.popBackStack() }, scrimProvider = { 0f })
 }
 
 private const val KB_MAX = 1.08f
@@ -335,9 +395,11 @@ private fun HeroBlock(
     memory: FocusMemory,
     entered: MutableState<Boolean>,
     onSynopsis: () -> Unit,
+    /** Colonne de gauche (tablette en paysage) : toute la largeur de la colonne, sans la limite de 50 % de l'écran. */
+    fullWidth: Boolean = false,
 ) {
     val l = LocalLayout.current
-    val tw = if (l.isCompact) Modifier else Modifier.widthIn(max = (l.widthDp * 0.5f).dp)
+    val tw = if (l.isCompact || fullWidth) Modifier else Modifier.widthIn(max = (l.widthDp * 0.5f).dp)
     Box(tw.entrance(0, entered)) {
         if (hero.logo != null) {
             NetImage(
@@ -354,9 +416,6 @@ private fun HeroBlock(
         )
     }
     FactsLine(hero, tw.padding(top = 12.dp).entrance(2, entered))
-    if (!hero.genres.isNullOrBlank()) {
-        Text(hero.genres, tw.padding(top = 6.dp).entrance(2, entered), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
     hero.upcoming?.let {
         Row(tw.padding(top = 8.dp).entrance(2, entered), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Event, null, Modifier.size(16.dp), tint = SokoulColors.Accent)
@@ -455,33 +514,27 @@ private fun DetailTitle(title: String, genres: String?) {
     )
 }
 
-/** ★ 7,4 · 2026 · 1 h 50 · [-12] [4K] · ✓ Vu */
-@OptIn(ExperimentalLayoutApi::class)
+/** ★ 7,4 [IMDb] · 📅 2026 · 🕒 1 h 50 · ⏰ Finit à … · [-12] [4K] · ✓ Vu · genres en puces (passage à la ligne par éléments entiers). */
 @Composable
 private fun FactsLine(hero: DetailHeroData, modifier: Modifier) {
-    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (hero.rating != null && hero.rating >= MIN_RATING) RatingChip(hero.rating, Modifier.align(Alignment.CenterVertically))
-        hero.externalRatings.forEach { (source, value) -> Box(Modifier.align(Alignment.CenterVertically)) { ExternalRating(source, value) } }
-        // faits groupés en un seul bloc : au retour à la ligne (tablette portrait), pas de « · » orphelin en début de ligne
-        if (hero.facts.isNotEmpty()) Row(Modifier.align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            hero.facts.forEachIndexed { i, f ->
-                if (i > 0) Dot()
-                Text(f, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary, maxLines = 1)
+    val genres = remember(hero.genres) { hero.genres?.split(",", "·")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty().take(4) }
+    com.sokoul.iptv.ui.components.MetaRow(
+        hero.facts, modifier, certification = hero.certification, genres = genres,
+        lead = {
+            if (hero.rating != null && hero.rating >= MIN_RATING) RatingChip(hero.rating)
+            hero.externalRatings.forEach { (source, value) -> ExternalRating(source, value) }
+        },
+        trail = {
+            hero.quality?.let { Badge(it, filled = false) }
+            if (hero.watched) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp), tint = SokoulColors.Success)
+                    Text("Vu", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.Success)
+                }
             }
-        }
-        hero.certification?.let { Badge(certificationLabel(it), filled = true) }
-        hero.quality?.let { Badge(it, filled = false) }
-        if (hero.watched) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp), tint = SokoulColors.Success)
-                Text("Vu", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.Success)
-            }
-        }
-    }
+        },
+    )
 }
-
-@Composable
-private fun Dot() = Text("·", style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextMuted)
 
 @Composable
 private fun Badge(text: String, filled: Boolean) = com.sokoul.iptv.ui.components.SourceBadge(text, filled)

@@ -3,6 +3,9 @@ package com.sokoul.iptv.ui.screens.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +19,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Audiotrack
@@ -77,8 +84,10 @@ private fun SidePanel(
 ) {
     val l = LocalLayout.current
     val state = rememberLazyListState()
+    // tablette en paysage : la vidéo garde plus de la moitié de l'écran
+    val touchLandscape = l.isTouch && !l.isCompact && l.widthDp > l.heightDp
     Column(
-        modifier.fillMaxHeight().fillMaxWidth(if (l.isCompact) 1f else 0.46f).widthIn(max = 620.dp)
+        modifier.fillMaxHeight().fillMaxWidth(if (l.isCompact) 1f else if (touchLandscape) 0.4f else 0.46f).widthIn(max = if (touchLandscape) 520.dp else 620.dp)
             .background(Brush.horizontalGradient(listOf(SokoulColors.Panel.copy(alpha = 0.92f), SokoulColors.Panel)))
             .padding(vertical = 24.dp),
     ) {
@@ -93,11 +102,19 @@ private fun SidePanel(
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
-        LazyColumn(
-            Modifier.weight(1f).padding(top = 10.dp), state = state,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
-            content = content,
-        )
+        Box(Modifier.weight(1f).padding(top = 10.dp)) {
+            LazyColumn(
+                Modifier.fillMaxSize(), state = state,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+                content = content,
+            )
+            // d'autres lignes plus bas : le bas de la liste s'estompe (au lieu d'une ligne coupée net)
+            // tactile seulement : à la télécommande, la ligne focalisée se colle en bas et serait recouverte
+            if (l.isTouch && state.canScrollForward) Box(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(36.dp)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, SokoulColors.Panel))),
+            )
+        }
         KeyHints(hints, Modifier.padding(horizontal = 22.dp).padding(top = 10.dp))
     }
     LaunchedEffect(Unit) {
@@ -159,6 +176,29 @@ private fun OriginChips(s: PlayerSource, modifier: Modifier = Modifier, withHdr:
         SourceBadge(SourceLabels.originShort(s.origin), filled = true)
         listOfNotNull(if (withHdr) s.hdr else null, s.codec).forEach { SourceBadge(it, filled = false) }
     }
+}
+
+/**
+ * Contenu d'une ligne de source (panneau du lecteur et fenêtre des sources de la fiche) : en titre ce qui la distingue
+ * (rip, taille, état), l'origine une seule fois en badge avec HDR et codec ; en note les langues audio, la base de la
+ * qualité et l'échec éventuel ; en petit le nom du fichier (et la rubrique du fournisseur pour l'IPTV).
+ * [highlight] : texte « EN COURS » (lecteur) ou « par défaut » (fiche) à côté du titre.
+ */
+@Composable
+internal fun SourceLineContent(s: PlayerSource, focused: Boolean, selected: Boolean, highlight: String? = if (selected) "EN COURS" else null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            PlayerSources.facts(s) ?: SourceLabels.originName(s.origin), Modifier.weight(1f, fill = false),
+            color = if (focused || selected) SokoulColors.TextPrimary else SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.titleSmall, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        )
+        if (highlight != null) Text("  " + highlight.uppercase(), style = Type.Badge, color = SokoulColors.Accent, maxLines = 1)
+        OriginChips(s, Modifier.padding(start = 10.dp), withHdr = true)
+    }
+    listOfNotNull(PlayerSources.audioLine(s), PlayerSources.basisLabel(s.basis), failLabel(s)).joinToString(" · ").ifEmpty { null }
+        ?.let { RowNote(it, if (s.failed) SokoulColors.Warning else SokoulColors.TextMuted) }
+    listOfNotNull(s.fileName, s.category?.let { "rubrique « $it »" }).joinToString(" · ").ifEmpty { null }
+        ?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
 /** Repère vert « Image meilleure : 4K » quand une version fait mieux que la source en cours (une image moins bonne se lit déjà dans le titre). */
@@ -388,23 +428,7 @@ fun VersionPanel(
                             } else false
                         },
                         indent = true,
-                    ) { f ->
-                        // titre : ce qui distingue cette source dans la version (rip, taille, état), l'origine en badge
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                PlayerSources.facts(s) ?: SourceLabels.originName(s.origin), Modifier.weight(1f, fill = false),
-                                color = if (f || s.current) SokoulColors.TextPrimary else SokoulColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.titleSmall, fontWeight = if (s.current) FontWeight.Bold else FontWeight.Medium,
-                            )
-                            if (s.current) Text("  EN COURS", style = Type.Badge, color = SokoulColors.Accent, maxLines = 1)
-                            OriginChips(s, Modifier.padding(start = 10.dp), withHdr = true)
-                        }
-                        listOfNotNull(PlayerSources.audioLine(s), PlayerSources.basisLabel(s.basis), failLabel(s)).joinToString(" · ").ifEmpty { null }
-                            ?.let { RowNote(it, if (s.failed) SokoulColors.Warning else SokoulColors.TextMuted) }
-                        // en petit : nom exact du fichier (et rubrique du fournisseur pour l'IPTV)
-                        listOfNotNull(s.fileName, s.category?.let { "rubrique « $it »" }).joinToString(" · ").ifEmpty { null }
-                            ?.let { Text(it, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    }
+                    ) { f -> SourceLineContent(s, f, s.current) }
                 }
                 is VersionLine.More -> item(key = line.key) {
                     PanelRow(false, "Voir les ${line.hidden} autres sources", e, { showAll += line.groupKey }, indent = true) { f ->
@@ -417,6 +441,49 @@ fun VersionPanel(
             }
         }
     }
+}
+
+// --- Fenêtre des sources d'une version (fiche) ---------------------------------------------------------------
+
+/**
+ * Sources d'une version, ouvertes depuis la fiche (appui long ou « +n sources ») : mêmes lignes que le panneau du
+ * lecteur (origine une fois en badge), [ALT_LIMIT] au plus puis « Voir les n autres sources », puis [extra]
+ * (« Toujours lancer en premier »). Toucher ou OK sur une ligne lance la lecture de cette source.
+ */
+@Composable
+fun SourcesDialog(
+    title: String, subtitle: String?, sources: List<PlayerSource>, defaultId: String?,
+    onPlay: (PlayerSource) -> Unit, extra: List<com.sokoul.iptv.ui.components.MenuOption>, onDismiss: () -> Unit,
+) {
+    var all by remember { mutableStateOf(false) }
+    val shown = if (all) sources else sources.take(ALT_LIMIT)
+    val first = remember { FocusRequester() }
+    com.sokoul.iptv.ui.components.SokoulDialog(onDismiss, com.sokoul.iptv.ui.components.DialogPlacement.Side, maxWidth = 620.dp) {
+        com.sokoul.iptv.ui.components.DialogHeader(title, subtitle)
+        LazyColumn(Modifier.weight(1f, fill = false).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            itemsIndexed(shown, key = { _, s -> s.id }) { i, s ->
+                val d = s.id == defaultId
+                PanelRow(d, SourceLabels.originName(s.origin) + ", " + sourceDetail(s), if (i == 0) first else null, { onPlay(s); onDismiss() }) { f ->
+                    SourceLineContent(s, f, d, highlight = if (d) "par défaut" else null)
+                }
+            }
+            if (shown.size < sources.size) item(key = "more") {
+                val n = sources.size - shown.size
+                PanelRow(false, "Voir les $n autres sources", null, { all = true }) { f ->
+                    Text("Voir les $n autres sources", color = if (f) SokoulColors.TextPrimary else SokoulColors.TextMuted, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            itemsIndexed(extra, key = { i, _ -> "x$i" }) { _, o ->
+                PanelRow(o.selected, o.label, null, { o.onClick(); onDismiss() }) { f ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        o.icon?.let { Icon(it, null, Modifier.size(18.dp), tint = if (o.selected) SokoulColors.Accent else SokoulColors.TextMuted) }
+                        Text(o.label, Modifier.padding(start = 8.dp), color = if (f || o.selected) SokoulColors.TextPrimary else SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
 }
 
 // --- Sous-titres -----------------------------------------------------------------------------------------

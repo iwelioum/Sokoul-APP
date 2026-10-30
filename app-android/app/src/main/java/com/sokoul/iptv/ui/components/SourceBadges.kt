@@ -35,6 +35,8 @@ object SourceLabels {
     fun language(a: AudioLanguage) = a.name
     /** « 18 Go », « 700 Mo ». */
     fun size(bytes: Long): String = if (bytes >= 1_000_000_000L) "${(bytes / 1e8).toLong().let { if (it % 10 == 0L) "${it / 10}" else "${it / 10},${it % 10}" }} Go" else "${bytes / 1_000_000} Mo"
+    /** Taille affichable, ou rien si elle est inconnue ou sous 1 Mo (jamais « 0 Mo »). */
+    fun sizeOrNull(bytes: Long?): String? = bytes?.takeIf { it >= 1_000_000L }?.let(::size)
     fun state(s: SourceState) = when (s) {
         SourceState.AVAILABLE -> null; SourceState.CACHED_INSTANT -> "INSTANTANÉ"; SourceState.UNAVAILABLE -> "HORS CATALOGUE"
     }
@@ -45,7 +47,7 @@ object SourceLabels {
         s.quality?.let(::quality),
         s.hdr?.let(::hdr),
         s.rip,
-        s.sizeBytes?.let(::size),
+        sizeOrNull(s.sizeBytes),
     )
 
     /** Libellé court pour les menus et messages : « VF · 1080p », « AR · 4K », sinon « Version ». */

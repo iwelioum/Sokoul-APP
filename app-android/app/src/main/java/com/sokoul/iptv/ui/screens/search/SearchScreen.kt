@@ -115,6 +115,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.mapLatest
@@ -197,11 +198,19 @@ class SearchViewModel @Inject constructor(
             val movies = if (r.movies.isEmpty()) emptyList() else vod.groupMovies(p.id, r.movies).map { it.item.toWork(it.versions) }
             val series = if (r.series.isEmpty()) emptyList() else vod.groupSeries(p.id, r.series).map { it.item.toWork(it.versions) }
             enrich.request(p.id, (movies + series).take(30))
-            val ui = SearchUi(r.channels, r.programs, enrich.decorate(p.id, movies), enrich.decorate(p.id, series))
+            // repère avant la décoration : une fiche écrite pendant la recherche Real-Debrid (plusieurs secondes)
+            // n'est pas perdue (drop(1) jetterait la valeur courante, qui la contient déjà)
+            val seen = enrich.updates.value
+            var ui = SearchUi(r.channels, r.programs, enrich.decorate(p.id, movies), enrich.decorate(p.id, series))
             emit(ui)
             // puis ce que Real-Debrid peut lire en plus (titres TMDB absents de l'abonnement)
             val extra = debridExtras(q, s, movies + series)
-            if (extra.isNotEmpty()) emit(ui.copy(debrid = extra))
+            if (extra.isNotEmpty()) { ui = ui.copy(debrid = extra); emit(ui) }
+            // logos et images sans texte trouvés ensuite : résultats redécorés (sans relancer la recherche)
+            enrich.updates.dropWhile { it == seen }.debounce(1_500).collect {
+                ui = ui.copy(movies = enrich.decorate(p.id, movies), series = enrich.decorate(p.id, series))
+                emit(ui)
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Titres TMDB que l'abonnement n'a pas, lisibles via Real-Debrid (au plus 15 ; rien sans Real-Debrid ou en profil Enfant). */
@@ -514,7 +523,9 @@ private fun BestRow(works: List<Work>, total: Int, peekHeight: Dp?, memory: Focu
     val l = LocalLayout.current
     val label = 18.dp
     val pad = if (peekHeight != null) 10.dp else 16.dp
-    val cardH = peekHeight?.let { (it - label - pad * 2).coerceAtLeast(48.dp) }
+    // clavier ouvert : la ligne de titre tactile sous la carte est comptée, sinon la rangée dépasse l'aperçu
+    val caption = if (l.isTouch) com.sokoul.iptv.ui.components.LandscapeCaptionHeight else 0.dp
+    val cardH = peekHeight?.let { (it - label - pad * 2 - caption).coerceAtLeast(48.dp) }
     Column(Modifier.padding(bottom = if (peekHeight == null) l.rowSpacing else 0.dp)) {
         Text(
             "MEILLEURS RÉSULTATS · $total", Modifier.padding(horizontal = l.margin).height(label),

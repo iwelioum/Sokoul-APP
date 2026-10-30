@@ -47,10 +47,25 @@ object SourceRanker {
         val failed: Set<String> = emptySet(),
     )
 
-    /** [iptv] dans l'ordre de `VersionPicker` (choix mémorisé, échecs) : cet ordre départage les versions IPTV entre elles. */
-    fun rank(iptv: List<VodVersion>, debrid: List<DebridStream>, prefs: Prefs): List<Candidate> {
+    /**
+     * Fichier trop petit pour être le film ou l'épisode (échantillon, bonus, fichier vide) : sous 50 Mio **et** sous
+     * le dixième de la plus grosse source du titre. Un dessin animé de 6 min dont toutes les sources font 35 Mo reste
+     * donc proposé ; un échantillon de 12 Mo à côté d'un film de 9 Go ne l'est pas.
+     */
+    fun tooSmall(bytes: Long?, largest: Long?): Boolean =
+        bytes != null && bytes < MIN_VIDEO_BYTES && (largest == null || bytes < largest / 10)
+
+    const val MIN_VIDEO_BYTES = 50L * 1024 * 1024
+
+    /**
+     * [iptv] dans l'ordre de `VersionPicker` (choix mémorisé, échecs) : cet ordre départage les versions IPTV entre elles.
+     * [keep] : clé Real-Debrid de la source en cours de lecture, jamais écartée (même petite).
+     */
+    fun rank(iptv: List<VodVersion>, debrid: List<DebridStream>, prefs: Prefs, keep: String? = null): List<Candidate> {
         val iptvC = iptv.map { Candidate.Iptv(it, PlaybackSources.fromIptv(it)) }
-        val debridC = debrid.map { Candidate.Debrid(it, heard(it, prefs)) }
+        val largest = debrid.mapNotNull { it.release.sizeBytes }.maxOrNull()
+        val debridC = debrid.filter { it.key == keep || it.inAccount || !tooSmall(it.release.sizeBytes, largest) }
+            .map { Candidate.Debrid(it, heard(it, prefs)) }
         // rang de chaque candidat parmi ceux de sa propre origine (jamais comparé d'une origine à l'autre)
         val inner = HashMap<Candidate, Int>()
         iptvC.forEachIndexed { i, c -> inner[c] = i }

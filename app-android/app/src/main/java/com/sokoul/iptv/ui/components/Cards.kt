@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -234,12 +235,19 @@ fun WorkCard(
         corner = corner, progress = work.progress,
         platform = work.platform.takeIf { showPlatform }, onFocus = onFocus, onLongClick = onLongClick,
         dimmed = !work.available,
-        reveal = if (reveal) Reveal(work.title, tmdbSized(work.logo, "w300"), work.revealLine(), work.genres) else null,
+        reveal = if (reveal) Reveal(
+            work.title, tmdbSized(work.logo, "w300"), work.revealLine(), work.genres,
+            items = heroMeta(work).filter { it.kind != MetaKind.ENDS }, rating = work.rating, certification = work.certification,
+        ) else null,
     )
 }
 
 /** Ce qui monte dans l'affiche au focus. */
-data class Reveal(val title: String, val logo: String?, val line: String, val genres: List<String> = emptyList())
+/** [items] présents : repères avec icônes (et badge d'âge) à la place de la ligne [line] en texte. */
+data class Reveal(
+    val title: String, val logo: String?, val line: String, val genres: List<String> = emptyList(),
+    val items: List<MetaItem> = emptyList(), val rating: Double? = null, val certification: String? = null,
+)
 
 /** « ★ 7,8 · 2021 · 2 h 10 » (film) ou « ★ 8,1 · 2019 · 3 saisons » (série). */
 fun Work.revealLine(): String = listOfNotNull(
@@ -327,7 +335,16 @@ private fun RevealOverlay(r: Reveal, modifier: Modifier) {
                 RevealTitle(r.title, r.genres)
             }
         } else RevealTitle(r.title, r.genres)
-        if (r.line.isNotEmpty()) {
+        if (r.items.isNotEmpty() || r.certification != null) {
+            // affiche étroite : une ligne, petites icônes ; ce qui ne tient pas est rogné (pas de retour à la ligne)
+            Row(Modifier.padding(top = 4.dp).clipToBounds(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                r.rating?.takeIf { it >= 1.0 }?.let {
+                    Text("★ " + String.format(java.util.Locale.FRANCE, "%.1f", it), style = MaterialTheme.typography.labelSmall, color = SokoulColors.Imdb, maxLines = 1, softWrap = false)
+                }
+                r.items.forEach { MetaChip(it, SokoulColors.white(0.85f)) }
+                r.certification?.let { AgeBadge(it) }
+            }
+        } else if (r.line.isNotEmpty()) {
             Text(r.line, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = SokoulColors.white(0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -352,8 +369,15 @@ fun LandscapeCard(
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     dense: Boolean = false,
+    /**
+     * Tactile : ligne de titre sous l'image, toujours réservée (rangées de hauteur égale). Sans logo, le titre y est
+     * écrit au lieu d'être dessiné sur une image qui peut déjà le porter. Faux : titre dans l'image comme sur TV.
+     */
+    caption: Boolean = true,
 ) {
-    Box(modifier.width(width)) {
+    val captionRow = LocalLayout.current.isTouch && caption && !dense
+    val titleBelow = captionRow && work.logo == null
+    Column(modifier.width(width)) {
         FocusSurface(onClick = onClick, onLongClick = onLongClick, onFocus = onFocus, shape = Radius.Card) { focused ->
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 val zoom = rememberBreathing(focused, 1.04f)
@@ -371,7 +395,7 @@ fun LandscapeCard(
                                 Modifier.heightIn(max = if (dense) 24.dp else 40.dp).widthIn(max = width * 0.6f), ContentScale.Fit,
                                 alignment = Alignment.BottomStart,
                             )
-                        } else {
+                        } else if (!titleBelow) {
                             TitleArt(work.title, work.genres, if (dense) com.sokoul.iptv.ui.theme.TitleSize.Dense else com.sokoul.iptv.ui.theme.TitleSize.Landscape, Modifier.widthIn(max = width * 0.8f), maxLines = if (dense) 1 else 2)
                         }
                         if (!dense) work.subtitle?.let {
@@ -389,8 +413,15 @@ fun LandscapeCard(
                 if (work.progress != null && work.progress > 0f) ProgressLine(work.progress, Modifier.align(Alignment.BottomStart))
             }
         }
+        if (captionRow) {
+            // avec un logo, la ligne reste vide (même hauteur) : la rangée ne change pas de taille en défilant
+            Text(if (titleBelow) work.title else "", Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
+
+/** Hauteur de la ligne de titre sous une carte paysage tactile (marge comprise). */
+val LandscapeCaptionHeight = 26.dp
 
 /**
  * Top 10 en paysage (recherche) : grand chiffre à empattements, la carte 16:9 posée juste après.
@@ -406,7 +437,8 @@ fun RankLandscapeCard(rank: Int, work: Work, onClick: () -> Unit, modifier: Modi
                 brush = Brush.verticalGradient(listOf(SokoulColors.OnVideo, SokoulColors.white(0.12f))),
             ),
         )
-        LandscapeCard(work, onClick, width = width)
+        // le grand chiffre s'aligne sur le bas de l'image : titre dans l'image, pas de ligne dessous
+        LandscapeCard(work, onClick, width = width, caption = false)
     }
 }
 

@@ -237,22 +237,16 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
                     color = SokoulColors.TextPrimary.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
-            val bits = heroMeta(w, compact)
-            if (bits.isNotEmpty()) {
-                FlowRow(
-                    Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp, if (compact) Alignment.CenterHorizontally else Alignment.Start),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (!compact && w.rating != null && w.rating >= MIN_RATING) RatingChip(w.rating)
-                    bits.forEach { Text(it, style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary) }
-                    if (w.certification != null && !compact) {
-                        Text(
-                            certificationLabel(w.certification),
-                            Modifier.background(SokoulColors.white(0.2f), Radius.Tiny).padding(horizontal = 5.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                }
+            if (compact) {
+                // téléphone : les genres seuls, centrés sous l'affiche
+                val genres = w.genres.take(3).ifEmpty { listOfNotNull(w.year?.toString()) }.joinToString("  •  ")
+                if (genres.isNotBlank()) Text(genres, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelLarge, color = SokoulColors.TextSecondary)
+            } else {
+                val items = heroMeta(w)
+                if (items.isNotEmpty() || w.genres.isNotEmpty()) MetaRow(
+                    items, Modifier.padding(top = 10.dp), certification = w.certification, genres = w.genres.take(2),
+                    lead = { if (w.rating != null && w.rating >= MIN_RATING) RatingChip(w.rating) },
+                )
             }
             val overview = w.overviewFr
             if (!compact && overview != null) {
@@ -265,14 +259,13 @@ private fun HeroPage(w: Work, label: String?, isCurrent: Boolean, offset: Float)
     }
 }
 
-private fun heroMeta(w: Work, compact: Boolean): List<String> =
-    if (compact) w.genres.take(3).ifEmpty { listOfNotNull(w.year?.toString()) }.let { listOf(it.joinToString("  •  ")) }.filter { it.isNotBlank() }
-    else listOfNotNull(
-        w.year?.toString(),
-        w.genres.take(2).joinToString(", ").ifEmpty { null },
-        if (w.type == ContentType.SERIES) w.seasons?.let { if (it > 1) "$it saisons" else "1 saison" } else formatRuntime(w.runtimeMin),
-        w.runtimeMin?.takeIf { w.type != ContentType.SERIES && it > 0 }?.let { com.sokoul.iptv.ui.util.endsAt(it) },
-    )
+/** Repères du héros et de la carte dévoilée : année, saisons ou durée, heure de fin (films). */
+fun heroMeta(w: Work): List<MetaItem> = listOfNotNull(
+    w.year?.let { MetaItem(MetaKind.YEAR, it.toString()) },
+    if (w.type == ContentType.SERIES) w.seasons?.let { MetaItem(MetaKind.SEASONS, if (it > 1) "$it saisons" else "1 saison") }
+    else formatRuntime(w.runtimeMin)?.let { MetaItem(MetaKind.DURATION, it) },
+    w.runtimeMin?.takeIf { w.type != ContentType.SERIES && it > 0 }?.let { MetaItem(MetaKind.ENDS, com.sokoul.iptv.ui.util.endsAt(it)) },
+)
 
 /** Classification française : « 12 » → « -12 », « TP » → « Tous publics ». */
 fun certificationLabel(c: String): String = when {
