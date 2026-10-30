@@ -171,7 +171,8 @@ class DesktopDb(file: File) : AutoCloseable {
     fun replaceVod(pid: Long, movies: List<Movie>, series: List<Series>) = tx {
         update("DELETE FROM movies WHERE playlist_id=?", pid)
         update("DELETE FROM series WHERE playlist_id=?", pid)
-        conn.prepareStatement("INSERT INTO movies VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").use { st ->
+        // colonnes nommées : sur une base plus ancienne, stream_url a été ajoutée en dernier (ALTER TABLE)
+        conn.prepareStatement("INSERT INTO movies(playlist_id, id, name, year, poster, stream_url, rating, category_id, extension, added, tmdb_id, position) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").use { st ->
             movies.forEachIndexed { i, movie ->
                 bind(st, pid, movie.id, movie.name, movie.year, movie.poster, movie.streamUrl, movie.rating, movie.categoryId, movie.extension, movie.added, movie.tmdbId, i)
                 st.addBatch()
@@ -179,7 +180,7 @@ class DesktopDb(file: File) : AutoCloseable {
             }
             st.executeBatch()
         }
-        conn.prepareStatement("INSERT INTO series VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").use { st ->
+        conn.prepareStatement("INSERT INTO series(playlist_id, id, name, year, poster, backdrop, plot, rating, category_id, last_modified, tmdb_id, position) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").use { st ->
             series.forEachIndexed { i, item ->
                 bind(st, pid, item.id, item.name, item.year, item.poster, item.backdrop, item.plot, item.rating, item.categoryId, item.lastModified, item.tmdbId, i)
                 st.addBatch()

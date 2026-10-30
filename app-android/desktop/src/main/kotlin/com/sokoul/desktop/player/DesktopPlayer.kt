@@ -264,7 +264,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         _status.update {
             it.copy(
                 audio = audio, audioId = player.audio().track(), subtitles = subs, subtitleId = player.subpictures().track(),
-                video = dim?.let { d -> "${d.width}×${d.height}" },
+                video = dim?.takeIf { d -> d.width > 0 && d.height > 0 }?.let { d -> "${d.width}×${d.height}" },
             )
         }
     }

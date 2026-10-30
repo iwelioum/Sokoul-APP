@@ -34,9 +34,11 @@
 - [x] 3.2 Films et Séries : grille de découverte, genres, tri, pagination. Vérifier par essai réel. *Capture r-movies.*
 - [x] 3.3 Fiche plein cadre, saisons et épisodes, distribution, suggestions. Vérifier par essai réel (un film et une série). *Captures : Inception, Breaking Bad et la même fiche défilée.*
 - [x] 3.4 Recherche TMDB et chaînes. Vérifier par essai réel (« dune »). *Capture r-search-dune.*
-- [ ] 3.5 Direct et Guide redessinés. Vérifier par rendu avec des données d'exemple (pas d'IPTV sur ce PC pour l'instant).
-  - *Écrans réécrits ; état « sans playlist » vérifié par le test d'interface.*
-  - *Essai avec de vraies chaînes : il faut les identifiants (tablette).*
+- [x] 3.5 Direct et Guide redessinés. Vérifier par rendu avec des données d'exemple (pas d'IPTV sur ce PC pour l'instant).
+  - *Sauvegarde chiffrée exportée depuis la tablette, importée sur le PC, puis supprimée des deux côtés.*
+  - *Synchronisation : 28 258 chaînes, 232 396 programmes, 159 560 films, 64 568 séries.*
+  - *Corrigé : les insertions de films et de séries nomment leurs colonnes ; une base ancienne avait `stream_url` en dernière position.*
+  - *Captures r6 et r7 : Direct (groupes, chaînes, aperçu), Guide, lecture d'AB3 HD avec programme en cours et suivant.*
 - [x] 3.6 Réglages par sections : playlists, clés API avec Tester, compte Real-Debrid, lecture, contrôle parental, à propos. Vérifier que tous les tests de clés sont réussis.
   - *Capture r-settings : compte Real-Debrid Premium, 175 jours.*
 

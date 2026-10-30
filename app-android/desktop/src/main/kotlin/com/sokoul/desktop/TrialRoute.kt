@@ -18,10 +18,36 @@ object TrialRoute {
         // essai : jamais de son (l'utilisateur peut être en train de regarder autre chose)
         app.player?.let { if (!it.status.value.muted) it.toggleMute() }
         when (p[0].lowercase()) {
+            // import de la sauvegarde de la tablette (fichier et phrase par variables d'environnement, jamais en argument)
+            "import" -> {
+                val file = java.io.File(System.getenv("SOKOUL_IMPORT_FILE") ?: return)
+                val pass = System.getenv("SOKOUL_IMPORT_PASS")
+                val s = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    com.sokoul.desktop.data.DesktopImport(app.db).apply(com.sokoul.desktop.data.BackupReader.read(file.readText(), pass))
+                }
+                System.err.println("Import : ${s.playlists} playlist(s), ${s.favorites} favori(s), ${s.progress} reprise(s)")
+                app.reloadPlaylist()
+                app.go(Screen.SETTINGS)
+                app.playlist?.let { pl -> app.sync.sync(pl); app.reloadPlaylist() }
+                System.err.println("Synchronisation : ${app.sync.state.value}")
+            }
+            "sync" -> {
+                app.go(Screen.SETTINGS)
+                app.playlist?.let { pl -> app.sync.sync(pl); app.reloadPlaylist() }
+                System.err.println("Synchronisation : ${app.sync.state.value}")
+            }
             "home" -> app.go(Screen.HOME)
             "movies" -> app.go(Screen.MOVIES)
             "series" -> app.go(Screen.SERIES)
-            "live" -> app.go(Screen.LIVE)
+            "live" -> {
+                app.go(Screen.LIVE)
+                // live:play:<n> : lit la chaîne n° n (une seule connexion : la tablette ne doit rien lire)
+                if (p.getOrNull(1) == "play") app.playlist?.let { pl ->
+                    val all = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.db.allChannels(pl.id) }
+                    val i = all.indexOfFirst { it.number == (p.getOrNull(2)?.toIntOrNull() ?: 1) }.coerceAtLeast(0)
+                    app.play(all, i)
+                }
+            }
             "guide" -> app.go(Screen.GUIDE)
             "settings" -> app.go(Screen.SETTINGS)
             "search" -> { searchQuery = p.getOrNull(1); app.go(Screen.SEARCH) }
