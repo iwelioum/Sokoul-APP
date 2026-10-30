@@ -36,9 +36,12 @@ object TrialRoute {
                 app.playlist?.let { pl -> app.sync.sync(pl); app.reloadPlaylist() }
                 System.err.println("Synchronisation : ${app.sync.state.value}")
             }
-            "home" -> app.go(Screen.HOME)
-            "movies" -> app.go(Screen.MOVIES)
-            "series" -> app.go(Screen.SERIES)
+            "home" -> { scrollItem = p.getOrNull(1)?.toIntOrNull(); app.go(Screen.HOME) }
+            "movies" -> { scrollItem = p.getOrNull(1)?.toIntOrNull(); app.go(Screen.MOVIES) }
+            "series" -> { scrollItem = p.getOrNull(1)?.toIntOrNull(); app.go(Screen.SERIES) }
+            "mylist" -> app.go(Screen.MY_LIST)
+            "sagas" -> app.go(Screen.SAGAS)
+            "saga" -> app.openSaga(p[1].toInt())
             "live" -> {
                 app.go(Screen.LIVE)
                 // live:play:<n> : lit la chaîne n° n (une seule connexion : la tablette ne doit rien lire)

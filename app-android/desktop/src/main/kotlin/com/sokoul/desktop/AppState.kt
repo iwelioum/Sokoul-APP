@@ -26,11 +26,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Onglets de la barre du haut. */
-enum class Screen(val label: String) { HOME("Accueil"), MOVIES("Films"), SERIES("Séries"), LIVE("Direct"), GUIDE("Guide TV"), SEARCH("Recherche"), SETTINGS("Réglages") }
+enum class Screen(val label: String) {
+    HOME("Accueil"), MOVIES("Films"), SERIES("Séries"), MY_LIST("Ma liste"), SAGAS("Sagas"), LIVE("Direct"), GUIDE("Guide TV"),
+    SEARCH("Recherche"), SETTINGS("Réglages"),
+}
 
 /** Écrans poussés au-dessus d'un onglet (Échap revient). */
 sealed interface Route {
     data class Detail(val kind: String, val id: Int) : Route
+    data class Saga(val id: Int) : Route
+    data class Platform(val platform: com.sokoul.iptv.data.repo.Platform, val kind: String) : Route
 }
 
 /** Ce que montre le lecteur : une chaîne (liste de zapping) ou une œuvre TMDB (film, épisode). */
@@ -85,6 +90,21 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
     fun go(s: Screen) { stack.clear(); screen = s; navSolid = false }
     fun open(r: Route) { if (stack.lastOrNull() != r) stack.add(r) }
     fun openDetail(kind: String, id: Int) = open(Route.Detail(kind, id))
+    fun openSaga(id: Int) = open(Route.Saga(id))
+    fun openPlatform(p: com.sokoul.iptv.data.repo.Platform, kind: String) = open(Route.Platform(p, kind))
+
+    // --- Ma liste (films et séries TMDB), comme la tablette ---------------------------------------------
+
+    private fun listType(kind: String) = if (kind == "tv") "MYLIST_TV" else "MYLIST_MOVIE"
+    fun inMyList(kind: String, id: Int) = id.toString() in db.favoriteIds(0, listType(kind))
+    fun toggleMyList(kind: String, id: Int) {
+        if (inMyList(kind, id)) db.removeFavorite(0, listType(kind), id.toString())
+        else db.addFavorite(0, listType(kind), id.toString(), System.currentTimeMillis())
+        dataVersion++
+    }
+    fun myList(): List<Pair<String, Int>> =
+        db.favoriteIds(0, "MYLIST_MOVIE").mapNotNull { it.toIntOrNull()?.let { id -> "movie" to id } } +
+            db.favoriteIds(0, "MYLIST_TV").mapNotNull { it.toIntOrNull()?.let { id -> "tv" to id } }
 
     /** Échap : ferme la fenêtre Sources, le lecteur (plein écran d'abord), puis l'écran poussé. */
     fun back(): Boolean = when {

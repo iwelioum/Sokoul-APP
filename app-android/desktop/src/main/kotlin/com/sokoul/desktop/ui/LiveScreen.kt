@@ -85,7 +85,7 @@ fun LiveScreen(app: AppState) {
         app.db.putSetting(Settings.LAST_GROUP, id)
     }
 
-    Row(Modifier.fillMaxSize().background(SokoulColors.Background).padding(top = 76.dp)) {
+    Row(Modifier.fillMaxSize().background(SokoulColors.Background).padding(top = 0.dp)) {
         // --- groupes ---
         Column(Modifier.width(270.dp).fillMaxHeight().background(SokoulColors.Surface)) {
             Text("Direct", Modifier.padding(start = 24.dp, top = 22.dp), style = Type.ScreenTitle)

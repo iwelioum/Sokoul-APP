@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -105,8 +106,9 @@ fun NetImage(
         }
     }
     val bmp = img
+    // l'image remplit l'espace permis (comme Coil) : un logo borné par heightIn/widthIn garde sa place même sans taille fixe
     Box(modifier) {
         if (bmp == null || alpha.value < 1f) fallback()
-        if (bmp != null) Image(bmp, description, Modifier.matchParentSize().graphicsLayer { this.alpha = alpha.value }, contentScale = scale, alignment = alignment)
+        if (bmp != null) Image(bmp, description, Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha.value }, contentScale = scale, alignment = alignment)
     }
 }

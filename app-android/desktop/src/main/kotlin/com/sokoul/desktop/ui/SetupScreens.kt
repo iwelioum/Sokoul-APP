@@ -70,7 +70,7 @@ private enum class Section(val label: String, val icon: ImageVector) {
 fun SettingsScreen(app: AppState) {
     LaunchedEffect(Unit) { app.navSolid = true }
     var section by remember { mutableStateOf(if (app.playlist == null) Section.PLAYLISTS else Section.KEYS) }
-    Row(Modifier.fillMaxSize().background(SokoulColors.Background).padding(top = 76.dp)) {
+    Row(Modifier.fillMaxSize().background(SokoulColors.Background).padding(top = 0.dp)) {
         Column(Modifier.width(280.dp).fillMaxHeight().background(SokoulColors.Surface).padding(vertical = 22.dp, horizontal = 12.dp)) {
             Text("Réglages", Modifier.padding(start = 12.dp, bottom = 18.dp), style = Type.ScreenTitle)
             Section.entries.forEach { s ->

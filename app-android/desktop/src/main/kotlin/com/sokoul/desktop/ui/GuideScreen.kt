@@ -73,7 +73,7 @@ fun GuideScreen(app: AppState) {
         scroll.scrollTo(with(density) { (DP_PER_MIN * target.toInt().coerceAtLeast(0)).roundToPx() })
     }
 
-    Column(Modifier.fillMaxSize().background(SokoulColors.Background).padding(start = Space.Gutter, top = 96.dp, end = Space.Gutter)) {
+    Column(Modifier.fillMaxSize().background(SokoulColors.Background).padding(start = Space.Gutter, top = 24.dp, end = Space.Gutter)) {
         // --- en-tête : programme choisi ---
         val sel = picked
         Row(Modifier.fillMaxWidth().height(132.dp), verticalAlignment = Alignment.CenterVertically) {

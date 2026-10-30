@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -24,18 +25,12 @@ import com.sokoul.desktop.data.DesktopDb
 import com.sokoul.desktop.data.DesktopSync
 import com.sokoul.desktop.data.Settings
 import com.sokoul.desktop.player.DesktopPlayer
-import com.sokoul.desktop.ui.BrowseScreen
-import com.sokoul.desktop.ui.DetailScreen
 import com.sokoul.desktop.ui.GuideScreen
-import com.sokoul.desktop.ui.HomeScreen
 import com.sokoul.desktop.ui.LiveScreen
 import com.sokoul.desktop.ui.PlayerScreen
 import com.sokoul.desktop.ui.SearchScreen
 import com.sokoul.desktop.ui.SettingsScreen
-import com.sokoul.desktop.ui.SokoulColors
-import com.sokoul.desktop.ui.SokoulTheme
 import com.sokoul.desktop.ui.SourcesDialog
-import com.sokoul.desktop.ui.TopNav
 
 /** Erreur non rattrapée : écrite dans `%APPDATA%\Sokoul\crash.log` (l'app installée n'a pas de console). */
 private fun logCrash(t: Throwable) = runCatching {
@@ -87,32 +82,46 @@ private fun start() {
                 // chaînes et guide plus vieux que 12 h : mis à jour en arrière-plan, la liste s'affiche avec l'existant
                 app.playlist?.let { p -> if (sync.isStale(p)) { sync.sync(p); app.reloadPlaylist() } }
             }
-            SokoulTheme { AppContent(app) }
+            com.sokoul.iptv.ui.theme.SokoulTheme { AppContent(app) }
         }
     }
 }
 
-/** Contenu de la fenêtre : écran courant (ou écran poussé), barre du haut, lecteur et fenêtre Sources par-dessus. */
+/**
+ * Contenu de la fenêtre, comme l'app tablette en paysage : rail à gauche, page à droite (une fiche, une saga ou une
+ * plateforme passent par-dessus la page), lecteur et fenêtre Sources par-dessus tout.
+ */
 @Composable
 fun AppContent(app: AppState) {
-    Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-        val route = app.route
-        when {
-            // une fiche = un état (défilement, saison) : la suivante ne reprend pas celui de la précédente
-            route is Route.Detail -> androidx.compose.runtime.key(app.stack.size, route) { DetailScreen(app, route.kind, route.id) }
-            else -> when (app.screen) {
-                Screen.HOME -> HomeScreen(app)
-                Screen.MOVIES -> BrowseScreen(app, "movie")
-                Screen.SERIES -> BrowseScreen(app, "tv")
-                Screen.LIVE -> LiveScreen(app)
-                Screen.GUIDE -> GuideScreen(app)
-                Screen.SEARCH -> SearchScreen(app)
-                Screen.SETTINGS -> SettingsScreen(app)
+    val data = androidx.compose.runtime.remember(app) { com.sokoul.desktop.tablet.TabletData(app) }
+    Box(Modifier.fillMaxSize().background(com.sokoul.iptv.ui.theme.SokoulColors.Background)) {
+        androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+            com.sokoul.desktop.tablet.TabletRail(app.screen, app::go)
+            // découpe : le zoom lent des fonds (Ken Burns) ne déborde jamais sur le rail
+            Box(Modifier.weight(1f).fillMaxSize().clipToBounds()) {
+                val route = app.route
+                // un écran poussé = un état (défilement, saison) : le suivant ne reprend pas celui du précédent
+                androidx.compose.runtime.key(app.stack.size, route, app.screen) {
+                    when (route) {
+                        is Route.Detail -> com.sokoul.desktop.tablet.TabletDetail(app, data, route.kind, route.id)
+                        is Route.Saga -> com.sokoul.desktop.tablet.TabletSaga(app, route.id)
+                        is Route.Platform -> com.sokoul.desktop.tablet.TabletPlatform(app, route.platform, route.kind)
+                        null -> when (app.screen) {
+                            Screen.HOME -> com.sokoul.desktop.tablet.TabletBrowse(app, com.sokoul.iptv.data.repo.BrowseKind.HOME, data)
+                            Screen.MOVIES -> com.sokoul.desktop.tablet.TabletBrowse(app, com.sokoul.iptv.data.repo.BrowseKind.MOVIES, data)
+                            Screen.SERIES -> com.sokoul.desktop.tablet.TabletBrowse(app, com.sokoul.iptv.data.repo.BrowseKind.SERIES, data)
+                            Screen.MY_LIST -> com.sokoul.desktop.tablet.TabletMyList(app)
+                            Screen.SAGAS -> com.sokoul.desktop.tablet.TabletSagas(app, data)
+                            Screen.LIVE -> LiveScreen(app)
+                            Screen.GUIDE -> GuideScreen(app)
+                            Screen.SEARCH -> SearchScreen(app)
+                            Screen.SETTINGS -> SettingsScreen(app)
+                        }
+                    }
+                }
             }
         }
-        if (app.playing == null) {
-            TopNav(app.screen, app.navSolid, onSelect = app::go, onBack = if (app.stack.isNotEmpty()) ({ app.back() }) else null)
-        } else PlayerScreen(app)
+        if (app.playing != null) PlayerScreen(app)
         app.sources?.let { SourcesDialog(app, it) }
     }
 }

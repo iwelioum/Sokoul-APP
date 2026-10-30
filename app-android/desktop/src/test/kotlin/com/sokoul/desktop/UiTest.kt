@@ -9,7 +9,7 @@ import androidx.compose.ui.test.runComposeUiTest
 import com.sokoul.desktop.data.DesktopDb
 import com.sokoul.desktop.data.DesktopSync
 import com.sokoul.desktop.data.ProviderConfig
-import com.sokoul.desktop.ui.SokoulTheme
+import com.sokoul.iptv.ui.theme.SokoulTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -17,7 +17,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 
-/** Interface sans réseau ni lecteur : clés absentes (états vides), base temporaire. */
+/** Interface de la tablette sur PC, sans réseau ni lecteur : clés absentes (états vides), base temporaire. */
 @OptIn(ExperimentalTestApi::class)
 class UiTest {
     private lateinit var file: File
@@ -36,24 +36,24 @@ class UiTest {
         file.delete()
     }
 
-    @Test fun `navigation par la barre du haut et retour par Echap`() = runComposeUiTest {
+    @Test fun `navigation par le rail et retour par Echap`() = runComposeUiTest {
         val app = AppState(db, DesktopSync(db), null)
         setContent { SokoulTheme { AppContent(app) } }
         // sans clé TMDB : l'accueil dit quoi faire au lieu d'un écran vide
-        onNodeWithText("Branchez TMDB").assertExists()
-        onNodeWithText("Films").performClick()
+        onNodeWithText("Clé TMDB absente").assertExists()
+        onAllNodesWithText("Films")[0].performClick()
         waitForIdle()
         assertEquals(Screen.MOVIES, app.screen)
-        onAllNodesWithText("Films")[0].assertExists()
-        onNodeWithText("Direct").performClick()
+        onAllNodesWithText("Direct")[0].performClick()
         waitForIdle()
+        assertEquals(Screen.LIVE, app.screen)
         onNodeWithText("Ajouter une playlist").assertExists()
         assertTrue(app.back())
         waitForIdle()
         assertEquals(Screen.HOME, app.screen)
     }
 
-    @Test fun `fiche poussee puis retour, recherche et reglages`() = runComposeUiTest {
+    @Test fun `fiche poussee puis retour, ma liste et reglages`() = runComposeUiTest {
         val app = AppState(db, DesktopSync(db), null)
         setContent { SokoulTheme { AppContent(app) } }
         app.go(Screen.MOVIES)
@@ -64,15 +64,14 @@ class UiTest {
         waitForIdle()
         assertEquals(null, app.route)
         assertEquals(Screen.MOVIES, app.screen)
-        onNodeWithContentDescription("Réglages").performClick()
+        app.toggleMyList("movie", 27205)
+        assertTrue(app.inMyList("movie", 27205))
+        app.toggleMyList("movie", 27205)
+        assertTrue(!app.inMyList("movie", 27205))
+        app.go(Screen.SETTINGS)
         waitForIdle()
         onNodeWithText("Clés API").performClick()
         waitForIdle()
         onNodeWithText("TMDB").assertExists()
-        onAllNodesWithText("Non configuré", substring = true)[0].assertExists()
-        onNodeWithContentDescription("Recherche (/)").performClick()
-        waitForIdle()
-        assertEquals(Screen.SEARCH, app.screen)
-        onNodeWithText("Un film, une série, une chaîne…").assertExists()
     }
 }

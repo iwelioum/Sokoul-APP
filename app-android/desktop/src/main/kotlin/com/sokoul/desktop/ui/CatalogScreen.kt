@@ -75,7 +75,7 @@ fun BrowseScreen(app: AppState, kind: String) {
 
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().background(SokoulColors.Background), state = grid,
-        contentPadding = PaddingValues(start = Space.Gutter, end = Space.Gutter, top = 110.dp, bottom = 60.dp),
+        contentPadding = PaddingValues(start = Space.Gutter, end = Space.Gutter, top = 32.dp, bottom = 60.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -130,7 +130,7 @@ fun SearchScreen(app: AppState) {
     }
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().background(SokoulColors.Background),
-        contentPadding = PaddingValues(start = Space.Gutter, end = Space.Gutter, top = 110.dp, bottom = 60.dp),
+        contentPadding = PaddingValues(start = Space.Gutter, end = Space.Gutter, top = 32.dp, bottom = 60.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
