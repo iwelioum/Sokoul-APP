@@ -7,16 +7,14 @@ Sokoul ne tourne que sous Android (TV, tablette, téléphone). L'utilisateur veu
 ## What Changes
 
 - **Application Windows « Sokoul »** :
-  - installée par un programme d'installation (`.msi`), avec une entrée dans le menu Démarrer ;
+  - installée dans les programmes de l'utilisateur, avec raccourcis sur le Bureau et dans le menu Démarrer (Java et VLC fournis) ;
   - fenêtre redimensionnable, plein écran possible ;
   - pilotée à la souris et au clavier.
-- **Code commun** : la logique sans Android est sortie dans un module partagé. On y trouve :
-  - lecture des playlists (Xtream, M3U, XMLTV) ;
-  - clients TMDB, Xtream et Real-Debrid ;
-  - classement des versions ;
-  - chiffrement des sauvegardes.
+- **Code commun** : un module partagé `:core`, utilisé par l'app Android et l'app PC, en plus du module `:parser` (Xtream, M3U, XMLTV) qui existe déjà.
+  - Ce changement y place le client Xtream, le chiffrement des sauvegardes et le hachage du code parental.
+  - TMDB, Real-Debrid et le classement des versions le rejoindront avec les changements suivants.
 
-  L'app Android et l'app PC l'utilisent toutes les deux ; l'app Android ne change pas de comportement.
+  L'app Android ne change pas de comportement.
 - **Reprise de la configuration de la tablette** : l'app PC importe le fichier de sauvegarde chiffrée de l'app Android (phrase de passe). Elle en reprend les playlists, les clés, les favoris et Ma liste, les réglages et le contrôle parental, sans rien ressaisir.
 - **Direct et guide TV** :
   - groupes et chaînes de la playlist active, avec recherche ;
@@ -47,7 +45,7 @@ Sokoul ne tourne que sous Android (TV, tablette, téléphone). L'utilisateur veu
   - `:app` dépend de `:core`.
 - **Dépendances nouvelles** :
   - Compose Multiplatform (bureau) ;
-  - vlcj (VLC doit être installé, ou fourni avec l'installateur) ;
+  - vlcj (libVLC de VLC 3.0.21 fourni avec l'app) ;
   - SQLite JDBC.
 - **Données** : base SQLite propre au PC dans le dossier utilisateur. Les clés et identifiants n'y sont lisibles que par l'utilisateur Windows.
 

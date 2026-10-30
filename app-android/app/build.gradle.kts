@@ -105,6 +105,7 @@ room {
 dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(project(":parser"))
+    implementation(project(":core"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)

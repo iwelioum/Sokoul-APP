@@ -20,6 +20,9 @@ Thumbs.db
 # Sauvegardes de l'app (contiennent des mots de passe)
 sokoul-sauvegarde*.json
 
+# libVLC fourni avec l'app PC (135 Mo, tiré de l'archive officielle VLC 3.0.21 win64 : voir tools/fetch-vlc.ps1)
+app-android/desktop/resources/windows/vlc/
+
 # Signature release (secrets)
 app-android/keystore.properties
 *.jks

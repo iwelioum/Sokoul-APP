@@ -7,11 +7,15 @@ Fournir Sokoul comme une application Windows à part entière : installée, lanc
 ## ADDED Requirements
 
 ### Requirement: Installation Windows
-L'application SHALL s'installer sur Windows 10/11 64 bits par un programme d'installation qui crée une entrée « Sokoul » dans le menu Démarrer et se désinstalle depuis les Paramètres Windows.
+L'application SHALL s'installer sur Windows 10/11 64 bits dans le dossier des programmes de l'utilisateur, avec son propre environnement Java et son lecteur vidéo, et créer les raccourcis « Sokoul » sur le Bureau et dans le menu Démarrer, ainsi qu'un moyen de la désinstaller qui retire le dossier et les raccourcis.
 
 #### Scenario: Installation sur le PC
-- **WHEN** l'utilisateur lance l'installateur de Sokoul
-- **THEN** Sokoul apparaît dans le menu Démarrer et s'ouvre dans sa propre fenêtre, sans émulateur Android
+- **WHEN** Sokoul est installé sur le PC
+- **THEN** une icône Sokoul est sur le Bureau et dans le menu Démarrer, et elle ouvre l'app dans sa propre fenêtre, sans émulateur Android ni installation de VLC ou de Java
+
+#### Scenario: Désinstallation
+- **WHEN** l'utilisateur lance « Désinstaller Sokoul »
+- **THEN** le dossier de l'app et les raccourcis sont retirés
 
 ### Requirement: Fenêtre de bureau
 L'application SHALL s'ouvrir dans une fenêtre redimensionnable qui retient sa taille et sa position, avec un passage en plein écran (F11) et une navigation latérale (Direct, Guide TV, Réglages ; Films, Séries et Real-Debrid arrivent avec les changements suivants).

@@ -1,4 +1,4 @@
-# Outils adb pour essayer Sokoul sur la tablette (ou un autre appareil).
+﻿# Outils adb pour essayer Sokoul sur la tablette (ou un autre appareil).
 #   .\tools\adb-tablet.ps1 shot [-Out capture.png] [-Cmd "input tap 94 1180"]   capture (après une commande shell facultative)
 #   .\tools\adb-tablet.ps1 install                                              installe la version debug compilée
 #   .\tools\adb-tablet.ps1 launch                                               réveille l'écran et ouvre l'application

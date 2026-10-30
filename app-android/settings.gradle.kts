@@ -25,3 +25,5 @@ rootProject.name = "SokoulTV"
 include(":app")
 include(":parser")
 include(":volume")
+include(":core")
+include(":desktop")
