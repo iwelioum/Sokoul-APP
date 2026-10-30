@@ -79,7 +79,7 @@ class ParcoursDataTest {
         ProgressEntity(pid, type, id, parent, "Titre", null, null, pos, dur, at, manual || LibraryRepository.isFinished(pos, dur), s, e, manual)
 
     private fun browse(http: OkHttpClient = OkHttpClient()): BrowseRepository {
-        val tmdb = TmdbClient(http, HttpModule.json(), db.tmdb())
+        val tmdb = TmdbClient(http, HttpModule.json(), com.sokoul.iptv.data.db.DatabaseModule.tmdbCache(db.tmdb()))
         val vod = VodRepository(db, settings, gate)
         return BrowseRepository(db, vod, EnrichmentRepository(db, tmdb, settings, vod), tmdb, gate, settings, com.sokoul.iptv.data.repo.CuratedSagaStore(context))
     }

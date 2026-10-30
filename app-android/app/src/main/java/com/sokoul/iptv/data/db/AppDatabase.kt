@@ -82,6 +82,11 @@ object DatabaseModule {
     @Provides fun library(db: AppDatabase) = db.library()
     @Provides fun recordings(db: AppDatabase) = db.recordings()
     @Provides fun tmdb(db: AppDatabase) = db.tmdb()
+    /** Cache du client TMDB partagé (`:core`) : table Room `tmdb_cache`. */
+    @Provides fun tmdbCache(dao: TmdbDao): com.sokoul.iptv.data.net.TmdbCache = object : com.sokoul.iptv.data.net.TmdbCache {
+        override suspend fun get(key: String) = dao.get(key)?.let { com.sokoul.iptv.data.net.TmdbCached(it.json, it.fetchedAt) }
+        override suspend fun put(key: String, json: String, fetchedAt: Long) = dao.put(TmdbCacheEntity(key, json, fetchedAt))
+    }
     @Provides fun vod(db: AppDatabase) = db.vod()
     @Provides fun browse(db: AppDatabase) = db.browse()
 }

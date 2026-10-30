@@ -36,6 +36,7 @@ class SokoulApp : Application(), Configuration.Provider, ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        com.sokoul.iptv.data.net.CoreLog.warn = { msg, e -> Timber.w(e, msg) }
         com.sokoul.iptv.data.debrid.SourceLog.attach(java.io.File(filesDir, "source-log.txt"))
         // télé HDR ou non, mémoire de l'appareil : avant tout classement de versions et le premier chargement d'image
         com.sokoul.iptv.data.repo.DeviceCaps.read(this)

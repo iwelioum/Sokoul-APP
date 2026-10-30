@@ -259,7 +259,8 @@ class MovieDetailViewModel @Inject constructor(
             details.value = d
             // TMDB a reconnu l'œuvre : on la rattache aux autres versions (année identique exigée, pour éviter un homonyme)
             val tm = d.tmdb
-            if (tm != null && m.year != null && tm.year != null && kotlin.math.abs(tm.year - m.year) <= 1) {
+            val tmYear = tm?.year
+            if (tm != null && m.year != null && tmYear != null && kotlin.math.abs(tmYear - m.year) <= 1) {
                 vod.linkTmdb(p.id, ContentType.MOVIE, m.id, m.tmdbId, m.groupKey, tm.id)
                 catalog.movie(p.id, m.id)?.let { fresh -> if (fresh.groupKey != m.groupKey) loadVersions(p, fresh) }
             }
@@ -657,7 +658,8 @@ class SeriesDetailViewModel @Inject constructor(
                 launch { extras.value = extrasRepo.extras(false, tm) }
                 launch { tvdbEpisodes.value = extrasRepo.tvdbEpisodes(tm) }
                 launch { moreLikeThis(browse, extrasRepo, p.id, ContentType.SERIES, tm, s.keyOf()) { similar.value = it } }
-                if (s.year != null && tm.year != null && kotlin.math.abs(tm.year - s.year) <= 1) {
+                val tmYear = tm.year
+                if (s.year != null && tmYear != null && kotlin.math.abs(tmYear - s.year) <= 1) {
                     vod.linkTmdb(p.id, ContentType.SERIES, s.id, s.tmdbId, s.groupKey, tm.id)
                     catalog.seriesItem(p.id, s.id)?.let { fresh ->
                         if (fresh.groupKey != s.groupKey) {

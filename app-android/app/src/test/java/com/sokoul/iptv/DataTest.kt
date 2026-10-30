@@ -290,7 +290,7 @@ class DataTest {
     private val http = okhttp3.OkHttpClient()
     private val json = com.sokoul.iptv.data.net.HttpModule.json()
     private fun xtreamStub() = com.sokoul.iptv.data.net.XtreamClient(http, json)
-    private fun tmdbStub() = com.sokoul.iptv.data.net.TmdbClient(http, json, db.tmdb())
+    private fun tmdbStub() = com.sokoul.iptv.data.net.TmdbClient(http, json, com.sokoul.iptv.data.db.DatabaseModule.tmdbCache(db.tmdb()))
     private fun playlistsStub() = com.sokoul.iptv.data.repo.PlaylistRepository(
         context, db, SecretBox(), settings, xtreamStub(), http,
         com.sokoul.iptv.recording.RecordingScheduler(context, db), com.sokoul.iptv.ui.MultiviewSession(),

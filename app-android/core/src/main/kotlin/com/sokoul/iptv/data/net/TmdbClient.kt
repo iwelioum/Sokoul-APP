@@ -1,7 +1,5 @@
 package com.sokoul.iptv.data.net
 
-import com.sokoul.iptv.data.db.TmdbCacheEntity
-import com.sokoul.iptv.data.db.TmdbDao
 import com.sokoul.iptv.data.repo.VodGrouping
 import com.sokoul.iptv.parser.double
 import com.sokoul.iptv.parser.int
@@ -14,7 +12,6 @@ import kotlinx.serialization.json.JsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -104,13 +101,13 @@ data class TmdbCollection(val id: Int, val name: String, val overview: String?, 
 
 /**
  * Enrichissement des films/séries via TMDB (clé API saisie dans les réglages), en français.
- * Toutes les réponses sont mises en cache en base (`tmdb_cache`).
+ * Toutes les réponses sont mises en cache ([TmdbCache] : Room sur Android, SQLite sur PC).
  */
 @Singleton
 class TmdbClient @Inject constructor(
     private val http: OkHttpClient,
     private val json: Json,
-    private val cache: TmdbDao,
+    private val cache: TmdbCache,
 ) {
     suspend fun movie(apiKey: String, title: String, year: Int?, tmdbId: String?): TmdbInfo? =
         find(apiKey, "movie", title, year, tmdbId)
@@ -284,7 +281,7 @@ class TmdbClient @Inject constructor(
         }
 
     private suspend fun <T> safe(block: suspend () -> T): T? = withContext(Dispatchers.IO) {
-        try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { Timber.w(e, "TMDB indisponible"); null }
+        try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { CoreLog.warn("TMDB indisponible", e); null }
     }
 
     private suspend fun get(apiKey: String, path: String, params: Map<String, String>, language: String = "fr-FR", ttlMs: Long = 7 * 24 * HOUR, store: Boolean = true): JsonObject? {
@@ -304,7 +301,7 @@ class TmdbClient @Inject constructor(
             if (!resp.isSuccessful) return cached?.let { json.parseToJsonElement(it.json) as? JsonObject }
             resp.body?.string() ?: return null
         }
-        if (store) cache.put(TmdbCacheEntity(key, text, now))
+        if (store) cache.put(key, text, now)
         return json.parseToJsonElement(text) as? JsonObject
     }
 
@@ -441,7 +438,7 @@ class TmdbClient @Inject constructor(
 }
 
 /** Exécute la requête sans bloquer de thread ; l'annulation de la coroutine annule l'appel HTTP. */
-internal suspend fun okhttp3.Call.await(): okhttp3.Response = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+suspend fun okhttp3.Call.await(): okhttp3.Response = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { runCatching { cancel() } }
     enqueue(object : okhttp3.Callback {
         override fun onFailure(call: okhttp3.Call, e: java.io.IOException) { if (cont.isActive) cont.resumeWith(Result.failure(e)) }

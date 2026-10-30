@@ -34,6 +34,11 @@ object VodGrouping {
         "KO", "JA", "ZH", "VI", "FA", "HE",
     )
     private val LEADING_CODE = Regex("""^([A-Z]{2,4})(?:\s*[|:•\-]\s*|\s+)(?=\S)""")
+    private val MARKS = Regex("\\p{Mn}+")
+
+    /** Comme `SyncEngine.searchable` : sans accents, en minuscules. */
+    private fun searchable(s: String): String =
+        java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replace(MARKS, "").lowercase()
 
     /** Retire un code pays de tête (« HU Chernobyl » → « Chernobyl »), seulement s'il reste un titre. */
     fun stripCountry(title: String): String {
@@ -46,7 +51,7 @@ object VodGrouping {
 
     /** Titre comparable : sans accents, ponctuation, article de tête ni année répétée en fin de titre. */
     fun normalizeTitle(title: String, year: Int?): String {
-        var s = SyncEngine.searchable(stripCountry(title)).replace('&', ' ').replace(NON_ALNUM, " ").trim()
+        var s = searchable(stripCountry(title)).replace('&', ' ').replace(NON_ALNUM, " ").trim()
         s = s.replace(LEADING_ARTICLE, "")
         if (year != null) s = s.removeSuffix(" $year").trim()
         return s
