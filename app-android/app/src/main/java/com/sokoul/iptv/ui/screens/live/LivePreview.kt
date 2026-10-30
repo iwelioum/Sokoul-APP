@@ -26,6 +26,16 @@ object LivePreviewPolicy {
         enabled && visible && !recording && cooldownMs <= 0
 }
 
+/** Effet d'un appui sur une chaîne de l'écran Direct. */
+enum class LiveTap { SELECT, PLAY }
+
+/**
+ * Tablette en paysage ([twoStep]) : le premier appui sélectionne (panneau + aperçu), le deuxième sur la même chaîne
+ * ouvre le plein écran. Ailleurs (portrait, téléphone, OK de la télécommande) : lecture directe.
+ */
+fun liveTapAction(selectedId: String?, tappedId: String, twoStep: Boolean): LiveTap =
+    if (twoStep && selectedId != tappedId) LiveTap.SELECT else LiveTap.PLAY
+
 /**
  * Aperçu de la chaîne sélectionnée : un seul lecteur exclusif (une connexion à la fois), son coupé, 720p au plus.
  * [stop] ferme le flux et libère le décodeur : appelé avant le plein écran et quand l'écran n'est plus visible.

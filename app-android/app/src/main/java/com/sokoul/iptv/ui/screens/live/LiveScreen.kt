@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.ChildCare
@@ -198,6 +199,8 @@ class LiveViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     fun focus(c: ChannelEntity) { focused.value = c }
+    /** Chaîne sélectionnée (focus TV ou appui sur tablette en paysage) : mise en évidence au doigt. */
+    val focusedChannel: StateFlow<ChannelEntity?> = focused
 
     /** Chaîne lancée depuis la liste : reprend le focus au retour du lecteur (même si la liste a été réordonnée). */
     var lastPlayed: String? = null
@@ -248,8 +251,10 @@ fun LiveScreen(nav: NavHostController) {
     }
     val play: (ChannelEntity) -> Unit = { c ->
         vm.lastPlayed = c.id
-        // l'aperçu rend la connexion avant que le plein écran ouvre la sienne
-        vm.stopPreview()
+        // l'aperçu rend la connexion avant que le plein écran ouvre la sienne ; « invisible » (et pas seulement arrêté) :
+        // un aperçu encore dans son délai de 800 ms ne doit pas démarrer après coup et couper le plein écran.
+        // Le retour sur l'écran (ON_START) le rétablit.
+        vm.setPreviewVisible(false)
         nav.navigateOnce(PlayerRoute(PlayKind.LIVE, pid, c.id, categoryId = selected))
     }
     val kidsProfile = com.sokoul.iptv.ui.screens.profiles.isKidsProfile()
@@ -257,13 +262,24 @@ fun LiveScreen(nav: NavHostController) {
     // profil Enfant : pas de menu de groupe (masquer, verrouiller, autoriser)
     val openCategoryMenu: (CategoryItem) -> Unit = { if (!it.id.startsWith("__") && !kidsProfile) categoryMenu = it }
 
-    // aperçu : seulement sur TV, tant que l'écran est visible (Accueil, veille ou autre écran → flux fermé)
-    val isTv = com.sokoul.iptv.ui.theme.LocalLayout.current.isTv && wide
+    // aperçu : sur TV, et sur tablette en paysage (sélection au premier appui), tant que l'écran est visible
+    // (Accueil, veille, autre écran ou passage en portrait → flux fermé)
+    val layout = com.sokoul.iptv.ui.theme.LocalLayout.current
+    val twoStep = layout.isTouch && layout.window == com.sokoul.iptv.ui.theme.WindowClass.EXPANDED
+    val isTv = layout.isTv && wide
+    val previewOn = isTv || twoStep
+    val focusedChannel by vm.focusedChannel.collectAsStateWithLifecycle()
+    val tap: (ChannelEntity) -> Unit = { c ->
+        when (liveTapAction(focusedChannel?.id, c.id, twoStep)) {
+            LiveTap.SELECT -> vm.focus(c)
+            LiveTap.PLAY -> play(c)
+        }
+    }
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
-    androidx.compose.runtime.DisposableEffect(lifecycle, isTv) {
+    androidx.compose.runtime.DisposableEffect(lifecycle, previewOn) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
             when (e) {
-                androidx.lifecycle.Lifecycle.Event.ON_START -> vm.setPreviewVisible(isTv)
+                androidx.lifecycle.Lifecycle.Event.ON_START -> vm.setPreviewVisible(previewOn)
                 androidx.lifecycle.Lifecycle.Event.ON_STOP -> vm.setPreviewVisible(false)
                 else -> Unit
             }
@@ -277,8 +293,9 @@ fun LiveScreen(nav: NavHostController) {
 
     if (wide) {
         val l = com.sokoul.iptv.ui.theme.LocalLayout.current
-        // panneau de détails : suit le focus de la télécommande ; au doigt un tap lance la chaîne, il resterait vide
-        val showDetails = l.isTv
+        // panneau de détails : suit le focus de la télécommande, ou la chaîne touchée sur tablette en paysage ;
+        // en portrait, un appui lance la chaîne et le panneau resterait vide
+        val showDetails = l.isTv || twoStep
         val catWidth = if (l.widthDp < 840) 180.dp else 210.dp
         Row(Modifier.fillMaxSize()) {
             Column(Modifier.width(catWidth).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f))) {
@@ -287,11 +304,17 @@ fun LiveScreen(nav: NavHostController) {
                 CategoryColumn(categories, selected, selectCategory, Modifier.weight(1f).fillMaxWidth(), onLongClick = openCategoryMenu)
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                ChannelList(channels, nowPlaying, favorites, vm::focus, play, { channelMenu = it }, vm.lastPlayed) { vm.lastPlayed = null }
+                ChannelList(
+                    channels, nowPlaying, favorites, vm::focus, tap, { channelMenu = it }, vm.lastPlayed,
+                    selectedId = if (twoStep) focusedChannel?.id else null,
+                ) { vm.lastPlayed = null }
             }
             if (showDetails) {
                 val previewing by vm.previewing.collectAsStateWithLifecycle()
-                DetailsPanel(details, previewing, Modifier.width(if (l.isTv) 300.dp else 340.dp).fillMaxHeight(), vm::supportsCatchup)
+                DetailsPanel(
+                    details, previewing, Modifier.width(if (l.isTv) 300.dp else 340.dp).fillMaxHeight(), vm::supportsCatchup,
+                    onWatch = if (l.isTouch) play else null,
+                )
             }
         }
     } else {
@@ -376,6 +399,8 @@ private fun ChannelList(
     onClick: (ChannelEntity) -> Unit,
     onLongClick: (ChannelEntity) -> Unit,
     restoreId: String? = null,
+    /** Chaîne sélectionnée au doigt (tablette en paysage) : mise en évidence, faute de focus visible. */
+    selectedId: String? = null,
     onRestored: () -> Unit = {},
 ) {
     when {
@@ -407,6 +432,7 @@ private fun ChannelList(
                     ChannelRow(
                         c, nowPlaying[c.id], c.id in favorites, now, { onFocus(c) }, { onClick(c) }, { onLongClick(c) },
                         if (c.id == restoreId) Modifier.focusRequester(restore) else Modifier,
+                        selected = c.id == selectedId,
                     )
                 }
             }
@@ -424,12 +450,14 @@ private fun ChannelRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
 ) {
     FocusSurface(style = FocusStyle.Row,
         onClick = onClick, onLongClick = onLongClick, onFocus = onFocus,
-        modifier = modifier.fillMaxWidth(), color = Color.Transparent,
+        modifier = modifier.fillMaxWidth(), color = if (selected) SokoulColors.AccentSoft else Color.Transparent,
         shape = Radius.Card,
-    ) { focused ->
+    ) { hasFocus ->
+        val focused = hasFocus || selected
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 c.number.toString(), Modifier.width(44.dp), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
@@ -459,6 +487,8 @@ private fun DetailsPanel(
     preview: LivePreview.Current?,
     modifier: Modifier,
     supportsCatchup: (ChannelEntity) -> Boolean,
+    /** Tactile : bouton « Regarder » (plein écran sur la chaîne sélectionnée) à la place des aides de touches. */
+    onWatch: ((ChannelEntity) -> Unit)? = null,
 ) {
     val time = rememberNow()
     Column(modifier.background(Brush.horizontalGradient(listOf(SokoulColors.Surface.copy(alpha = 0.55f), SokoulColors.Surface))).padding(start = 26.dp, end = 30.dp, top = 30.dp, bottom = 20.dp)) {
@@ -516,6 +546,12 @@ private fun DetailsPanel(
             Text(next.title, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.weight(1f))
-        com.sokoul.iptv.ui.components.KeyHints(listOf(com.sokoul.iptv.ui.components.KeyHint("OK", "Regarder"), com.sokoul.iptv.ui.components.KeyHint("Menu", "Options")))
+        if (onWatch != null) {
+            com.sokoul.iptv.ui.components.SokoulButton(
+                "Regarder", { onWatch(c) }, Modifier.fillMaxWidth(), Icons.Default.PlayArrow, com.sokoul.iptv.ui.components.ButtonKind.Primary,
+            )
+        } else {
+            com.sokoul.iptv.ui.components.KeyHints(listOf(com.sokoul.iptv.ui.components.KeyHint("OK", "Regarder"), com.sokoul.iptv.ui.components.KeyHint("Menu", "Options")))
+        }
     }
 }

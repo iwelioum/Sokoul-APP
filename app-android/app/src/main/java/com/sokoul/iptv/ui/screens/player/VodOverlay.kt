@@ -49,6 +49,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.BrightnessMedium
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -459,6 +463,58 @@ fun SeekFeedback(deltaMs: Long, target: Long, modifier: Modifier = Modifier) {
             Icon(if (forward) Icons.Default.FastForward else Icons.Default.FastRewind, null, Modifier.size(40.dp), tint = SokoulColors.OnVideo)
             Text((if (forward) "+" else "−") + seekDeltaLabel(deltaMs), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(formatDuration(target), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** Geste tactile en cours : luminosité (à gauche), volume (à droite) ou format d'image après un pincement. */
+enum class GestureKind { BRIGHTNESS, VOLUME, FORMAT }
+
+/** [stamp] rend chaque mouvement distinct : le masquage repart de zéro même si le niveau ne change pas. */
+data class GestureShow(val kind: GestureKind, val level: Float, val label: String? = null, val stamp: Long = System.nanoTime())
+
+/**
+ * Jauge d'un geste, masquée 700 ms après le dernier mouvement. Seul ce composable lit [state] : l'écran du lecteur
+ * ne se recompose pas à chaque mouvement du doigt. L'alignement suit le dernier geste, y compris pendant la sortie.
+ */
+@Composable
+fun androidx.compose.foundation.layout.BoxScope.GestureOverlay(state: androidx.compose.runtime.MutableState<GestureShow?>) {
+    val g = state.value
+    var last by remember { mutableStateOf(GestureShow(GestureKind.VOLUME, 0f)) }
+    if (g != null) last = g
+    LaunchedEffect(g) { if (g != null) { delay(700); if (state.value == g) state.value = null } }
+    androidx.compose.animation.AnimatedVisibility(
+        g != null, Modifier.fillMaxHeight().align(if (last.kind == GestureKind.BRIGHTNESS) Alignment.CenterStart else Alignment.CenterEnd),
+        enter = fadeIn(Motion.enter()), exit = fadeOut(Motion.exit()),
+    ) { GestureFeedback(last) }
+}
+
+/** Retour d'un geste tactile : même panneau latéral que [SeekFeedback], avec une jauge verticale. */
+@Composable
+fun GestureFeedback(g: GestureShow, modifier: Modifier = Modifier) {
+    val left = g.kind == GestureKind.BRIGHTNESS
+    val shade = SokoulColors.Scrim
+    Box(
+        modifier.fillMaxHeight().width(200.dp)
+            .background(Brush.horizontalGradient(if (left) listOf(shade, Color.Transparent) else listOf(Color.Transparent, shade))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            val icon = when (g.kind) {
+                GestureKind.BRIGHTNESS -> Icons.Default.BrightnessMedium
+                GestureKind.VOLUME -> if (g.level <= 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp
+                GestureKind.FORMAT -> Icons.Default.AspectRatio
+            }
+            Icon(icon, null, Modifier.size(36.dp), tint = SokoulColors.OnVideo)
+            if (g.kind == GestureKind.FORMAT) {
+                Text(g.label.orEmpty(), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            } else {
+                // jauge verticale : remplie depuis le bas
+                Box(Modifier.padding(vertical = 12.dp).width(6.dp).height(140.dp).clip(Radius.Round).background(SokoulColors.GlassLight)) {
+                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(g.level.coerceIn(0f, 1f)).background(SokoulColors.OnVideo))
+                }
+                Text("${(g.level * 100).toInt()} %", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

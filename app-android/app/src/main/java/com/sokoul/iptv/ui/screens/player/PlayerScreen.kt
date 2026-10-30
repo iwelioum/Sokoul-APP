@@ -16,7 +16,8 @@ import com.sokoul.iptv.ui.theme.Motion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.border
@@ -236,6 +237,14 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
     val playFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
     val nextFocus = remember { FocusRequester() }
+
+    // gestes tactiles : luminosité de la fenêtre (rendue à la sortie du lecteur) et volume
+    val gestures = remember(context) { PlayerGestureControls(context) }
+    // état écrit à chaque mouvement du doigt et lu seulement par GestureOverlay : l'écran ne se recompose pas en entier
+    val gesture = remember { mutableStateOf<GestureShow?>(null) }
+    androidx.compose.runtime.DisposableEffect(gestures) { onDispose { gestures.restore() } }
+    // image dans l'image : la luminosité de la fenêtre s'appliquerait à tout l'écran (lanceur, autres applis)
+    LaunchedEffect(inPip) { if (inPip) gestures.restore() }
 
     fun showInfo() { infoVisible = true; infoTick++ }
     fun tsShow() { tsBar = true; tsTick++ }
@@ -566,20 +575,71 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                     },
                 )
             }
-            // tactile, direct : glisser vers le haut / le bas sur l'image zappe (sens réglable comme ▲▼)
-            .then(if (l.isTouch && ui.isLive) Modifier.pointerInput(Unit) {
-                var drag = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { drag = 0f },
-                    onVerticalDrag = { change, dy -> drag += dy; change.consume() },
-                    onDragEnd = {
-                        val free = !listVisible && !groupsVisible && !guideVisible && !detailsVisible && panel == null && menu == null && !tsBar
-                        if (free && kotlin.math.abs(drag) > SwipeZapDistance.toPx()) {
-                            vm.zap(swipeZapDelta(swipedUp = drag < 0, inverted = vm.zapInverted))
-                            infoVisible = false
+            // tactile : glisser verticalement règle la luminosité (tiers gauche) ou le volume (tiers droit) ; au centre,
+            // en direct, zappe (sens réglable comme ▲▼) ; deux doigts : pincer = format d'image (paysage).
+            // Rien n'est consommé avant le seuil de glissement : tap et double tap restent au détecteur ci-dessus.
+            .then(if (l.isTouch) Modifier.pointerInput(ui.isLive) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val free = !listVisible && !groupsVisible && !guideVisible && !detailsVisible && panel == null && menu == null && !tsBar && !episodesVisible
+                    if (!free) return@awaitEachGesture
+                    val zone = gestureZone(down.position.x, size.width.toFloat())
+                    var vertical = false
+                    var pinchStart = -1f
+                    var pinchDone = false
+                    var startLevel = 0f
+                    var drag = 0f
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        val pressed = e.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) break
+                        if (pressed.size >= 2 && !vertical) {
+                            val dist = (pressed[0].position - pressed[1].position).getDistance()
+                            if (pinchStart < 0f) pinchStart = dist
+                            else if (!pinchDone) pinchDecision(pinchStart, dist)?.let { d ->
+                                pinchDone = true
+                                // portrait : la vidéo s'adapte toujours à la largeur (effectiveResizeMode) ; taille de la zone
+                                // tactile (toujours à jour) plutôt que la mise en page capturée, figée après une rotation
+                                if (size.width > size.height) {
+                                    vm.setResizeMode(if (d == PinchDecision.FILL) 1 else 0)
+                                    gesture.value = GestureShow(GestureKind.FORMAT, 0f, if (d == PinchDecision.FILL) "Remplir" else "Adapter")
+                                }
+                            }
+                            e.changes.forEach { it.consume() }
+                            continue
                         }
-                    },
-                )
+                        if (pinchStart >= 0f) continue // un doigt relevé après un pincement : on attend la fin du geste
+                        val c = e.changes.firstOrNull { it.id == down.id } ?: continue
+                        val dy = c.position.y - down.position.y
+                        val dx = c.position.x - down.position.x
+                        if (!vertical) {
+                            if (kotlin.math.abs(dx) > viewConfiguration.touchSlop && kotlin.math.abs(dx) > kotlin.math.abs(dy)) return@awaitEachGesture
+                            if (kotlin.math.abs(dy) <= viewConfiguration.touchSlop) continue
+                            vertical = true
+                            startLevel = when (zone) {
+                                GestureZone.LEFT -> gestures.brightness()
+                                GestureZone.RIGHT -> gestures.volume()
+                                GestureZone.CENTER -> 0f
+                            }
+                        }
+                        c.consume()
+                        when (zone) {
+                            GestureZone.LEFT -> {
+                                val v = gestures.setBrightness(levelAfterDrag(startLevel, dy, size.height.toFloat()))
+                                gesture.value = GestureShow(GestureKind.BRIGHTNESS, v)
+                            }
+                            GestureZone.RIGHT -> {
+                                val v = gestures.setVolume(levelAfterDrag(startLevel, dy, size.height.toFloat()))
+                                gesture.value = GestureShow(GestureKind.VOLUME, v)
+                            }
+                            GestureZone.CENTER -> drag = dy
+                        }
+                    }
+                    if (vertical && zone == GestureZone.CENTER && ui.isLive && kotlin.math.abs(drag) > SwipeZapDistance.toPx()) {
+                        vm.zap(swipeZapDelta(swipedUp = drag < 0, inverted = vm.zapInverted))
+                        infoVisible = false
+                    }
+                }
             } else Modifier)
     ) {
         if (exo != null) {
@@ -644,6 +704,9 @@ fun PlayerScreen(nav: NavHostController, route: PlayerRoute) {
                 if (previewTarget != null) last = previewTarget
                 SeekFeedback(last - seekOrigin, last)
             }
+
+            // gestes tactiles : jauge de luminosité à gauche, de volume (ou format) à droite
+            GestureOverlay(gesture)
 
             // actions du direct : bandeau des détails (OK) et, en tactile, barre ouverte d'un tap
             fun liveActions(): List<PlayerAction> = buildList {

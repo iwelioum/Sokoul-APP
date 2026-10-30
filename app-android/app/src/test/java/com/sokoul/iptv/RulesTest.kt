@@ -215,6 +215,18 @@ class RecordingRulesTest {
         assertTrue(RecordingRules.seriesAirings(key, "f2", "France 2", 0, programs, listOf(live), now).isEmpty())
     }
 
+    @Test fun `appui dans le Direct sur tablette en paysage`() {
+        val tap = com.sokoul.iptv.ui.screens.live.LiveTap.SELECT
+        val play = com.sokoul.iptv.ui.screens.live.LiveTap.PLAY
+        // paysage : 1er appui = sélection (aperçu), 2e sur la même chaîne = plein écran
+        assertEquals(tap, com.sokoul.iptv.ui.screens.live.liveTapAction(null, "tf1", twoStep = true))
+        assertEquals(play, com.sokoul.iptv.ui.screens.live.liveTapAction("tf1", "tf1", twoStep = true))
+        assertEquals(tap, com.sokoul.iptv.ui.screens.live.liveTapAction("tf1", "f2", twoStep = true))
+        // portrait / téléphone / OK de la télécommande : lecture directe
+        assertEquals(play, com.sokoul.iptv.ui.screens.live.liveTapAction(null, "tf1", twoStep = false))
+        assertEquals(play, com.sokoul.iptv.ui.screens.live.liveTapAction("f2", "tf1", twoStep = false))
+    }
+
     @Test fun `apercu du direct seulement si la connexion est libre`() {
         val p = com.sokoul.iptv.ui.screens.live.LivePreviewPolicy
         assertTrue(p.canPlay(enabled = true, visible = true, recording = false, cooldownMs = 0))
