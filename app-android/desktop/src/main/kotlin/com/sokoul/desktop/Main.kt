@@ -112,9 +112,9 @@ fun AppContent(app: AppState) {
                             Screen.SERIES -> com.sokoul.desktop.tablet.TabletBrowse(app, com.sokoul.iptv.data.repo.BrowseKind.SERIES, data)
                             Screen.MY_LIST -> com.sokoul.desktop.tablet.TabletMyList(app)
                             Screen.SAGAS -> com.sokoul.desktop.tablet.TabletSagas(app, data)
-                            Screen.LIVE -> LiveScreen(app)
-                            Screen.GUIDE -> GuideScreen(app)
-                            Screen.SEARCH -> SearchScreen(app)
+                            Screen.LIVE -> com.sokoul.desktop.tablet.TabletLive(app)
+                            Screen.GUIDE -> com.sokoul.desktop.tablet.TabletGuide(app)
+                            Screen.SEARCH -> com.sokoul.desktop.tablet.TabletSearch(app)
                             Screen.SETTINGS -> SettingsScreen(app)
                         }
                     }

@@ -22,9 +22,9 @@
 
 ## 3. Écrans encore à reprendre de la tablette
 
-- [ ] 3.1 Recherche (`SearchScreen` de la tablette : clavier, résultats par rangées).
-- [ ] 3.2 Direct (`LiveScreen` de la tablette : groupes, chaînes, aperçu).
-- [ ] 3.3 Guide TV (`GuideScreen` de la tablette).
+- [x] 3.1 Recherche (`SearchScreen` de la tablette : pastilles Films, Séries, Chaînes et Programmes TV ; Top 10 en tendance ; meilleurs résultats, puis rangées ; « Au programme » via `DesktopDb.searchPrograms`). Vérifié par captures s1/s2 et par un test.
+- [x] 3.2 Direct (`LiveScreen` de la tablette : groupes, chaînes, aperçu). Vérifié par capture p3.
+- [x] 3.3 Guide TV (`GuideScreen` de la tablette). Vérifié par capture p3.
 - [ ] 3.4 Réglages (`SettingsPanes` : rubriques Compte et playlists, Lecture, Télévision et guide, Films et séries, Real-Debrid, Contrôle parental, Profils, Sources de données, Sauvegarde, À propos).
 - [ ] 3.5 Surimpression du lecteur (`VodOverlay`, direct), avec le rendu vidéo Compose actuel.
 

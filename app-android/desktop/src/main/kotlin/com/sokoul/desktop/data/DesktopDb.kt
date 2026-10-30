@@ -164,6 +164,26 @@ class DesktopDb(file: File) : AutoCloseable {
         pid, "%$key%", "%$key%", limit,
     ) { it.toChannel() }
 
+    /**
+     * Recherche dans le guide (« Au programme » de la tablette) : programmes pas encore finis dont le titre contient
+     * [text], chacun avec la première chaîne visible qui le diffuse (programmes sans chaîne visible écartés).
+     */
+    @Synchronized
+    fun searchPrograms(pid: Long, text: String, now: Long, limit: Int = 30): List<Pair<Program, Channel>> {
+        val progs = query(
+            "SELECT * FROM programs WHERE playlist_id=? AND stop>? AND lower(title) LIKE ? ORDER BY start LIMIT ?",
+            pid, now, "%${text.trim().lowercase()}%", limit * 4,
+        ) { Program(it.getString("channel_key"), it.getLong("start"), it.getLong("stop"), it.getString("title"), it.getString("description")) }
+        val keys = progs.mapTo(LinkedHashSet()) { it.channelKey }
+        if (keys.isEmpty()) return emptyList()
+        val byKey = query(
+            "SELECT c.* FROM channels c JOIN categories g ON g.playlist_id=c.playlist_id AND g.id=c.category_id " +
+                "WHERE c.playlist_id=? AND g.hidden=0 AND g.locked=0 AND c.epg_key IN (${keys.joinToString(",") { "?" }}) ORDER BY g.position, c.position",
+            pid, *keys.toTypedArray(),
+        ) { it.toChannel() }.groupBy { it.epgKey }.mapValues { it.value.first() }
+        return progs.mapNotNull { p -> byKey[p.channelKey]?.let { p to it } }.take(limit)
+    }
+
     @Synchronized
     fun channelCount(pid: Long): Int = query("SELECT COUNT(*) FROM channels WHERE playlist_id=?", pid) { it.getInt(1) }.first()
 

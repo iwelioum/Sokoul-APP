@@ -137,6 +137,25 @@ class DesktopTest {
         assertFalse(LiveLogic.guideStart(now) > now)
     }
 
+    @Test fun `recherche au programme - pas fini, chaine visible, sans casse`() {
+        val pid = db.upsertPlaylist(Playlist(0, "P", PlaylistType.M3U, "http://x/list.m3u", null, null, null, null))
+        val h = 3600_000L
+        val now = 1_700_000_000_000L
+        db.replaceLive(pid, listOf(Category(pid, "a", "France", 0), Category(pid, "c", "Masqué", 1)), listOf(
+            Channel(pid, "1", 1, "TF1", null, "a", "tf1.fr", "tf1", null, null, null, 0),
+            Channel(pid, "2", 2, "Caché", null, "c", "cache.fr", "cache", null, null, null, 1),
+        ))
+        db.setCategoryFlags(pid, "c", hidden = true, locked = false)
+        db.replacePrograms(pid, sequenceOf(
+            Program("tf1.fr", now - 2 * h, now - h, "Journal de 13h", null),
+            Program("tf1.fr", now + h, now + 2 * h, "Le Journal de 20h", null),
+            Program("cache.fr", now + h, now + 2 * h, "Journal caché", null),
+        ), keepFrom = now - 3 * h)
+        val found = db.searchPrograms(pid, "JOURNAL", now)
+        assertEquals(listOf("Le Journal de 20h"), found.map { it.first.title })
+        assertEquals("1", found.single().second.id)
+    }
+
     @Test fun `cle saisie l'emporte sur la cle integree, jamais affichee en entier`() {
         val before = ProviderConfig.builtIn
         ProviderConfig.builtIn = { mapOf("tmdb" to "integree-1234") }

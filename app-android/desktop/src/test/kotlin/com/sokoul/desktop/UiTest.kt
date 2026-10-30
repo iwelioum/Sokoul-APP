@@ -47,7 +47,7 @@ class UiTest {
         onAllNodesWithText("Direct")[0].performClick()
         waitForIdle()
         assertEquals(Screen.LIVE, app.screen)
-        onNodeWithText("Ajouter une playlist").assertExists()
+        onNodeWithText("Aucune playlist").assertExists()
         assertTrue(app.back())
         waitForIdle()
         assertEquals(Screen.HOME, app.screen)
