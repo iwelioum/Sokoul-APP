@@ -42,6 +42,11 @@ class DesktopDb(file: File) : AutoCloseable {
             tmdb_id TEXT, position INTEGER NOT NULL, PRIMARY KEY(playlist_id, id))""",
         "CREATE INDEX IF NOT EXISTS movies_search ON movies(playlist_id, name)",
         "CREATE INDEX IF NOT EXISTS series_search ON series(playlist_id, name)",
+        "CREATE TABLE IF NOT EXISTS tmdb_cache(key TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL)",
+        // reprise des films et épisodes TMDB (lus via Real-Debrid ou l'IPTV) : rangée « Reprendre » de l'accueil
+        """CREATE TABLE IF NOT EXISTS resume(key TEXT PRIMARY KEY, kind TEXT NOT NULL, tmdb_id INTEGER NOT NULL, season INTEGER,
+            episode INTEGER, title TEXT NOT NULL, subtitle TEXT, image TEXT, position_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL, finished INTEGER NOT NULL)""",
     )
 
     init {
@@ -292,6 +297,37 @@ class DesktopDb(file: File) : AutoCloseable {
     fun putSetting(key: String, value: String?) {
         if (value == null) update("DELETE FROM settings WHERE key=?", key) else update("INSERT OR REPLACE INTO settings VALUES(?,?)", key, value)
     }
+
+    // --- cache TMDB, reprise --------------------------------------------------------------------------
+
+    @Synchronized
+    fun tmdbGet(key: String): Pair<String, Long>? =
+        query("SELECT json, fetched_at FROM tmdb_cache WHERE key=?", key) { it.getString(1) to it.getLong(2) }.firstOrNull()
+
+    @Synchronized
+    fun tmdbPut(key: String, json: String, at: Long) { update("INSERT OR REPLACE INTO tmdb_cache VALUES(?,?,?)", key, json, at) }
+
+    @Synchronized
+    fun saveResume(r: Resume) {
+        update(
+            "INSERT OR REPLACE INTO resume VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            r.key, r.kind, r.tmdbId, r.season, r.episode, r.title, r.subtitle, r.image, r.positionMs, r.durationMs, r.updatedAt, r.finished,
+        )
+    }
+
+    @Synchronized
+    fun resume(key: String): Resume? = query("SELECT * FROM resume WHERE key=?", key) { it.toResume() }.firstOrNull()
+
+    /** « Reprendre » : lectures commencées et non terminées, la plus récente d'abord ; une seule ligne par série. */
+    @Synchronized
+    fun resumeList(limit: Int = 20): List<Resume> =
+        query("SELECT * FROM resume WHERE finished=0 AND position_ms > 0 ORDER BY updated_at DESC LIMIT ?", limit * 3) { it.toResume() }
+            .distinctBy { "${it.kind}:${it.tmdbId}" }.take(limit)
+
+    private fun ResultSet.toResume() = Resume(
+        getString("key"), getString("kind"), getInt("tmdb_id"), (getObject("season") as? Number)?.toInt(), (getObject("episode") as? Number)?.toInt(),
+        getString("title"), getString("subtitle"), getString("image"), getLong("position_ms"), getLong("duration_ms"), getLong("updated_at"), getInt("finished") == 1,
+    )
 
     override fun close() = conn.close()
 

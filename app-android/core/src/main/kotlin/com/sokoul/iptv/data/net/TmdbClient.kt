@@ -197,6 +197,12 @@ class TmdbClient @Inject constructor(
         } ?: emptyList()
     }
 
+    /** Découverte TMDB (genre, plateforme, tri) : une page, cache 1 jour. Sert aux rangées et grilles de l'app PC. */
+    suspend fun discover(apiKey: String, kind: String, params: Map<String, String>, page: Int = 1): List<TmdbItem> {
+        if (apiKey.isBlank()) return emptyList()
+        return safe { items(get(apiKey, "/3/discover/$kind", params + ("page" to page.toString()), ttlMs = 24 * HOUR), kind) } ?: emptyList()
+    }
+
     suspend fun recommendations(apiKey: String, kind: String, id: Int): List<TmdbItem> {
         if (apiKey.isBlank()) return emptyList()
         return safe {

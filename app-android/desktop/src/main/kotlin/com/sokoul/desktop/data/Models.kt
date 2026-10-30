@@ -65,6 +65,31 @@ data class Series(
     val tmdbId: String?,
 )
 
+/** Position de lecture d'un film ou d'un épisode TMDB ; [kind] « movie » ou « tv ». */
+data class Resume(
+    val key: String,
+    val kind: String,
+    val tmdbId: Int,
+    val season: Int?,
+    val episode: Int?,
+    val title: String,
+    val subtitle: String?,
+    val image: String?,
+    val positionMs: Long,
+    val durationMs: Long,
+    val updatedAt: Long,
+    val finished: Boolean,
+) {
+    val fraction: Float get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+
+    companion object {
+        /** Au-delà de 92 % : vu (générique de fin). */
+        const val FINISHED_AT = 0.92f
+        fun key(kind: String, tmdbId: Int, season: Int?, episode: Int?) =
+            if (kind == "tv" && season != null && episode != null) "tv:$tmdbId:$season:$episode" else "$kind:$tmdbId"
+    }
+}
+
 /** Groupes spéciaux en tête de la liste (comme sur la tablette). */
 object SpecialGroup {
     const val ALL = "__all"

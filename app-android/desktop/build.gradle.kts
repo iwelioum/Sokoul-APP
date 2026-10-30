@@ -1,5 +1,6 @@
 // Sokoul pour Windows : application de bureau Compose (souris et clavier), lecture par libVLC (vlcj).
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -16,6 +17,32 @@ java {
 kotlin {
     jvmToolchain(17)
 }
+
+// Clés API (sokoul.key.* de local.properties, ignoré par Git) → classe générée dans build/, jamais commitée.
+// Même principe que le BuildConfig de l'app Android : l'app installée fonctionne sans fichier de configuration.
+val keysDir = layout.buildDirectory.dir("generated/keys")
+val generateDesktopKeys by tasks.registering {
+    val props = rootProject.file("local.properties")
+    inputs.files(listOf(props).filter { it.exists() })
+    outputs.dir(keysDir)
+    doLast {
+        val p = Properties()
+        if (props.isFile) props.inputStream().use { p.load(it) }
+        val keys = p.stringPropertyNames().filter { it.startsWith("sokoul.key.") }.sorted()
+            .associate { it.removePrefix("sokoul.key.") to p.getProperty(it).trim() }
+        fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
+        val body = keys.entries.joinToString(",\n") { (k, v) -> "        \"${esc(k)}\" to \"${esc(v)}\"" }
+        val out = keysDir.get().file("com/sokoul/desktop/data/DesktopKeys.kt").asFile
+        out.parentFile.mkdirs()
+        out.writeText(
+            "package com.sokoul.desktop.data\n\n" +
+                "/** Généré au build depuis local.properties : ne pas commiter, ne jamais journaliser. */\n" +
+                "internal object DesktopKeys {\n    val all: Map<String, String> = mapOf(\n$body\n    )\n}\n",
+        )
+    }
+}
+sourceSets["main"].kotlin.srcDir(keysDir)
+tasks.named("compileKotlin") { dependsOn(generateDesktopKeys) }
 
 dependencies {
     implementation(project(":core"))

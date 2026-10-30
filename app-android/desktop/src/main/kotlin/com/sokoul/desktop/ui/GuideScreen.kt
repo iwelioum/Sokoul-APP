@@ -2,7 +2,6 @@ package com.sokoul.desktop.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,10 +15,12 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,13 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sokoul.desktop.AppState
+import com.sokoul.desktop.Screen
 import com.sokoul.desktop.data.Channel
 import com.sokoul.desktop.data.LiveLogic
 import com.sokoul.desktop.data.Program
@@ -47,11 +46,13 @@ import kotlinx.coroutines.withContext
 
 private val DP_PER_MIN = 5.dp
 private const val HOURS = 24
+private val CHANNEL_COL = 232.dp
 
-/** Grille du guide : chaînes du groupe courant × 24 h à partir du jour choisi ; détail d'un programme en haut. */
+/** Grille du guide : chaînes du groupe courant × 24 h à partir du jour choisi ; programme choisi en en-tête. */
 @Composable
 fun GuideScreen(app: AppState) {
-    val p = app.playlist ?: return
+    LaunchedEffect(Unit) { app.navSolid = true }
+    val p = app.playlist ?: run { NoPlaylist(app, "Guide TV"); return }
     val now = remember { System.currentTimeMillis() }
     var dayOffset by remember { mutableStateOf(0) }
     val group = app.db.setting(Settings.LAST_GROUP)?.takeIf { it != SpecialGroup.FAVORITES || app.db.favoriteIds(p.id).isNotEmpty() } ?: SpecialGroup.ALL
@@ -72,59 +73,61 @@ fun GuideScreen(app: AppState) {
         scroll.scrollTo(with(density) { (DP_PER_MIN * target.toInt().coerceAtLeast(0)).roundToPx() })
     }
 
-    Column(Modifier.fillMaxSize().padding(start = 20.dp, top = 20.dp, end = 20.dp)) {
-        // --- en-tête : programme choisi, jours ---
+    Column(Modifier.fillMaxSize().background(SokoulColors.Background).padding(start = Space.Gutter, top = 96.dp, end = Space.Gutter)) {
+        // --- en-tête : programme choisi ---
         val sel = picked
-        Column(Modifier.fillMaxWidth().height(110.dp)) {
-            if (sel == null) ScreenTitle("Guide TV", "Cliquez sur un programme pour voir son détail")
-            else {
-                val (c, pr) = sel
-                Text("${c.name.uppercase()} · ${dayLabel(pr.start)} ${clock(pr.start)} – ${clock(pr.end)}", style = MaterialTheme.typography.labelMedium, color = SokoulColors.Accent)
-                Text(pr.title, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                pr.description?.let { Text(it, Modifier.padding(top = 4.dp), color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            }
-        }
-        Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            (0..6).forEach { d ->
-                SokoulButton(dayLabel(startOfDay(now) + d * 24 * 3600_000L + 3600_000L, now), { dayOffset = d; picked = null }, primary = d == dayOffset)
+        Row(Modifier.fillMaxWidth().height(132.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                if (sel == null) {
+                    Text("Guide TV", style = Type.ScreenTitle)
+                    Text("Cliquez sur un programme pour voir son détail, sur une chaîne pour la regarder.", Modifier.padding(top = 6.dp), style = Type.Small)
+                } else {
+                    val (c, pr) = sel
+                    Kicker("${c.name} · ${dayLabel(pr.start)} ${clock(pr.start)} – ${clock(pr.end)}")
+                    Text(pr.title, Modifier.padding(top = 6.dp), style = Type.Section, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    pr.description?.let { Text(it, Modifier.padding(top = 6.dp).widthIn(max = 900.dp), style = Type.Body, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                }
             }
             if (sel != null && sel.second.start <= System.currentTimeMillis() && sel.second.end > System.currentTimeMillis()) {
-                SokoulButton("Regarder", { app.play(channels, channels.indexOf(sel.first)) })
+                SokoulButton("Regarder", { app.play(channels, channels.indexOf(sel.first)) }, style = ButtonStyle.Primary, icon = Icons.Filled.PlayArrow)
             }
+        }
+        Row(Modifier.padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            (0..6).forEach { d -> Chip(dayLabel(startOfDay(now) + d * 24 * 3600_000L + 3600_000L, now), d == dayOffset, { dayOffset = d; picked = null }) }
         }
         // --- règle des heures ---
         Row {
-            Box(Modifier.width(220.dp))
+            Box(Modifier.width(CHANNEL_COL))
             Box(Modifier.weight(1f).horizontalScroll(scroll)) {
                 Box(Modifier.width(DP_PER_MIN * (HOURS * 60)).height(28.dp)) {
                     (0 until HOURS * 2).forEach { i ->
                         val t = from + i * 30 * 60_000L
-                        Text(clock(t), Modifier.offset(x = DP_PER_MIN * (i * 30)).padding(start = 4.dp), color = if (i % 2 == 0) SokoulColors.TextPrimary else SokoulColors.TextMuted, style = MaterialTheme.typography.labelLarge)
+                        Text(clock(t), Modifier.offset(x = DP_PER_MIN * (i * 30)).padding(start = 6.dp), style = Type.Meta.copy(color = if (i % 2 == 0) SokoulColors.TextPrimary else SokoulColors.TextMuted))
                     }
                 }
             }
         }
         if (channels.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Aucune chaîne dans ce groupe (choisissez un groupe dans Direct)", color = SokoulColors.TextMuted) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState("Aucune chaîne", "Ce groupe est vide : choisissez un autre groupe dans Direct.") }
             return@Column
         }
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(channels, key = { _, c -> c.id }) { i, c ->
-                Row(Modifier.height(58.dp)) {
+                Row(Modifier.height(64.dp)) {
+                    val h = rememberHover()
                     Row(
-                        Modifier.width(220.dp).fillMaxHeight().background(SokoulColors.Surface, Radius.Card).clickable { app.play(channels, i) }
-                            .pointerHoverIcon(PointerIcon.Hand).padding(horizontal = 8.dp),
+                        Modifier.width(CHANNEL_COL).fillMaxHeight().background(if (h.active) SokoulColors.SurfaceHigher else SokoulColors.Surface, Radius.Card)
+                            .interactive(h) { app.play(channels, i) }.padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        NetImage(c.logo, c.name, Modifier.size(56.dp, 34.dp))
-                        Text(c.name, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(c.number.toString(), Modifier.width(34.dp), style = Type.ChannelNumber.copy(color = SokoulColors.TextMuted))
+                        NetImage(c.logo, c.name, Modifier.size(54.dp, 34.dp), scale = androidx.compose.ui.layout.ContentScale.Fit)
+                        Text(c.name, Modifier.padding(start = 10.dp), style = Type.Small.copy(color = SokoulColors.TextPrimary), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Box(Modifier.weight(1f).fillMaxHeight().horizontalScroll(scroll)) {
-                        Box(Modifier.width(DP_PER_MIN * (HOURS * 60)).fillMaxHeight()) {
+                        Box(Modifier.width(DP_PER_MIN * (HOURS * 60)).fillMaxHeight().padding(start = 4.dp)) {
                             val list = c.epgKey?.let { programs[it] }.orEmpty()
-                            if (list.isEmpty()) {
-                                Text("Pas d'information", Modifier.padding(start = 12.dp).align(Alignment.CenterStart), color = SokoulColors.TextMuted)
-                            }
+                            if (list.isEmpty()) Text("Pas d'information", Modifier.padding(start = 12.dp).align(Alignment.CenterStart), style = Type.Small.copy(color = SokoulColors.TextMuted))
                             list.forEach { pr ->
                                 val (s, e) = LiveLogic.span(pr, from, to)
                                 if (e <= s) return@forEach
@@ -132,24 +135,39 @@ fun GuideScreen(app: AppState) {
                                 val w = DP_PER_MIN * ((e - s) / 60_000L).toInt().coerceAtLeast(1)
                                 val live = pr.start <= System.currentTimeMillis() && pr.end > System.currentTimeMillis()
                                 val isPicked = picked?.second == pr && picked?.first?.id == c.id
+                                val ph = rememberHover()
                                 Column(
-                                    Modifier.offset(x = x).width(w - 2.dp).fillMaxHeight()
-                                        .background(if (isPicked) SokoulColors.AccentSoft else if (live) SokoulColors.SurfaceHigher else SokoulColors.SurfaceHigh, Radius.Tiny)
-                                        .then(if (isPicked) Modifier.border(1.dp, SokoulColors.Accent, Radius.Tiny) else Modifier)
-                                        .clickable { picked = c to pr }.pointerHoverIcon(PointerIcon.Hand).padding(horizontal = 8.dp, vertical = 6.dp),
+                                    Modifier.offset(x = x).width(w - 3.dp).fillMaxHeight()
+                                        .background(
+                                            when { isPicked -> SokoulColors.AccentSoft; ph.active -> SokoulColors.SurfaceHigher; live -> SokoulColors.SurfaceHigh; else -> SokoulColors.Surface },
+                                            Radius.Card,
+                                        )
+                                        .then(if (isPicked) Modifier.border(Edge.Hairline, SokoulColors.Accent, Radius.Card) else Modifier)
+                                        .interactive(ph) { picked = c to pr }.padding(horizontal = 10.dp, vertical = 8.dp),
                                 ) {
-                                    Text(pr.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("${clock(pr.start)} – ${clock(pr.end)}", style = MaterialTheme.typography.labelSmall, color = SokoulColors.TextMuted, maxLines = 1)
+                                    Text(pr.title, style = Type.Small.copy(color = SokoulColors.TextPrimary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${clock(pr.start)} – ${clock(pr.end)}", style = Type.Small.copy(color = if (live) SokoulColors.Live else SokoulColors.TextMuted), maxLines = 1)
                                 }
                             }
                             // repère de l'heure actuelle
                             val t = System.currentTimeMillis()
-                            if (t in from until to) Box(Modifier.offset(x = DP_PER_MIN * ((t - from) / 60_000L).toInt()).width(2.dp).fillMaxHeight().background(SokoulColors.Accent))
+                            if (t in from until to) Box(Modifier.offset(x = DP_PER_MIN * ((t - from) / 60_000L).toInt()).width(2.dp).fillMaxHeight().background(SokoulColors.Live))
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** Écran Direct ou Guide sans playlist : explication et accès à l'ajout. */
+@Composable
+fun NoPlaylist(app: AppState, title: String) {
+    Box(Modifier.fillMaxSize().background(SokoulColors.Background), contentAlignment = Alignment.Center) {
+        EmptyState(
+            title, "Ajoutez votre abonnement IPTV (Xtream Codes ou lien M3U), ou importez la configuration de votre tablette, pour retrouver vos chaînes et le guide.",
+            action = "Ajouter une playlist", onAction = { app.go(Screen.SETTINGS) },
+        )
     }
 }
 
