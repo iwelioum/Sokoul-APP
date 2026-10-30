@@ -6,12 +6,13 @@ import androidx.compose.runtime.setValue
 import com.sokoul.desktop.data.Channel
 import com.sokoul.desktop.data.DesktopDb
 import com.sokoul.desktop.data.DesktopSync
+import com.sokoul.desktop.data.Movie
 import com.sokoul.desktop.data.Playlist
 import com.sokoul.desktop.data.Settings
 import com.sokoul.desktop.player.DesktopPlayer
 import com.sokoul.iptv.data.PinHasher
 
-enum class Screen { WELCOME, LIVE, GUIDE, SETTINGS }
+enum class Screen { WELCOME, HOME, MOVIES, SERIES, LIVE, GUIDE, SEARCH, LIBRARY, SETTINGS }
 
 /** État global de l'app PC : base, synchronisation, lecteur (unique), écran courant et playlist active. */
 class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlayer?) {
@@ -20,6 +21,7 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         private set
     /** Lecture plein cadre : liste de zapping et chaîne courante (null = pas de lecteur ouvert). */
     var playing by mutableStateOf<Pair<List<Channel>, Int>?>(null)
+    var playingMovie by mutableStateOf<Movie?>(null)
     var fullscreen by mutableStateOf(false)
     /** Code parental saisi pendant cette session (groupes verrouillés accessibles jusqu'à la fermeture). */
     var unlocked by mutableStateOf(false)
@@ -56,6 +58,17 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         player?.play(com.sokoul.desktop.data.LiveLogic.stream(p, c, sync.userAgent()))
     }
 
+    fun playMovie(movie: Movie) {
+        val p = playlist ?: return
+        val url = movie.streamUrl ?: when (p.type) {
+            com.sokoul.desktop.data.PlaylistType.XTREAM ->
+                com.sokoul.iptv.parser.XtreamUrls.movie(p.url.trimEnd('/'), p.username.orEmpty(), p.password.orEmpty(), movie.id.toLongOrNull() ?: return, movie.extension)
+            com.sokoul.desktop.data.PlaylistType.M3U -> return
+        }
+        player?.play(com.sokoul.desktop.player.StreamRequest(url, p.userAgent, null, movie.name))
+        playingMovie = movie
+    }
+
     fun zap(delta: Int) {
         val (list, i) = playing ?: return
         play(list, com.sokoul.desktop.data.LiveLogic.zap(list.size, i, delta))
@@ -65,6 +78,7 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
     fun closePlayer() {
         player?.stop()
         playing = null
+        playingMovie = null
         fullscreen = false
     }
 }

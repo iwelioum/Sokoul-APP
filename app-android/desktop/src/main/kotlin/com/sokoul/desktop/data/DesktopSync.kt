@@ -22,7 +22,21 @@ import org.xmlpull.v1.XmlPullParser
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-data class SyncState(val running: Boolean = false, val step: String = "", val error: String? = null, val channels: Int = 0, val programs: Int = 0)
+data class SyncState(
+    val running: Boolean = false,
+    val step: String = "",
+    val error: String? = null,
+    val channels: Int = 0,
+    val programs: Int = 0,
+    val movies: Int = 0,
+    val series: Int = 0,
+)
+
+private data class VodSyncResult(
+    val movies: Int = 0,
+    val series: Int = 0,
+    val errors: List<String> = emptyList(),
+)
 
 /**
  * Synchronisation des chaînes et du guide sur le PC, avec les parseurs partagés (:parser) et le client Xtream (:core).
@@ -34,7 +48,7 @@ class DesktopSync(private val db: DesktopDb) {
     val state: StateFlow<SyncState> = _state
 
     val http: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS).readTimeout(5, TimeUnit.MINUTES)
         .followRedirects(true).followSslRedirects(true).retryOnConnectionFailure(true)
         .addInterceptor { chain ->
             val req = chain.request()
@@ -62,13 +76,13 @@ class DesktopSync(private val db: DesktopDb) {
                     PlaylistType.M3U -> syncM3u(p)
                 }
                 applyPendingGroups(p.id)
-                _state.value = SyncState(true, "Guide TV…", channels = n)
+                _state.value = _state.value.copy(running = true, step = "Guide TV…", channels = n)
                 val programs = runCatching { syncEpg(p) }.getOrElse { e ->
                     _state.value = _state.value.copy(error = "Guide : " + (e.message ?: "erreur"))
                     0
                 }
                 db.markSynced(p.id, System.currentTimeMillis())
-                _state.value = SyncState(false, "Terminé", _state.value.error, n, programs)
+                _state.value = _state.value.copy(running = false, step = "Terminé", channels = n, programs = programs)
             } catch (e: Exception) {
                 _state.value = SyncState(false, "", com.sokoul.iptv.data.net.Redact.text(e.message ?: e.javaClass.simpleName))
             }
@@ -90,18 +104,69 @@ class DesktopSync(private val db: DesktopDb) {
         }
         val all = if (channels.any { it.categoryId == UNCATEGORIZED }) cats + Category(p.id, UNCATEGORIZED, "Non classées", cats.size) else cats
         db.replaceLive(p.id, all, channels)
+        _state.value = _state.value.copy(step = "Films et séries…", channels = channels.size)
+        val vod = syncVod(p, a)
+        val vodError = vod.errors.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+        _state.value = _state.value.copy(
+            error = vodError,
+            movies = vod.movies,
+            series = vod.series,
+        )
         return channels.size
+    }
+
+    private suspend fun syncVod(p: Playlist, a: XtreamAuth): VodSyncResult {
+        val movies = ArrayList<Movie>()
+        val series = ArrayList<Series>()
+        val errors = ArrayList<String>(2)
+        try {
+            xtream.streamArray(a, "get_vod_streams") { o ->
+                XtreamParse.vod(o)?.let { item ->
+                    movies += Movie(p.id, item.streamId.toString(), item.name, item.year, item.icon, item.rating, item.categoryId, item.extension, item.added, item.tmdbId)
+                }
+            }
+        } catch (e: Exception) {
+            errors += "Films : ${com.sokoul.iptv.data.net.Redact.text(e.message ?: e.javaClass.simpleName)}"
+        }
+        try {
+            xtream.streamArray(a, "get_series") { o ->
+                XtreamParse.series(o)?.let { item ->
+                    series += Series(p.id, item.seriesId.toString(), item.name, item.releaseDate?.take(4)?.toIntOrNull(),
+                        item.cover, item.backdrop, item.plot, item.rating, item.categoryId, item.lastModified, item.tmdbId)
+                }
+            }
+        } catch (e: Exception) {
+            errors += "Séries : ${com.sokoul.iptv.data.net.Redact.text(e.message ?: e.javaClass.simpleName)}"
+        }
+        if (errors.isEmpty()) db.replaceVod(p.id, movies, series)
+        return VodSyncResult(movies.size, series.size, errors)
     }
 
     private fun syncM3u(p: Playlist): Int {
         val cats = LinkedHashMap<String, Category>()
         val channels = ArrayList<Channel>(4096)
+        val movies = ArrayList<Movie>()
+        val series = LinkedHashMap<String, Series>()
         val ids = HashMap<String, Int>()
         var headerEpg: String? = null
         val (resp, input) = http.openStream(p.url, p.userAgent)
         resp.use {
             M3uParser.parse(input.bufferedReader(), onHeader = { h -> headerEpg = h.epgUrls.joinToString(",").ifEmpty { null } }) { e ->
-                if (M3uClassifier.classify(e) != M3uKind.LIVE) return@parse
+                when (M3uClassifier.classify(e)) {
+                    M3uKind.MOVIE -> {
+                        val info = TitleTagger.parse(e.name)
+                        val id = sha1("${e.url}|${e.name}")
+                        movies += Movie(p.id, id, info.clean, info.year, e.logo, null, e.group, e.url.substringAfterLast('.', "").takeIf { it.length in 2..5 }, null, null, e.url)
+                        return@parse
+                    }
+                    M3uKind.EPISODE -> {
+                        val ref = TitleTagger.episode(e.name) ?: return@parse
+                        val key = sha1(ref.show.lowercase())
+                        series.putIfAbsent(key, Series(p.id, key, ref.show, TitleTagger.parse(ref.show).year, e.logo, null, null, null, e.group, null, null))
+                        return@parse
+                    }
+                    M3uKind.LIVE -> Unit
+                }
                 val group = e.group?.trim()?.ifEmpty { null } ?: "Non classées"
                 val cat = cats.getOrPut(group) { Category(p.id, sha1(group), group, cats.size) }
                 val base = sha1(listOf(e.tvgId, e.name, cat.id).joinToString("|") { it.orEmpty() })
@@ -114,6 +179,7 @@ class DesktopSync(private val db: DesktopDb) {
         }
         if (p.epgUrl.isNullOrBlank() && headerEpg != null) db.putSetting("provider_epg_${p.id}", headerEpg)
         db.replaceLive(p.id, cats.values.toList(), channels)
+        db.replaceVod(p.id, movies, series.values.toList())
         return channels.size
     }
 

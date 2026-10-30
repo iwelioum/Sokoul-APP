@@ -2,10 +2,14 @@ package com.sokoul.desktop.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** Même palette que l'app Android (`ui/theme/Theme.kt`, SokoulColors). */
 object SokoulColors {
@@ -29,11 +33,29 @@ object SokoulColors {
 }
 
 object Radius {
-    val Tiny = RoundedCornerShape(2.dp)
-    val Card = RoundedCornerShape(6.dp)
-    val Panel = RoundedCornerShape(10.dp)
+    val Tiny = RoundedCornerShape(4.dp)
+    val Card = RoundedCornerShape(10.dp)
+    val Panel = RoundedCornerShape(16.dp)
     val Round = RoundedCornerShape(50)
 }
+
+object Space {
+    val Xs = 6.dp
+    val Sm = 10.dp
+    val Md = 16.dp
+    val Lg = 24.dp
+    val Xl = 32.dp
+}
+
+private val sokoulTypography = Typography(
+    displaySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 36.sp, lineHeight = 42.sp),
+    headlineMedium = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 28.sp, lineHeight = 34.sp),
+    titleLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 22.sp, lineHeight = 28.sp),
+    titleMedium = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 17.sp, lineHeight = 23.sp),
+    bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 23.sp),
+    bodyMedium = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, lineHeight = 20.sp),
+    labelLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 13.sp, lineHeight = 18.sp),
+)
 
 private val scheme = darkColorScheme(
     primary = SokoulColors.Accent,
@@ -49,4 +71,8 @@ private val scheme = darkColorScheme(
 )
 
 @Composable
-fun SokoulTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = scheme, content = content)
+fun SokoulTheme(content: @Composable () -> Unit) = MaterialTheme(
+    colorScheme = scheme,
+    typography = sokoulTypography,
+    content = content,
+)

@@ -37,6 +37,9 @@ import com.sokoul.desktop.data.BackupReader
 import com.sokoul.desktop.data.DesktopImport
 import com.sokoul.desktop.data.Playlist
 import com.sokoul.desktop.data.PlaylistType
+import com.sokoul.desktop.data.ProviderConfig
+import com.sokoul.desktop.data.ProbeResult
+import com.sokoul.desktop.data.ProviderProbe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -152,6 +155,7 @@ fun SettingsScreen(app: AppState) {
     val scope = rememberCoroutineScope()
     val sync by app.sync.state.collectAsState()
     val playlists = remember(app.dataVersion) { app.db.playlists() }
+    var probes by remember { mutableStateOf<Map<String, ProbeResult>>(emptyMap()) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp)) {
         ScreenTitle("Réglages")
         Text("Playlists", Modifier.padding(top = 24.dp, bottom = 8.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
@@ -162,7 +166,7 @@ fun SettingsScreen(app: AppState) {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(p.name + if (p.id == app.playlist?.id) "  · active" else "", fontWeight = FontWeight.SemiBold)
-                    val counts = "${app.db.channelCount(p.id)} chaînes · ${app.db.programCount(p.id)} programmes"
+                    val counts = "${app.db.channelCount(p.id)} chaînes · ${app.db.programCount(p.id)} programmes · ${app.db.movieCount(p.id)} films · ${app.db.seriesCount(p.id)} séries"
                     val when_ = if (p.syncedAt > 0) "mise à jour ${dayLabel(p.syncedAt).lowercase()} à ${clock(p.syncedAt)}" else "jamais synchronisée"
                     Text("${if (p.type == PlaylistType.XTREAM) "Xtream Codes" else "M3U"} · $counts · $when_", color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall)
                 }
@@ -170,12 +174,47 @@ fun SettingsScreen(app: AppState) {
                 SokoulButton("Mettre à jour", { scope.launch { app.sync.sync(p); app.reloadPlaylist() } }, primary = false, icon = Icons.Default.Refresh, enabled = !sync.running)
             }
         }
+        Text("Fournisseurs de métadonnées", Modifier.padding(top = 28.dp, bottom = 8.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Les clés locales sont détectées automatiquement sans être affichées. Tu peux ensuite ajouter une clé desktop dans la configuration de l'application.",
+            Modifier.widthIn(max = 900.dp).padding(bottom = 10.dp), color = SokoulColors.TextSecondary,
+        )
+        ProviderConfig.statuses(app.db).forEach { provider ->
+            Row(
+                Modifier.widthIn(max = 900.dp).fillMaxWidth().padding(vertical = 3.dp).background(SokoulColors.Surface, Radius.Card).padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(provider.label, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        probes[provider.id]?.message ?: provider.source ?: "Non configuré",
+                        color = when {
+                            probes[provider.id]?.ok == true -> SokoulColors.Success
+                            probes[provider.id] != null -> SokoulColors.Warning
+                            provider.configured -> SokoulColors.Success
+                            else -> SokoulColors.TextMuted
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                SokoulButton(
+                    if (probes.containsKey(provider.id)) "Retester" else "Tester",
+                    {
+                        scope.launch {
+                            probes = probes + (provider.id to ProviderProbe.check(app.db, provider.id))
+                        }
+                    },
+                    primary = false,
+                    enabled = provider.configured,
+                )
+            }
+        }
         if (sync.running || sync.error != null || sync.step.isNotEmpty()) {
             Text(
                 when {
                     sync.running -> "Synchronisation : ${sync.step}"
                     sync.error != null -> "Dernière synchronisation : ${sync.error}"
-                    else -> "Synchronisation terminée : ${sync.channels} chaînes, ${sync.programs} programmes"
+                    else -> "Synchronisation terminée : ${sync.channels} chaînes, ${sync.programs} programmes, ${sync.movies} films, ${sync.series} séries"
                 },
                 Modifier.padding(top = 8.dp), color = if (sync.error != null) SokoulColors.Warning else SokoulColors.TextSecondary,
             )

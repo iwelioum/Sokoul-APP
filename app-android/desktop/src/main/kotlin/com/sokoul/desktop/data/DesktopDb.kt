@@ -34,7 +34,19 @@ class DesktopDb(file: File) : AutoCloseable {
             position_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, updated_at INTEGER NOT NULL, finished INTEGER NOT NULL,
             PRIMARY KEY(playlist_id, type, id))""",
         "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        """CREATE TABLE IF NOT EXISTS movies(playlist_id INTEGER NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
+            year INTEGER, poster TEXT, stream_url TEXT, rating REAL, category_id TEXT, extension TEXT, added INTEGER, tmdb_id TEXT,
+            position INTEGER NOT NULL, PRIMARY KEY(playlist_id, id))""",
+        """CREATE TABLE IF NOT EXISTS series(playlist_id INTEGER NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
+            year INTEGER, poster TEXT, backdrop TEXT, plot TEXT, rating REAL, category_id TEXT, last_modified INTEGER,
+            tmdb_id TEXT, position INTEGER NOT NULL, PRIMARY KEY(playlist_id, id))""",
+        "CREATE INDEX IF NOT EXISTS movies_search ON movies(playlist_id, name)",
+        "CREATE INDEX IF NOT EXISTS series_search ON series(playlist_id, name)",
     )
+
+    init {
+        runCatching { exec("ALTER TABLE movies ADD COLUMN stream_url TEXT") }
+    }
 
     @Synchronized
     private fun exec(vararg sql: String) = conn.createStatement().use { st -> sql.forEach { st.execute(it) } }
@@ -82,7 +94,7 @@ class DesktopDb(file: File) : AutoCloseable {
 
     @Synchronized
     fun deletePlaylist(pid: Long) = tx {
-        listOf("channels", "categories", "programs", "favorites", "progress").forEach { update("DELETE FROM $it WHERE playlist_id=?", pid) }
+        listOf("channels", "categories", "programs", "favorites", "progress", "movies", "series").forEach { update("DELETE FROM $it WHERE playlist_id=?", pid) }
         update("DELETE FROM playlists WHERE id=?", pid)
     }
 
@@ -149,6 +161,64 @@ class DesktopDb(file: File) : AutoCloseable {
 
     @Synchronized
     fun channelCount(pid: Long): Int = query("SELECT COUNT(*) FROM channels WHERE playlist_id=?", pid) { it.getInt(1) }.first()
+
+    @Synchronized
+    fun replaceVod(pid: Long, movies: List<Movie>, series: List<Series>) = tx {
+        update("DELETE FROM movies WHERE playlist_id=?", pid)
+        update("DELETE FROM series WHERE playlist_id=?", pid)
+        conn.prepareStatement("INSERT INTO movies VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").use { st ->
+            movies.forEachIndexed { i, movie ->
+                bind(st, pid, movie.id, movie.name, movie.year, movie.poster, movie.streamUrl, movie.rating, movie.categoryId, movie.extension, movie.added, movie.tmdbId, i)
+                st.addBatch()
+                if (i % 500 == 499) st.executeBatch()
+            }
+            st.executeBatch()
+        }
+        conn.prepareStatement("INSERT INTO series VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").use { st ->
+            series.forEachIndexed { i, item ->
+                bind(st, pid, item.id, item.name, item.year, item.poster, item.backdrop, item.plot, item.rating, item.categoryId, item.lastModified, item.tmdbId, i)
+                st.addBatch()
+                if (i % 500 == 499) st.executeBatch()
+            }
+            st.executeBatch()
+        }
+    }
+
+    @Synchronized
+    fun movies(pid: Long, search: String? = null, limit: Int = 500): List<Movie> {
+        val q = search?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val sql = if (q == null) "SELECT * FROM movies WHERE playlist_id=? ORDER BY position LIMIT ?"
+        else "SELECT * FROM movies WHERE playlist_id=? AND lower(name) LIKE ? ORDER BY position LIMIT ?"
+        val args = if (q == null) arrayOf(pid, limit) else arrayOf(pid, "%$q%", limit)
+        return query(sql, *args) {
+            val year = (it.getObject("year") as? Number)?.toInt()
+            val rating = (it.getObject("rating") as? Number)?.toDouble()
+            val added = (it.getObject("added") as? Number)?.toLong()
+            Movie(it.getLong("playlist_id"), it.getString("id"), it.getString("name"), year, it.getString("poster"), rating,
+                it.getString("category_id"), it.getString("extension"), added, it.getString("tmdb_id"), it.getString("stream_url"))
+        }
+    }
+
+    @Synchronized
+    fun series(pid: Long, search: String? = null, limit: Int = 500): List<Series> {
+        val q = search?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val sql = if (q == null) "SELECT * FROM series WHERE playlist_id=? ORDER BY position LIMIT ?"
+        else "SELECT * FROM series WHERE playlist_id=? AND lower(name) LIKE ? ORDER BY position LIMIT ?"
+        val args = if (q == null) arrayOf(pid, limit) else arrayOf(pid, "%$q%", limit)
+        return query(sql, *args) {
+            val year = (it.getObject("year") as? Number)?.toInt()
+            val rating = (it.getObject("rating") as? Number)?.toDouble()
+            val modified = (it.getObject("last_modified") as? Number)?.toLong()
+            Series(it.getLong("playlist_id"), it.getString("id"), it.getString("name"), year, it.getString("poster"), it.getString("backdrop"),
+                it.getString("plot"), rating, it.getString("category_id"), modified, it.getString("tmdb_id"))
+        }
+    }
+
+    @Synchronized
+    fun movieCount(pid: Long): Int = query("SELECT COUNT(*) FROM movies WHERE playlist_id=?", pid) { it.getInt(1) }.first()
+
+    @Synchronized
+    fun seriesCount(pid: Long): Int = query("SELECT COUNT(*) FROM series WHERE playlist_id=?", pid) { it.getInt(1) }.first()
 
     // --- guide ---------------------------------------------------------------------------------------
 

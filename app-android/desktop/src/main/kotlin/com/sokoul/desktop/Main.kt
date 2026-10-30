@@ -23,9 +23,12 @@ import com.sokoul.desktop.data.DesktopSync
 import com.sokoul.desktop.data.Settings
 import com.sokoul.desktop.player.DesktopPlayer
 import com.sokoul.desktop.ui.GuideScreen
+import com.sokoul.desktop.ui.HomeScreen
+import com.sokoul.desktop.ui.CatalogScreen
 import com.sokoul.desktop.ui.LiveScreen
 import com.sokoul.desktop.ui.NavRail
 import com.sokoul.desktop.ui.PlayerScreen
+import com.sokoul.desktop.ui.MoviePlayerScreen
 import com.sokoul.desktop.ui.SettingsScreen
 import com.sokoul.desktop.ui.SokoulColors
 import com.sokoul.desktop.ui.SokoulTheme
@@ -81,13 +84,19 @@ private fun start() {
                 Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
                     when {
                         app.playing != null -> PlayerScreen(app)
+                        app.playingMovie != null -> MoviePlayerScreen(app)
                         app.screen == Screen.WELCOME -> WelcomeScreen(app)
                         else -> Row(Modifier.fillMaxSize()) {
                             NavRail(app.screen) { app.screen = it }
                             Box(Modifier.weight(1f).fillMaxSize()) {
                                 when (app.screen) {
+                                    Screen.HOME -> HomeScreen(app)
+                                    Screen.MOVIES -> CatalogScreen(app, "Films")
+                                    Screen.SERIES -> CatalogScreen(app, "Séries")
                                     Screen.LIVE -> LiveScreen(app)
                                     Screen.GUIDE -> GuideScreen(app)
+                                    Screen.SEARCH -> CatalogScreen(app, "Recherche")
+                                    Screen.LIBRARY -> CatalogScreen(app, "Bibliothèque")
                                     Screen.SETTINGS -> SettingsScreen(app)
                                     Screen.WELCOME -> Unit
                                 }

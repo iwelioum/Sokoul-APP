@@ -9,6 +9,7 @@ import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
+import java.awt.EventQueue
 import java.io.File
 import java.util.Timer
 import kotlin.concurrent.schedule
@@ -39,6 +40,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     val status: StateFlow<PlayerStatus> = _status
     private var current: StreamRequest? = null
     private var retries = 0
+    private var playToken = 0
     private val timer = Timer("sokoul-reconnect", true)
 
     init {
@@ -59,11 +61,22 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
 
     fun play(req: StreamRequest) {
         // une seule connexion : le flux précédent est fermé avant d'ouvrir le suivant
+        playToken++
         player.controls().stop()
         current = req
         retries = 0
         _status.value = PlayerStatus(title = req.title, buffering = true)
-        open(req)
+        waitForDisplayable(req, playToken)
+    }
+
+    private fun waitForDisplayable(req: StreamRequest, token: Int) {
+        if (component.isDisplayable) {
+            EventQueue.invokeLater { if (current === req && playToken == token) open(req) }
+            return
+        }
+        timer.schedule(50L) {
+            if (current === req && playToken == token) waitForDisplayable(req, token)
+        }
     }
 
     private fun open(req: StreamRequest) {
@@ -90,6 +103,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     fun retry() { current?.let { play(it) } }
 
     fun stop() {
+        playToken++
         current = null
         player.controls().stop()
         _status.value = PlayerStatus()

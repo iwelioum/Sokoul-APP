@@ -9,6 +9,9 @@ import com.sokoul.desktop.data.LiveLogic
 import com.sokoul.desktop.data.Playlist
 import com.sokoul.desktop.data.PlaylistType
 import com.sokoul.desktop.data.Program
+import com.sokoul.desktop.data.ProviderConfig
+import com.sokoul.desktop.data.Movie
+import com.sokoul.desktop.data.Series
 import com.sokoul.desktop.data.Settings
 import com.sokoul.desktop.data.SpecialGroup
 import com.sokoul.iptv.data.repo.BackupCrypto
@@ -132,5 +135,28 @@ class DesktopTest {
         assertEquals("UA", req.userAgent)
         assertNotNull(db.programs(pid, listOf("tf1.fr"), now, now + h).firstOrNull())
         assertFalse(LiveLogic.guideStart(now) > now)
+    }
+
+    @Test fun `configuration fournisseur est masquee et surchargeable`() {
+        assertTrue(ProviderConfig.statuses(db).any { it.id == "tmdb" })
+        db.putSetting("api_key_tmdb", "cle-test-locale")
+        val tmdb = ProviderConfig.statuses(db).first { it.id == "tmdb" }
+        assertTrue(tmdb.configured)
+        assertEquals("clé desktop", tmdb.source)
+        assertEquals("cle-test-locale", ProviderConfig.key(db, "tmdb"))
+    }
+
+    @Test fun `catalogue vod est isole par playlist et filtrable`() {
+        val first = db.upsertPlaylist(Playlist(0, "P1", PlaylistType.XTREAM, "http://one", "u", "p", null, null))
+        val second = db.upsertPlaylist(Playlist(0, "P2", PlaylistType.XTREAM, "http://two", "u", "p", null, null))
+        db.replaceVod(
+            first,
+            listOf(Movie(first, "10", "Inception", 2010, "https://image.test/inception.jpg", 8.8, "1", "mp4", null, "27205", "https://stream.test/inception.mp4")),
+            listOf(Series(first, "20", "Dark", 2017, "https://image.test/dark.jpg", null, "Mystère", 8.7, "2", null, null)),
+        )
+        db.replaceVod(second, listOf(Movie(second, "11", "Autre film", null, null, null, null, null, null, null)), emptyList())
+        assertEquals(listOf("Inception"), db.movies(first, "incept").map { it.name })
+        assertEquals(listOf("Dark"), db.series(first).map { it.name })
+        assertTrue(db.movies(second).none { it.name == "Inception" })
     }
 }

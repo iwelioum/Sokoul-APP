@@ -165,7 +165,7 @@ private fun AspectMenu(onPick: (String?) -> Unit) {
 }
 
 @Composable
-private fun NoVlcScreen(app: AppState) {
+fun NoVlcScreen(app: AppState) {
     Box(Modifier.fillMaxSize().background(SokoulColors.Background), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Le lecteur vidéo est introuvable", style = MaterialTheme.typography.headlineSmall)

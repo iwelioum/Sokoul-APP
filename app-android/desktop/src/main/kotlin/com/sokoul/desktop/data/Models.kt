@@ -37,6 +37,34 @@ data class Channel(
 
 data class Program(val channelKey: String, val start: Long, val end: Long, val title: String, val description: String?)
 
+data class Movie(
+    val playlistId: Long,
+    val id: String,
+    val name: String,
+    val year: Int?,
+    val poster: String?,
+    val rating: Double?,
+    val categoryId: String?,
+    val extension: String?,
+    val added: Long?,
+    val tmdbId: String?,
+    val streamUrl: String? = null,
+)
+
+data class Series(
+    val playlistId: Long,
+    val id: String,
+    val name: String,
+    val year: Int?,
+    val poster: String?,
+    val backdrop: String?,
+    val plot: String?,
+    val rating: Double?,
+    val categoryId: String?,
+    val lastModified: Long?,
+    val tmdbId: String?,
+)
+
 /** Groupes spéciaux en tête de la liste (comme sur la tablette). */
 object SpecialGroup {
     const val ALL = "__all"
