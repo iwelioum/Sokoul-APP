@@ -76,7 +76,8 @@ compose.desktop {
             vendor = "Sokoul"
             // libVLC (VLC 3.0.21 win64) copié dans les ressources de l'image : rien à installer dans Windows
             appResourcesRootDir.set(project.layout.projectDirectory.dir("resources"))
-            modules("java.instrument", "java.sql", "java.naming", "jdk.crypto.ec", "jdk.unsupported")
+            // jdk.localedata : formats français (virgule décimale, jours et mois) dans l'app installée
+            modules("java.instrument", "java.sql", "java.naming", "jdk.crypto.ec", "jdk.unsupported", "jdk.localedata")
             windows {
                 menu = true
                 shortcut = true

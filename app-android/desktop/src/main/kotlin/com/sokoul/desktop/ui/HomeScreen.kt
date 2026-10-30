@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -57,7 +58,7 @@ fun HomeScreen(app: AppState) {
     var features by remember { mutableStateOf(HomeCache.features) }
     var shelves by remember { mutableStateOf(HomeCache.shelves) }
     var loading by remember { mutableStateOf(HomeCache.version < 0) }
-    val resume = remember(keyVersion) { app.db.resumeList() }
+    val resume by produceState(emptyList<Resume>(), keyVersion) { value = withContext(Dispatchers.IO) { app.db.resumeList() } }
     val list = HomeCache.listState ?: rememberLazyListState().also { HomeCache.listState = it }
 
     LaunchedEffect(keyVersion) {
@@ -76,7 +77,7 @@ fun HomeScreen(app: AppState) {
     LaunchedEffect(Unit) { snapshotFlow { solid }.collect { app.navSolid = it } }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(SokoulColors.Background)) {
-        val heroHeight = maxOf(520.dp, maxHeight * 0.80f)
+        val heroHeight = maxOf(480.dp, maxHeight * 0.66f)
         if (!app.catalog.hasKey()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 EmptyState(
@@ -115,7 +116,7 @@ private fun playFeature(app: AppState, f: Feature) {
 
 @Composable
 private fun ResumeRow(app: AppState, resume: List<Resume>) {
-    CardRow("Reprendre", kicker = "Continuer à regarder") {
+    CardRow("Reprendre") {
         items(resume, key = { it.key }) { r ->
             LandscapeCard(
                 r.title, r.image,

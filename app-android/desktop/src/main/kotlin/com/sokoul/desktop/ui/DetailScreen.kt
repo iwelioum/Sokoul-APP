@@ -68,13 +68,14 @@ fun DetailScreen(app: AppState, kind: String, id: Int) {
     val episodes by produceState(emptyList<TmdbEpisode>(), id, season, info) {
         value = if (tv && info != null) app.catalog.season(id, season) else emptyList()
     }
-    val resume = remember(id, app.dataVersion) {
-        if (tv) null else app.db.resume(Resume.key(kind, id, null, null))?.takeIf { !it.finished && it.positionMs > 30_000 }
+    // lectures de la base hors du fil de l'interface (une synchronisation peut la tenir)
+    val resume by produceState<Resume?>(null, id, app.dataVersion) {
+        value = if (tv) null else withContext(Dispatchers.IO) { app.db.resume(Resume.key(kind, id, null, null)) }?.takeIf { !it.finished && it.positionMs > 30_000 }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(SokoulColors.Background)) {
         val first = maxHeight
-        Backdrop(info?.backdrop, Modifier.fillMaxSize().graphicsLayer { alpha = 1f - veil * 0.75f })
+        Backdrop(info?.backdrop, Modifier.fillMaxSize().graphicsLayer { alpha = 1f - veil * 0.88f })
         val i = info
         LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
             item(key = "head") {
@@ -104,14 +105,14 @@ private fun Head(app: AppState, kind: String, i: TmdbInfo, resume: Resume?, modi
     )
     Column(modifier.padding(start = Space.Gutter, end = Space.Gutter, bottom = 56.dp).widthIn(max = 760.dp)) {
         Kicker(if (tv) "Série" else "Film")
-        TitleArt(i.title, i.logo, Modifier.padding(top = 14.dp))
+        TitleArt(i.title, i.logo, Modifier.padding(top = 14.dp), maxWidth = 480.dp, maxHeight = 150.dp)
         MetaRow(
             year = i.year, runtimeMin = i.runtimeMin.takeIf { !tv }, rating = i.rating, seasons = i.seasons.takeIf { tv },
             certification = i.certification, genres = i.genres, modifier = Modifier.padding(top = 20.dp),
         )
         i.tagline?.let { Text(it, Modifier.padding(top = 18.dp), style = Type.BodyStrong.copy(fontStyle = FontStyle.Italic, color = SokoulColors.TextPrimary)) }
         Text(
-            i.overview ?: i.overviewEn ?: "Pas de résumé disponible.", Modifier.padding(top = 10.dp).widthIn(max = 660.dp),
+            i.overview ?: i.overviewEn ?: "Pas de résumé disponible.", Modifier.padding(top = 10.dp).widthIn(max = 580.dp),
             style = Type.BodyStrong.copy(color = SokoulColors.TextPrimary.copy(alpha = 0.82f)), maxLines = 5, overflow = TextOverflow.Ellipsis,
         )
         listOfNotNull(i.director?.let { (if (tv) "Création : " else "Réalisation : ") + it }, i.cast.take(4).takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name }?.let { "Avec $it" })
@@ -124,7 +125,7 @@ private fun Head(app: AppState, kind: String, i: TmdbInfo, resume: Resume?, modi
         }
         Row(Modifier.padding(top = 26.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (tv) {
-                val next = remember(i.id, app.dataVersion) { nextEpisode(app, i.id) }
+                val next by produceState<Pair<Int, Int>?>(null, i.id, app.dataVersion) { value = withContext(Dispatchers.IO) { nextEpisode(app, i.id) } }
                 SokoulButton(
                     next?.let { "Reprendre S${it.first} É${it.second}" } ?: "Lecture S1 É1", { val (s, e) = next ?: (1 to 1); app.playTitle(title(s, e)) },
                     style = ButtonStyle.Primary, icon = Icons.Filled.PlayArrow, large = true,
@@ -141,10 +142,15 @@ private fun Head(app: AppState, kind: String, i: TmdbInfo, resume: Resume?, modi
     }
 }
 
-/** Épisode à reprendre : le dernier commencé (ou le suivant du dernier vu). */
-private fun nextEpisode(app: AppState, tvId: Int): Pair<Int, Int>? {
-    val r = app.db.resumeList(100).firstOrNull { it.kind == "tv" && it.tmdbId == tvId } ?: return null
-    return (r.season ?: return null) to (r.episode ?: return null)
+/**
+ * Épisode à reprendre : le dernier lu de la série ; s'il est fini, le suivant (S·É+1). Le changement de saison
+ * est laissé au sélecteur (le nombre d'épisodes par saison n'est pas connu ici).
+ */
+internal fun nextEpisode(app: AppState, tvId: Int): Pair<Int, Int>? {
+    val r = app.db.lastOf("tv", tvId) ?: return null
+    val s = r.season ?: return null
+    val e = r.episode ?: return null
+    return if (r.finished) s to e + 1 else s to e
 }
 
 @Composable
@@ -158,7 +164,7 @@ private fun Seasons(app: AppState, i: TmdbInfo, season: Int, onSeason: (Int) -> 
             if (episodes.isEmpty()) items(6) { Skeleton(Modifier.width(320.dp).aspectRatio(16f / 9f)) }
             items(episodes, key = { "${it.season}:${it.episode}" }) { e ->
                 val key = Resume.key("tv", i.id, e.season, e.episode)
-                val r = remember(key, app.dataVersion) { app.db.resume(key) }
+                val r by produceState<Resume?>(null, key, app.dataVersion) { value = withContext(Dispatchers.IO) { app.db.resume(key) } }
                 EpisodeCard(e, r) {
                     app.playTitle(NowPlaying.Title("tv", i.id, i.title, "S${e.season} · É${e.episode}${e.name?.let { " · $it" }.orEmpty()}", e.still ?: i.backdrop, e.season, e.episode))
                 }
@@ -190,7 +196,7 @@ private fun Cast(i: TmdbInfo) {
                         Placeholder(p.name.split(' ').mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""), Modifier.fillMaxSize())
                     }
                     Text(p.name, Modifier.padding(top = 10.dp), style = Type.Small.copy(color = SokoulColors.TextPrimary), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    p.role?.let { Text(it, style = Type.Small.copy(color = SokoulColors.TextMuted), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                    p.role?.let { Text(it, style = Type.Small.copy(color = SokoulColors.TextSecondary), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                 }
             }
         }
@@ -220,7 +226,7 @@ fun SourcesDialog(app: AppState, t: NowPlaying.Title) {
             }
         }
     }
-    SokoulDialog({ app.sources = null }, width = 820.dp) {
+    SokoulDialog({ app.sources = null }, width = 960.dp) {
         Kicker("Sources")
         Text(t.title, Modifier.padding(top = 6.dp), style = Type.Section)
         t.subtitle?.let { Text(it, style = Type.Small) }
@@ -268,14 +274,14 @@ private fun SourceRow(s: com.sokoul.iptv.data.debrid.DebridStream, first: Boolea
             .interactive(h, onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.width(250.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.width(220.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val q = when (rel.quality) {
                 com.sokoul.iptv.domain.VideoQuality.UHD_4K -> "4K"; com.sokoul.iptv.domain.VideoQuality.FHD_1080 -> "1080p"
                 com.sokoul.iptv.domain.VideoQuality.HD_720 -> "720p"; com.sokoul.iptv.domain.VideoQuality.SD -> "SD"; null -> "?"
             }
-            Badge(q, if (rel.quality == com.sokoul.iptv.domain.VideoQuality.UHD_4K) SokoulColors.Accent else SokoulColors.SurfaceHigher)
-            rel.hdr?.let { Badge(if (it == com.sokoul.iptv.domain.HdrFormat.DOLBY_VISION) "DOLBY VISION" else "HDR10", SokoulColors.Gold, SokoulColors.OnLight) }
-            rel.language?.let { Badge(it.name, SokoulColors.AccentSoft) }
+            Badge(q, SokoulColors.SurfaceHigher)
+            rel.hdr?.let { Badge(if (it == com.sokoul.iptv.domain.HdrFormat.DOLBY_VISION) "DOLBY VISION" else "HDR10", SokoulColors.SurfaceHigher, SokoulColors.TextPrimary) }
+            rel.language?.let { Badge(it.name) }
             rel.source?.let { Badge(it.label.uppercase()) }
         }
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {

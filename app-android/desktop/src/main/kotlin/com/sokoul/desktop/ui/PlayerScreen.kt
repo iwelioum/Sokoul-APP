@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -88,8 +89,10 @@ fun VideoSurface(frame: VideoFrame, modifier: Modifier = Modifier) {
         frame.read { bmp ->
             val w = bmp.width.toFloat(); val h = bmp.height.toFloat()
             if (w <= 0f || h <= 0f) return@read
-            val s = minOf(size.width / w, size.height / h)
-            val dw = w * s; val dh = h * s
+            // largeur affichée corrigée des pixels non carrés (SD anamorphosée)
+            val shownW = w * frame.pixelAspect
+            val s = minOf(size.width / shownW, size.height / h)
+            val dw = shownW * s; val dh = h * s
             val img = org.jetbrains.skia.Image.makeFromBitmap(bmp)
             drawIntoCanvas { c ->
                 c.nativeCanvas.drawImageRect(
@@ -265,6 +268,16 @@ private fun Seekbar(st: PlayerStatus, onSeek: (Float) -> Unit) {
             Box(Modifier.fillMaxWidth().height(thick).background(Color.White.copy(alpha = 0.22f), Radius.Tiny))
             hover?.let { Box(Modifier.fillMaxWidth(it).height(thick).background(Color.White.copy(alpha = 0.25f), Radius.Tiny)) }
             Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(thick).background(SokoulColors.Accent, Radius.Tiny))
+            // au survol : pastille sur la position courante, temps visé au-dessus du curseur
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (hover != null) {
+                    Box(Modifier.offset(x = maxWidth * fraction.coerceIn(0f, 1f) - 6.dp).size(12.dp).background(Color.White, Radius.Round))
+                    if (st.lengthMs > 0) Badge(
+                        timecode((hover!! * st.lengthMs).toLong()), SokoulColors.Panel,
+                        modifier = Modifier.offset(x = (maxWidth * hover!! - 24.dp).coerceAtLeast(0.dp), y = (-30).dp),
+                    )
+                }
+            }
         }
         Text("-" + timecode((st.lengthMs - st.timeMs).coerceAtLeast(0)), style = Type.Meta)
     }

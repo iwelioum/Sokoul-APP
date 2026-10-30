@@ -54,8 +54,33 @@
 
 ## 5. Vérification
 
-- [ ] 5.1 Revue `desktop-designer` des rendus, puis corrections.
-- [ ] 5.2 Revue `android-reviewer`, `openspec validate --all --strict`, réinstallation (`tools/install-desktop.ps1`), lancement depuis le raccourci, commit et push.
+- [x] 5.1 Revue `desktop-designer` des rendus, puis corrections. *12 points corrigés :*
+  - *héros à 66 % de la hauteur, avec la première rangée visible ;*
+  - *genres sur deux lignes et tri en onglets ;*
+  - *voile du fond renforcé et logos plus petits ;*
+  - *bouton retour dans la marge, onglet de l'écran ouvert (recherche, réglages) marqué ;*
+  - *champ de recherche borné ;*
+  - *badges de Sources sobres et clés API dans un seul panneau ;*
+  - *barre du haut opaque au défilement ;*
+  - *pastille et temps au survol de la barre de lecture.*
+
+  *Vérifié par les captures r4.*
+- [x] 5.2 Revue `android-reviewer`, `openspec validate --all --strict`, réinstallation (`tools/install-desktop.ps1`), lancement depuis le raccourci, commit et push.
+  - *13 points corrigés :*
+    - *reprise après une reconnexion (`:start-time`) ;*
+    - *événements d'un média précédent ignorés et statut mis à jour de façon atomique ;*
+    - *recherche des versions hors du fil de l'interface ;*
+    - *appels HTTP annulables ;*
+    - *trois essais au plus, sans essai quand le lecteur manque ;*
+    - *reconnexion revérifiée au moment d'ouvrir ;*
+    - *image vidéo en double tampon et pixels non carrés pris en compte ;*
+    - *lectures de la base hors du fil de l'interface ;*
+    - *un état par fiche ;*
+    - *« Reprendre » propose l'épisode suivant ;*
+    - *erreur du guide masquée ;*
+    - *images réessayées après 5 min.*
+  - *Après correction, VLC préfère l'audio français et n'impose plus de sous-titres : vérifié par la capture r5.*
+  - *Lancement de l'app installée vérifié avec `SOKOUL_ROUTE`, sans voler le focus.*
 
 ## Notes de mise en œuvre
 

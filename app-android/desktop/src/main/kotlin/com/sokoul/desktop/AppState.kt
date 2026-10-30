@@ -154,15 +154,19 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         player?.stop()
         sources = null
         playing = t.copy(step = "Recherche de la meilleure version…", error = null, stream = chosen)
+        if (player == null) return  // écran « Lecteur indisponible » : ni recherche ni torrent ajouté au compte
         playJob = scope.launch {
             val candidates = if (chosen != null) listOf(chosen) else {
                 val info = catalog.details(t.kind, t.tmdbId)
                 val r = debrid.find(t.query, info)
                 if (r.streams.isEmpty()) { update { it.copy(step = null, error = r.problem ?: "Aucune version trouvée") }; return@launch }
-                r.streams.take(5)
+                // chaque version pas prête est ajoutée au compte Real-Debrid par l'extension : trois essais au plus
+                r.streams.take(3)
             }
             var lastError: String? = null
             for ((i, s) in candidates.withIndex()) {
+                // après une version pas prête, on n'essaie plus que celles annoncées prêtes par l'extension
+                if (i > 0 && lastError == DesktopDebrid.NotReady().message && s.release.cached != true) continue
                 update { it.copy(stream = s, step = if (i == 0) "Préparation de la lecture…" else "Version suivante…") }
                 val url = debrid.resolve(s).getOrElse { lastError = it.message; null } ?: continue
                 val start = withContext(Dispatchers.IO) { db.resume(t.resumeKey) }?.takeIf { !it.finished && it.positionMs > 30_000 }?.positionMs ?: 0
@@ -178,18 +182,23 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         (playing as? NowPlaying.Title)?.let { playing = block(it) }
     }
 
-    /** Position du film ou de l'épisode en cours (toutes les 10 s et à la fermeture). */
-    fun saveProgress() {
+    /**
+     * Position du film ou de l'épisode en cours (toutes les 10 s et à la fermeture). Écrite hors du fil de l'interface
+     * (une synchronisation peut tenir la base) ; [now] = tout de suite, à la fermeture de l'app avant celle de la base.
+     */
+    fun saveProgress(now: Boolean = false) {
         val t = playing as? NowPlaying.Title ?: return
         val st = player?.status?.value ?: return
-        if (st.lengthMs <= 0 || st.timeMs <= 0) return
+        // une version encore en préparation n'a pas de position à elle
+        if (t.step != null || st.lengthMs <= 0 || st.timeMs <= 0 || st.title != t.title) return
         val finished = st.timeMs.toFloat() / st.lengthMs >= Resume.FINISHED_AT
-        db.saveResume(Resume(t.resumeKey, t.kind, t.tmdbId, t.season, t.episode, t.title, t.subtitle, t.image, st.timeMs, st.lengthMs, System.currentTimeMillis(), finished))
+        val r = Resume(t.resumeKey, t.kind, t.tmdbId, t.season, t.episode, t.title, t.subtitle, t.image, st.timeMs, st.lengthMs, System.currentTimeMillis(), finished)
+        if (now) db.saveResume(r) else scope.launch(Dispatchers.IO) { db.saveResume(r) }
     }
 
     /** Fermer le lecteur rend la connexion à l'abonnement. */
-    fun closePlayer() {
-        saveProgress()
+    fun closePlayer(now: Boolean = false) {
+        saveProgress(now)
         playJob?.cancel()
         player?.stop()
         playing = null

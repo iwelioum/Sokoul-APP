@@ -22,6 +22,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
+import com.sokoul.iptv.data.net.await
 import java.util.concurrent.ConcurrentHashMap
 
 /** Résultat d'une recherche de versions : les versions classées, ou la raison de l'absence. */
@@ -50,24 +51,25 @@ class DesktopDebrid(private val db: DesktopDb, private val catalog: Catalog) {
         }.getOrNull()
     }
 
-    suspend fun find(q: DebridQuery, info: TmdbInfo?): DebridResult {
-        val token = token() ?: return DebridResult(emptyList(), "Real-Debrid n'est pas configuré (Réglages › Clés API)")
-        cache[q]?.takeIf { System.currentTimeMillis() - it.first < TTL_MS }?.let { return DebridResult(it.second) }
+    /** Recherche hors du fil de l'interface (base, expressions régulières, interfaces réseau). */
+    suspend fun find(q: DebridQuery, info: TmdbInfo?): DebridResult = withContext(Dispatchers.Default) {
+        val token = withContext(Dispatchers.IO) { token() } ?: return@withContext DebridResult(emptyList(), "Real-Debrid n'est pas configuré (Réglages › Clés API)")
+        cache[q]?.takeIf { System.currentTimeMillis() - it.first < TTL_MS }?.let { return@withContext DebridResult(it.second) }
         val imdb = info?.imdbId ?: catalog.imdbId(if (q.series) "tv" else "movie", q.tmdbId)
-            ?: return DebridResult(emptyList(), "Identifiant IMDb introuvable pour ce titre")
+            ?: return@withContext DebridResult(emptyList(), "Identifiant IMDb introuvable pour ce titre")
         val urls = DebridAddons.urls(setOf(SourceAddon.TORRENTIO, SourceAddon.COMET), "", token)
         val path = q.streamPath(imdb)
         var answered = 0
         val results = coroutineScope {
             urls.map { base -> async { fetch("$base/$path")?.also { answered++ } } }.map { it.await().orEmpty() }
         }
-        if (answered == 0) return DebridResult(emptyList(), "Les extensions de sources ne répondent pas, réessayez dans un instant")
+        if (answered == 0) return@withContext DebridResult(emptyList(), "Les extensions de sources ne répondent pas, réessayez dans un instant")
         val titles = listOfNotNull(info?.title, info?.originalTitle)
         val kept = DebridStreams.combine(results)
             .filterNot { DebridStreams.otherWork(it.filename ?: it.title.lineSequence().firstOrNull().orEmpty(), titles, q.series) }
-        val ranked = DesktopRanker.rank(DebridStreams.untagged(kept, info?.originalLanguage))
+        val ranked = DesktopRanker.rank(DebridStreams.untagged(kept, info?.originalLanguage), withContext(Dispatchers.IO) { DesktopRanker.maxBytes() })
         if (ranked.isNotEmpty()) cache[q] = System.currentTimeMillis() to ranked
-        return DebridResult(ranked, if (ranked.isEmpty()) "Aucune version trouvée sur Real-Debrid" else null)
+        DebridResult(ranked, if (ranked.isEmpty()) "Aucune version trouvée sur Real-Debrid" else null)
     }
 
     /**
@@ -82,8 +84,9 @@ class DesktopDebrid(private val db: DesktopDb, private val catalog: Catalog) {
         var current = url
         repeat(6) {
             if (onRealDebrid(current)) return@withContext Result.success(current)
-            val r = runCatching { noRedirect.newCall(Request.Builder().url(current).header("User-Agent", "SokoulTV/2.0").build()).execute() }
-                .getOrElse { return@withContext Result.failure(IllegalStateException("Real-Debrid ne répond pas")) }
+            // appel annulable : fermer le lecteur pendant la résolution coupe aussi la requête
+            val r = runCatching { noRedirect.newCall(Request.Builder().url(current).header("User-Agent", "SokoulTV/2.0").build()).await() }
+                .getOrElse { if (it is CancellationException) throw it; return@withContext Result.failure(IllegalStateException("Real-Debrid ne répond pas")) }
             r.use {
                 when {
                     it.isRedirect -> {
@@ -110,7 +113,8 @@ class DesktopDebrid(private val db: DesktopDb, private val catalog: Catalog) {
     private suspend fun fetch(address: String): List<com.sokoul.iptv.data.debrid.DebridStream>? = withContext(Dispatchers.IO) {
         try {
             withTimeoutOrNull(TIMEOUT_MS) {
-                catalog.http.newCall(Request.Builder().url(address).header("User-Agent", "SokoulTV/2.0").build()).execute().use { r ->
+                // await : le délai de 12 s annule vraiment l'appel HTTP (execute() bloquant l'ignorerait)
+                catalog.http.newCall(Request.Builder().url(address).header("User-Agent", "SokoulTV/2.0").build()).await().use { r ->
                     if (r.isSuccessful) DebridStreams.parse(r.body?.string().orEmpty()) else null
                 }
             }
@@ -143,8 +147,14 @@ object DesktopRanker {
     fun tooSmall(bytes: Long?, largest: Long?): Boolean =
         bytes != null && bytes < MIN_VIDEO_BYTES && (largest == null || bytes < largest / 10)
 
-    /** Limite de taille selon le réseau du moment : une interface filaire active = câble. */
-    fun maxBytes(): Long = if (wired()) 60_000_000_000L else 25_000_000_000L
+    /** Limite de taille selon le réseau du moment : une interface filaire active = câble (calculé au plus toutes les 5 min). */
+    fun maxBytes(): Long {
+        val now = System.currentTimeMillis()
+        if (now - wiredAt > 5 * 60_000L) { wiredCache = wired(); wiredAt = now }
+        return if (wiredCache) 60_000_000_000L else 25_000_000_000L
+    }
+    @Volatile private var wiredCache = false
+    @Volatile private var wiredAt = 0L
 
     private fun wired(): Boolean = runCatching {
         java.net.NetworkInterface.getNetworkInterfaces().toList().any { n ->

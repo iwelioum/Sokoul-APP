@@ -66,7 +66,7 @@ private fun start() {
                 db.putSetting(Settings.WINDOW, listOf(state.position.x.value, state.position.y.value, state.size.width.value, state.size.height.value).joinToString(",") { it.toInt().toString() })
             }
             db.putSetting(Settings.LAST_SCREEN, app.screen.name)
-            app.closePlayer()
+            app.closePlayer(now = true)
             player?.release()
             db.close()
             exitApplication()
@@ -98,7 +98,8 @@ fun AppContent(app: AppState) {
     Box(Modifier.fillMaxSize().background(SokoulColors.Background)) {
         val route = app.route
         when {
-            route is Route.Detail -> DetailScreen(app, route.kind, route.id)
+            // une fiche = un état (défilement, saison) : la suivante ne reprend pas celui de la précédente
+            route is Route.Detail -> androidx.compose.runtime.key(app.stack.size, route) { DetailScreen(app, route.kind, route.id) }
             else -> when (app.screen) {
                 Screen.HOME -> HomeScreen(app)
                 Screen.MOVIES -> BrowseScreen(app, "movie")

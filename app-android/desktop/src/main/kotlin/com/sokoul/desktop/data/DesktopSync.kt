@@ -78,7 +78,7 @@ class DesktopSync(private val db: DesktopDb) {
                 applyPendingGroups(p.id)
                 _state.value = _state.value.copy(running = true, step = "Guide TV…", channels = n)
                 val programs = runCatching { syncEpg(p) }.getOrElse { e ->
-                    _state.value = _state.value.copy(error = "Guide : " + (e.message ?: "erreur"))
+                    _state.value = _state.value.copy(error = "Guide : " + com.sokoul.iptv.data.net.Redact.text(e.message ?: e.javaClass.simpleName))
                     0
                 }
                 db.markSynced(p.id, System.currentTimeMillis())

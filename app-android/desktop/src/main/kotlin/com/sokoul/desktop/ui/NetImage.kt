@@ -36,7 +36,9 @@ object ImageLoader {
     private const val MAX_BYTES = 300L * 1024 * 1024
     private var bytes = 0L
     private val cache = LinkedHashMap<String, ImageBitmap>(256, 0.75f, true)
-    private val failed = HashSet<String>()
+    /** Échecs récents (heure) : réessayés après 5 min ; une erreur réseau n'est jamais retenue. */
+    private val failed = HashMap<String, Long>()
+    private const val RETRY_MS = 5 * 60_000L
 
     /** Remplaçable par les rendus sans fenêtre (images d'exemple locales). */
     @Volatile var dir: File? = runCatching {
@@ -61,10 +63,11 @@ object ImageLoader {
 
     suspend fun load(url: String): ImageBitmap? {
         cached(url)?.let { return it }
-        if (synchronized(failed) { url in failed }) return null
+        if (synchronized(failed) { failed[url]?.let { System.currentTimeMillis() - it < RETRY_MS } == true }) return null
         return gate.withPermit {
             withContext(Dispatchers.IO) {
                 cached(url)?.let { return@withContext it }
+                var offline = false
                 runCatching {
                     val file = fileFor(url)
                     val data = if (url.startsWith("file:")) File(java.net.URI(url)).readBytes()
@@ -72,8 +75,8 @@ object ImageLoader {
                         r.body?.bytes()?.takeIf { r.isSuccessful && it.size < 8_000_000 }?.also { b -> runCatching { file?.writeBytes(b) } }
                     }
                     data?.let { org.jetbrains.skia.Image.makeFromEncoded(it).toComposeImageBitmap() }
-                }.getOrNull().also { img ->
-                    if (img != null) put(url, img) else synchronized(failed) { failed += url }
+                }.onFailure { offline = it is java.io.IOException }.getOrNull().also { img ->
+                    if (img != null) put(url, img) else if (!offline) synchronized(failed) { failed[url] = System.currentTimeMillis() }
                 }
             }
         }

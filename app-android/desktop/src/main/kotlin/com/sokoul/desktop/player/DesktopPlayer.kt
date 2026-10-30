@@ -4,6 +4,7 @@ import com.sun.jna.NativeLibrary
 import com.sun.jna.Pointer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
@@ -52,55 +53,75 @@ data class PlayerStatus(
 
 /**
  * Image vidéo courante, dessinée par Compose : libVLC écrit chaque image (RV32 = BGRA) directement dans la mémoire
- * d'une Bitmap Skia ([frameTick] avance à chaque image). Rien de natif à l'écran : barre et menus passent par-dessus.
+ * d'une Bitmap Skia ([frameTick] avance à chaque image). Double tampon : le décodeur écrit dans l'image arrière
+ * sans verrou, l'échange avec l'image affichée est instantané ; le dessin ne bloque donc jamais le décodeur
+ * plus que le temps d'un échange. Rien de natif à l'écran : barre et menus passent par-dessus.
  */
 class VideoFrame {
+    private class Buf(val bitmap: Bitmap, val pixels: ByteBuffer)
+
     private val lock = Any()
-    var bitmap: Bitmap? = null
-        private set
-    private var target: ByteBuffer? = null
+    private var front: Buf? = null
+    @Volatile private var back: Buf? = null
     val frameTick = MutableStateFlow(0L)
     val size = MutableStateFlow(0 to 0)
+    /** Rapport des pixels (SAR) : 16/15 pour une chaîne SD 720×576 en 16:9, 1 sinon. */
+    @Volatile var pixelAspect = 1f
 
-    fun allocate(w: Int, h: Int) = synchronized(lock) {
-        bitmap?.close()
+    private fun buffer(w: Int, h: Int): Buf {
         val b = Bitmap().apply { allocPixels(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.OPAQUE)) }
         val pm = b.peekPixels() ?: error("Pixels vidéo inaccessibles")
-        target = Pointer(pm.addr).getByteBuffer(0, pm.rowBytes.toLong() * h)
-        bitmap = b
+        return Buf(b, Pointer(pm.addr).getByteBuffer(0, pm.rowBytes.toLong() * h))
+    }
+
+    fun allocate(w: Int, h: Int) = synchronized(lock) {
+        front?.bitmap?.close(); back?.bitmap?.close()
+        front = buffer(w, h); back = buffer(w, h)
         size.value = w to h
     }
 
     fun write(src: ByteBuffer) {
-        synchronized(lock) {
-            val dst = target ?: return
-            val s = src.duplicate().apply { rewind() }
-            val d = dst.duplicate().apply { rewind() }
-            if (s.remaining() > d.remaining()) s.limit(s.position() + d.remaining())
-            d.put(s)
-            bitmap?.notifyPixelsChanged()
-        }
+        val b = back ?: return
+        val s = src.duplicate().apply { rewind() }
+        val d = b.pixels.duplicate().apply { rewind() }
+        if (s.remaining() > d.remaining()) s.limit(s.position() + d.remaining())
+        d.put(s)
+        b.bitmap.notifyPixelsChanged()
+        synchronized(lock) { if (back === b) { back = front; front = b } }
         frameTick.value++
     }
 
-    /** Dessin sous verrou : l'image n'est jamais lue pendant que libVLC l'écrit. */
-    fun <T> read(block: (Bitmap) -> T): T? = synchronized(lock) { bitmap?.let(block) }
+    /** Image affichée, lue sous verrou : jamais celle que libVLC est en train d'écrire. */
+    fun <T> read(block: (Bitmap) -> T): T? = synchronized(lock) { front?.bitmap?.let(block) }
 
-    fun clear() = synchronized(lock) { bitmap?.close(); bitmap = null; target = null; size.value = 0 to 0 }
+    fun clear() = synchronized(lock) {
+        front?.bitmap?.close(); back?.bitmap?.close()
+        front = null; back = null; size.value = 0 to 0; pixelAspect = 1f
+    }
 }
 
 /**
  * Lecteur VLC (libVLC fourni avec l'app). **Une seule instance** : changer de flux arrête le précédent avant
- * d'ouvrir le suivant, l'abonnement IPTV n'autorisant qu'une connexion. Reconnexion automatique du direct (3 essais).
+ * d'ouvrir le suivant, l'abonnement IPTV n'autorisant qu'une connexion. Reconnexion automatique (3 essais), à la
+ * même position pour un film.
+ *
+ * Fils : les événements vlcj arrivent sur leur propre fil, les commandes sur celui de l'interface. Le statut est
+ * mis à jour de façon atomique (`update`) et chaque événement d'un média précédent est ignoré ([generation]).
  */
 class DesktopPlayer private constructor(private val factory: MediaPlayerFactory) {
     val frame = VideoFrame()
     private val player: EmbeddedMediaPlayer = factory.mediaPlayers().newEmbeddedMediaPlayer()
     private val _status = MutableStateFlow(PlayerStatus())
     val status: StateFlow<PlayerStatus> = _status
-    private var current: StreamRequest? = null
-    private var retries = 0
+    @Volatile private var current: StreamRequest? = null
+    @Volatile private var retries = 0
+    @Volatile private var released = false
+    /** Avance à chaque ouverture ou arrêt ; [accepted] = génération du média qui envoie actuellement ses événements. */
+    @Volatile private var generation = 0
+    @Volatile private var accepted = -1
     private val timer = Timer("sokoul-reconnect", true)
+
+    private inline fun ifCurrent(block: () -> Unit) { if (accepted == generation) block() }
 
     init {
         player.videoSurface().set(factory.videoSurfaces().newVideoSurface(
@@ -119,38 +140,36 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
             true,
         ))
         player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-            override fun playing(mediaPlayer: MediaPlayer) {
+            // les événements de l'ancien média, encore en file, passent avant celui-ci : ils sont ignorés
+            override fun mediaChanged(mediaPlayer: MediaPlayer, media: uk.co.caprica.vlcj.media.MediaRef) { accepted = generation }
+            override fun playing(mediaPlayer: MediaPlayer) = ifCurrent {
                 retries = 0
-                _status.value = _status.value.copy(playing = true, paused = false, buffering = false, error = null)
+                _status.update { it.copy(playing = true, paused = false, buffering = false, error = null) }
                 // volume et muet choisis avant l'ouverture du flux : appliqués au flux qui démarre
-                val (vol, muted) = _status.value.volume to _status.value.muted
-                mediaPlayer.submit { mediaPlayer.audio().setVolume(vol); mediaPlayer.audio().setMute(muted) }
-                current?.startMs?.takeIf { it > 0 && !current!!.live && _status.value.timeMs < 1000 }?.let { start ->
-                    mediaPlayer.submit { mediaPlayer.controls().setTime(start) }
-                }
+                val st = _status.value
+                mediaPlayer.submit { if (!released) { mediaPlayer.audio().setVolume(st.volume); mediaPlayer.audio().setMute(st.muted) } }
             }
-            override fun paused(mediaPlayer: MediaPlayer) { _status.value = _status.value.copy(paused = true) }
-            override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) {
-                _status.value = _status.value.copy(buffering = newCache < 100f)
-            }
-            override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) { _status.value = _status.value.copy(timeMs = newTime) }
-            override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) { _status.value = _status.value.copy(lengthMs = newLength) }
-            override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: uk.co.caprica.vlcj.media.TrackType, id: Int) = refreshTracks()
-            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) = refreshTracks()
-            override fun error(mediaPlayer: MediaPlayer) = reconnect("Le flux a été interrompu")
-            override fun finished(mediaPlayer: MediaPlayer) {
+            override fun paused(mediaPlayer: MediaPlayer) = ifCurrent { _status.update { it.copy(paused = true) } }
+            override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = ifCurrent { _status.update { it.copy(buffering = newCache < 100f) } }
+            override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) = ifCurrent { _status.update { it.copy(timeMs = newTime) } }
+            override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) = ifCurrent { _status.update { it.copy(lengthMs = newLength) } }
+            override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: uk.co.caprica.vlcj.media.TrackType, id: Int) = ifCurrent { refreshTracks() }
+            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) = ifCurrent { refreshTracks() }
+            override fun error(mediaPlayer: MediaPlayer) = ifCurrent { reconnect("Le flux a été interrompu") }
+            override fun finished(mediaPlayer: MediaPlayer) = ifCurrent {
                 if (current?.live == true) reconnect("Le flux s'est arrêté")
-                else _status.value = _status.value.copy(playing = false, paused = false, timeMs = _status.value.lengthMs)
+                else _status.update { it.copy(playing = false, paused = false, timeMs = it.lengthMs) }
             }
         })
     }
 
     fun play(req: StreamRequest) {
         // une seule connexion : le flux précédent est fermé avant d'ouvrir le suivant
+        generation++
         player.controls().stop()
         current = req
         retries = 0
-        _status.value = PlayerStatus(title = req.title, buffering = true, volume = _status.value.volume, muted = _status.value.muted)
+        _status.update { PlayerStatus(title = req.title, buffering = true, volume = it.volume, muted = it.muted) }
         open(req)
     }
 
@@ -158,6 +177,8 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         val opts = buildList {
             add(":network-caching=${if (req.live) 1500 else 3000}")
             add(":http-reconnect")
+            // reprise : libVLC ouvre directement à la position (aussi après une reconnexion)
+            if (!req.live && req.startMs > 0) add(":start-time=${req.startMs / 1000.0}")
             req.userAgent?.takeIf { it.isNotBlank() }?.let { add(":http-user-agent=$it") }
             req.referrer?.takeIf { it.isNotBlank() }?.let { add(":http-referrer=$it") }
         }
@@ -167,24 +188,32 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     private fun reconnect(reason: String) {
         val req = current ?: return
         if (retries >= MAX_RETRIES) {
-            _status.value = _status.value.copy(playing = false, buffering = false, error = "$reason. Vérifiez la connexion ou réessayez plus tard.")
+            _status.update { it.copy(playing = false, buffering = false, error = "$reason. Vérifiez la connexion ou réessayez plus tard.") }
             return
         }
         retries++
-        _status.value = _status.value.copy(buffering = true, error = null)
         val resumeAt = _status.value.timeMs
+        _status.update { it.copy(buffering = true, error = null) }
+        val gen = generation
         timer.schedule(RETRY_DELAY_MS * retries) {
-            if (current === req) player.submit { open(if (req.live) req else req.copy(startMs = resumeAt)) }
+            // revérifié au moment d'ouvrir : un autre flux a pu être lancé, ou le lecteur libéré, entre-temps
+            player.submit {
+                if (!released && current === req && generation == gen) {
+                    generation++
+                    open(if (req.live) req else req.copy(startMs = resumeAt))
+                }
+            }
         }
     }
 
     fun retry() { current?.let { play(it) } }
 
     fun stop() {
+        generation++
         current = null
         player.controls().stop()
         frame.clear()
-        _status.value = PlayerStatus(volume = _status.value.volume, muted = _status.value.muted)
+        _status.update { PlayerStatus(volume = it.volume, muted = it.muted) }
     }
 
     fun togglePause() = player.controls().pause()
@@ -194,7 +223,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         val len = _status.value.lengthMs
         val t = (player.status().time() + deltaMs).coerceIn(0, if (len > 0) len - 1000 else Long.MAX_VALUE)
         player.controls().setTime(t)
-        _status.value = _status.value.copy(timeMs = t)
+        _status.update { it.copy(timeMs = t) }
     }
 
     fun seekTo(fraction: Float) {
@@ -202,7 +231,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         val len = _status.value.lengthMs.takeIf { it > 0 } ?: return
         val t = (len * fraction.coerceIn(0f, 1f)).toLong()
         player.controls().setTime(t)
-        _status.value = _status.value.copy(timeMs = t)
+        _status.update { it.copy(timeMs = t) }
     }
 
     fun setAudio(id: Int) { player.audio().setTrack(id); refreshTracks() }
@@ -214,30 +243,35 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         val vol = v.coerceIn(0, 150)
         player.audio().setVolume(vol)
         if (_status.value.muted) player.audio().setMute(false)
-        _status.value = _status.value.copy(volume = vol, muted = false)
+        _status.update { it.copy(volume = vol, muted = false) }
     }
 
     fun toggleMute() {
         val m = !_status.value.muted
         player.audio().setMute(m)
-        _status.value = _status.value.copy(muted = m)
+        _status.update { it.copy(muted = m) }
     }
-
-    /** Format d'image : null = d'origine, sinon « 16:9 », « 4:3 »… */
-    fun setAspect(ratio: String?) = player.video().setAspectRatio(ratio)
 
     private fun refreshTracks() {
         val audio = player.audio().trackDescriptions().filter { it.id() >= 0 }.map { it.id() to it.description() }
         val subs = player.subpictures().trackDescriptions().map { it.id() to if (it.id() < 0) "Désactivés" else it.description() }
         val dim = player.video().videoDimension()
-        _status.value = _status.value.copy(
-            audio = audio, audioId = player.audio().track(), subtitles = subs, subtitleId = player.subpictures().track(),
-            video = dim?.let { "${it.width}×${it.height}" },
-        )
+        // pixels non carrés (SD anamorphosée) : rapport appliqué au dessin
+        player.media().info()?.videoTracks()?.firstOrNull()?.let { t ->
+            val num = t.sampleAspectRatio(); val den = t.sampleAspectRatioBase()
+            frame.pixelAspect = if (num > 0 && den > 0) num.toFloat() / den else 1f
+        }
+        _status.update {
+            it.copy(
+                audio = audio, audioId = player.audio().track(), subtitles = subs, subtitleId = player.subpictures().track(),
+                video = dim?.let { d -> "${d.width}×${d.height}" },
+            )
+        }
     }
 
     fun release() {
         stop()
+        released = true
         timer.cancel()
         player.release()
         factory.release()
@@ -265,7 +299,9 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
             NativeLibrary.addSearchPath(RuntimeUtil.getLibVlcLibraryName(), dir.absolutePath)
             NativeLibrary.addSearchPath(RuntimeUtil.getLibVlcCoreLibraryName(), dir.absolutePath)
             return runCatching {
-                DesktopPlayer(MediaPlayerFactory(null as NativeDiscovery?, "--no-video-title-show", "--quiet", "--no-snapshot-preview", "--no-osd"))
+                DesktopPlayer(MediaPlayerFactory(null as NativeDiscovery?, "--no-video-title-show", "--quiet", "--no-snapshot-preview", "--no-osd",
+                    // piste française d'abord (versions MULTI) ; jamais de sous-titres imposés : on les choisit dans la barre
+                    "--audio-language=fr,fre,fra,french", "--sub-language=none"))
             }.getOrNull()
         }
     }

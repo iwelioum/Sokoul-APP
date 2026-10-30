@@ -328,7 +328,7 @@ fun SokoulTextField(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        leading?.let { Icon(it, null, Modifier.size(20.dp), tint = SokoulColors.TextMuted); Spacer(Modifier.width(10.dp)) }
+        leading?.let { Icon(it, null, Modifier.size(if (style.fontSize.value > 20f) 28.dp else 20.dp), tint = SokoulColors.TextSecondary); Spacer(Modifier.width(if (style.fontSize.value > 20f) 14.dp else 10.dp)) }
         Box(Modifier.weight(1f)) {
             if (value.isEmpty()) Text(placeholder, style = style.copy(color = SokoulColors.TextMuted), maxLines = 1)
             BasicTextField(

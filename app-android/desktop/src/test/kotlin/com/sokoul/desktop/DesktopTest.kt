@@ -166,6 +166,9 @@ class DesktopTest {
         assertEquals("tv:2:1:2", com.sokoul.desktop.data.Resume.key("tv", 2, 1, 2))
         assertEquals("movie:5", com.sokoul.desktop.data.Resume.key("movie", 5, null, null))
         assertEquals(600_000L, db.resume("movie:1")?.positionMs)
+        // série : point de départ de « Reprendre », épisode terminé compris
+        db.saveResume(r("tv:2:1:3", "tv", 2, 1, 3, 3_500_000, 50, done = true))
+        assertEquals("tv:2:1:3", db.lastOf("tv", 2)?.key)
     }
 
     @Test fun `classement PC - langue, SDR avant HDR, taille lisible, echantillons ecartes`() {

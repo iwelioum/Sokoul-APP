@@ -48,20 +48,21 @@ fun Wordmark(modifier: Modifier = Modifier) {
  */
 @Composable
 fun TopNav(current: Screen, solid: Boolean, onSelect: (Screen) -> Unit, onBack: (() -> Unit)?) {
-    val bg by animateColorAsState(if (solid) SokoulColors.Background.copy(alpha = 0.97f) else Color.Transparent, tween(220))
+    val bg by animateColorAsState(if (solid) SokoulColors.Background else Color.Transparent, tween(220))
     Box(
         Modifier.fillMaxWidth().height(76.dp)
             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = if (solid) 0f else 0.65f), Color.Transparent)))
             .background(bg),
     ) {
+        if (solid) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(Edge.Hairline).background(SokoulColors.Hairline))
+        // retour dans la marge : le mot-symbole et les onglets ne bougent jamais
+        if (onBack != null) RoundIconButton(
+            Icons.AutoMirrored.Filled.ArrowBack, "Retour", onBack, Modifier.align(Alignment.CenterStart).padding(start = 10.dp), size = 36.dp,
+        )
         Row(
             Modifier.fillMaxWidth().padding(horizontal = Space.Gutter).align(Alignment.Center),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onBack != null) {
-                RoundIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Retour", onBack, size = 40.dp)
-                Spacer(Modifier.width(18.dp))
-            }
             Wordmark()
             Spacer(Modifier.width(44.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -70,15 +71,24 @@ fun TopNav(current: Screen, solid: Boolean, onSelect: (Screen) -> Unit, onBack: 
                 }
             }
             Spacer(Modifier.weight(1f))
-            RoundIconButton(Icons.Filled.Search, "Recherche (/)", { onSelect(Screen.SEARCH) }, size = 40.dp)
+            NavIcon(Icons.Filled.Search, "Recherche (/)", current == Screen.SEARCH) { onSelect(Screen.SEARCH) }
             Spacer(Modifier.width(10.dp))
-            RoundIconButton(Icons.Outlined.Settings, "Réglages", { onSelect(Screen.SETTINGS) }, size = 40.dp)
+            NavIcon(Icons.Outlined.Settings, "Réglages", current == Screen.SETTINGS) { onSelect(Screen.SETTINGS) }
         }
     }
 }
 
+/** Bouton rond de la barre, avec le liseré d'accent quand son écran est ouvert. */
 @Composable
-private fun NavTab(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun NavIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, selected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        RoundIconButton(icon, description, onClick, size = 40.dp)
+        Box(Modifier.padding(top = 4.dp).height(Edge.Accent).width(if (selected) 22.dp else 0.dp).background(SokoulColors.Accent, Radius.Tiny))
+    }
+}
+
+@Composable
+internal fun NavTab(label: String, selected: Boolean, onClick: () -> Unit) {
     val h = rememberHover()
     val color by animateColorAsState(
         when { selected -> SokoulColors.TextPrimary; h.active -> SokoulColors.TextPrimary.copy(alpha = 0.9f); else -> SokoulColors.TextSecondary }, tween(140),

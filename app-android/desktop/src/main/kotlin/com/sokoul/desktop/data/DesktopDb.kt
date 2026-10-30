@@ -324,6 +324,11 @@ class DesktopDb(file: File) : AutoCloseable {
         query("SELECT * FROM resume WHERE finished=0 AND position_ms > 0 ORDER BY updated_at DESC LIMIT ?", limit * 3) { it.toResume() }
             .distinctBy { "${it.kind}:${it.tmdbId}" }.take(limit)
 
+    /** Dernière lecture d'une œuvre (épisode terminé compris) : point de départ de « Reprendre » sur une série. */
+    @Synchronized
+    fun lastOf(kind: String, tmdbId: Int): Resume? =
+        query("SELECT * FROM resume WHERE kind=? AND tmdb_id=? ORDER BY updated_at DESC LIMIT 1", kind, tmdbId) { it.toResume() }.firstOrNull()
+
     private fun ResultSet.toResume() = Resume(
         getString("key"), getString("kind"), getInt("tmdb_id"), (getObject("season") as? Number)?.toInt(), (getObject("episode") as? Number)?.toInt(),
         getString("title"), getString("subtitle"), getString("image"), getLong("position_ms"), getLong("duration_ms"), getLong("updated_at"), getInt("finished") == 1,

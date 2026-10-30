@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -98,9 +99,14 @@ fun SettingsScreen(app: AppState) {
 }
 
 @Composable
-private fun SectionHead(title: String, text: String) {
-    Text(title, style = Type.Section)
-    Text(text, Modifier.padding(top = 6.dp, bottom = 22.dp), style = Type.Body)
+private fun SectionHead(title: String, text: String, action: @Composable () -> Unit = {}) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = Type.Section)
+            Text(text, Modifier.padding(top = 6.dp, bottom = 22.dp).widthIn(max = 640.dp), style = Type.Body)
+        }
+        Box(Modifier.padding(bottom = 22.dp)) { action() }
+    }
 }
 
 // --- playlists -------------------------------------------------------------------------------------------
@@ -239,7 +245,14 @@ private fun KeysSection(app: AppState) {
     val statuses = remember(app.dataVersion, editing) { ProviderConfig.statuses(app.db) }
     val rd by produceState<com.sokoul.iptv.data.debrid.RdUser?>(null, app.dataVersion) { value = app.debrid.user() }
 
-    SectionHead("Clés API", "Les services qui enrichissent Sokoul. Les clés intégrées viennent de la configuration du projet ; une clé saisie ici les remplace. Seuls les 4 derniers caractères sont affichés.")
+    SectionHead("Clés API", "Les services qui enrichissent Sokoul. Les clés intégrées viennent de la configuration du projet ; une clé saisie ici les remplace. Seuls les 4 derniers caractères sont affichés.") {
+        SokoulButton("Tout tester", {
+            statuses.filter { it.configured }.forEach { s ->
+                testing = testing + s.id
+                scope.launch { probes = probes + (s.id to ProviderProbe.check(app.db, s.id)); testing = testing - s.id }
+            }
+        }, style = ButtonStyle.Glass)
+    }
     rd?.let { u ->
         Panel(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -251,14 +264,11 @@ private fun KeysSection(app: AppState) {
             }
         }
     }
-    SokoulButton("Tout tester", {
-        statuses.filter { it.configured }.forEach { s ->
-            testing = testing + s.id
-            scope.launch { probes = probes + (s.id to ProviderProbe.check(app.db, s.id)); testing = testing - s.id }
-        }
-    }, Modifier.padding(bottom = 14.dp), style = ButtonStyle.Glass)
-    statuses.forEach { s ->
-        Panel(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+    // un seul panneau, une ligne par service séparée par un filet
+    Panel(Modifier.fillMaxWidth()) {
+    statuses.forEachIndexed { index, s ->
+        if (index > 0) Box(Modifier.fillMaxWidth().height(Edge.Hairline).background(SokoulColors.Hairline))
+        Column(Modifier.padding(vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val probe = probes[s.id]
                 Icon(
@@ -292,6 +302,7 @@ private fun KeysSection(app: AppState) {
                 SokoulButton("Clé intégrée", { ProviderConfig.setKey(app.db, s.id, null); editing = null; probes = probes - s.id; app.dataVersion++ }, style = ButtonStyle.Ghost)
             }
         }
+    }
     }
 }
 

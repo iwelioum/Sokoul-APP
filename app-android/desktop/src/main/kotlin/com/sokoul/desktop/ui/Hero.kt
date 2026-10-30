@@ -50,7 +50,7 @@ fun Backdrop(url: String?, modifier: Modifier = Modifier, leftVeil: Float = 0.92
         }
         Box(
             Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(0f to SokoulColors.Background.copy(alpha = leftVeil), 0.45f to SokoulColors.Background.copy(alpha = 0.45f), 0.75f to Color.Transparent),
+                Brush.horizontalGradient(0f to SokoulColors.Background.copy(alpha = leftVeil), 0.40f to SokoulColors.Background.copy(alpha = 0.78f), 0.62f to SokoulColors.Background.copy(alpha = 0.35f), 0.85f to Color.Transparent),
             ),
         )
         Box(
@@ -118,7 +118,7 @@ private fun HeroText(f: Feature, onPlay: (Feature) -> Unit, onInfo: (Feature) ->
     val tv = (f.item.mediaType ?: "movie") == "tv"
     Column(modifier.padding(start = Space.Gutter, bottom = 64.dp).widthIn(max = 640.dp)) {
         Kicker(if (tv) "Série · Tendance du jour" else "Film · Tendance du jour")
-        TitleArt(info?.title ?: f.item.title, info?.logo, Modifier.padding(top = 14.dp))
+        TitleArt(info?.title ?: f.item.title, info?.logo, Modifier.padding(top = 14.dp), maxWidth = 440.dp, maxHeight = 130.dp)
         MetaRow(
             year = info?.year ?: f.item.year, runtimeMin = info?.runtimeMin?.takeIf { !tv }, rating = info?.rating ?: f.item.rating,
             seasons = info?.seasons?.takeIf { tv }, certification = info?.certification,

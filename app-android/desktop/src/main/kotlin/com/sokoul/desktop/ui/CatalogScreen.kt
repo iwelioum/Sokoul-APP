@@ -82,13 +82,18 @@ fun BrowseScreen(app: AppState, kind: String) {
             Column {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(title, style = Type.ScreenTitle)
-                    Row(Modifier.weight(1f).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                        BrowseSort.entries.forEach { s -> Chip(s.label, s == sort, { sort = s }) }
+                    // tri en onglets texte : seul le genre est une pastille pleine
+                    Row(Modifier.weight(1f).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(26.dp, Alignment.End)) {
+                        BrowseSort.entries.forEach { s -> NavTab(s.label, s == sort) { sort = s } }
                     }
                 }
-                LazyRow(Modifier.padding(top = 20.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item { Chip("Tous les genres", genre == null, { genre = null }) }
-                    items(genres) { g -> Chip(g.name, g.id == genre, { genre = g.id }) }
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.padding(top = 20.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Chip("Tous les genres", genre == null, { genre = null })
+                    genres.forEach { g -> Chip(g.name, g.id == genre, { genre = g.id }) }
                 }
             }
         }
@@ -129,10 +134,13 @@ fun SearchScreen(app: AppState) {
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            SokoulTextField(
-                query, { query = it }, "Un film, une série, une chaîne…", Modifier.widthIn(max = 900.dp).fillMaxWidth(),
-                leading = Icons.Filled.Search, style = Type.SearchQuery, focusRequester = focus,
-            )
+            // la case de grille impose sa largeur : le champ est borné à l'intérieur d'une boîte pleine largeur
+            Box(Modifier.fillMaxWidth()) {
+                SokoulTextField(
+                    query, { query = it }, "Un film, une série, une chaîne…", Modifier.widthIn(max = 720.dp).fillMaxWidth(),
+                    leading = Icons.Filled.Search, style = Type.SearchQuery, focusRequester = focus,
+                )
+            }
         }
         if (channels.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
