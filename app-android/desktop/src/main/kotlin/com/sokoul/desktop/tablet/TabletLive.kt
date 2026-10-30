@@ -20,6 +20,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -109,6 +112,10 @@ fun TabletLive(app: AppState) {
     var picked by remember(p.id) { mutableStateOf<Channel?>(null) }
     var menu by remember { mutableStateOf<Channel?>(null) }
     var pinFor by remember { mutableStateOf<CategoryItem?>(null) }
+    var groupMenu by remember { mutableStateOf<CategoryItem?>(null) }
+    // code demandé pour déverrouiller le groupe (et non pour l'ouvrir)
+    var unlockAfterPin by remember { mutableStateOf(false) }
+    fun setLocked(g: CategoryItem, locked: Boolean) { app.db.setCategoryFlags(p.id, g.id, hidden = false, locked = locked); app.dataVersion++ }
     var pinError by remember { mutableStateOf<String?>(null) }
     val list = channels
     fun play(c: Channel) { val all = list ?: return; app.play(all, all.indexOf(c).coerceAtLeast(0)) }
@@ -121,7 +128,9 @@ fun TabletLive(app: AppState) {
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.width(if (l.widthDp < 840) 180.dp else 210.dp).fillMaxHeight().background(SokoulColors.Surface.copy(alpha = 0.6f))) {
             Text("Direct", Modifier.padding(start = 20.dp, top = 12.dp, end = 12.dp), style = Type.ScreenTitle, maxLines = 1)
-            CategoryColumn(groups, selected, ::select, Modifier.weight(1f).fillMaxWidth())
+            CategoryColumn(groups, selected, ::select, Modifier.weight(1f).fillMaxWidth(), onLongClick = { g ->
+                if (g.id != SpecialGroup.ALL && g.id != SpecialGroup.FAVORITES) groupMenu = g
+            })
         }
         Box(Modifier.weight(1f).fillMaxHeight()) {
             when {
@@ -158,10 +167,35 @@ fun TabletLive(app: AppState) {
             onDismiss = { menu = null },
         )
     }
+    groupMenu?.let { g ->
+        val hasPin = app.hasPin()
+        OptionsDialog(
+            g.name,
+            listOf(
+                MenuOption("Masquer ce groupe", Icons.Default.VisibilityOff) {
+                    app.db.setCategoryFlags(p.id, g.id, hidden = true, locked = g.locked)
+                    if (selected == g.id) selected = SpecialGroup.ALL
+                    app.dataVersion++
+                },
+                if (g.locked) MenuOption("Déverrouiller", Icons.Default.LockOpen) {
+                    if (!hasPin || app.unlocked) setLocked(g, false) else { unlockAfterPin = true; pinFor = g }
+                } else MenuOption(
+                    "Verrouiller (contrôle parental)", Icons.Default.Lock, enabled = hasPin,
+                    hint = if (hasPin) null else "Définissez d'abord un code dans Réglages › Contrôle parental",
+                ) { setLocked(g, true) },
+            ),
+            subtitle = "Les groupes masqués se réaffichent depuis Réglages › Contrôle parental",
+            onDismiss = { groupMenu = null },
+        )
+    }
     pinFor?.let { cat ->
         PinDialog("Code parental", onResult = { pin ->
-            if (app.checkPin(pin)) { pinFor = null; pinError = null; selected = cat.id } else pinError = "Code incorrect"
-        }, onDismiss = { pinFor = null; pinError = null }, error = pinError)
+            if (app.checkPin(pin)) {
+                pinFor = null; pinError = null
+                if (unlockAfterPin) setLocked(cat, false) else selected = cat.id
+                unlockAfterPin = false
+            } else pinError = "Code incorrect"
+        }, onDismiss = { pinFor = null; pinError = null; unlockAfterPin = false }, error = pinError)
     }
 }
 

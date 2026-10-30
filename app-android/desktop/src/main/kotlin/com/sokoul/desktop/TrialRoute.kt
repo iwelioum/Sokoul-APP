@@ -12,6 +12,8 @@ object TrialRoute {
     @Volatile var searchQuery: String? = null
     /** Fiche défilée jusqu'à cette section (`detail:tv:1396:1` → saisons). */
     @Volatile var scrollItem: Int? = null
+    /** Rubrique des réglages ouverte (`settings:debrid`). */
+    @Volatile var settingsPane: String? = null
 
     suspend fun apply(app: AppState, route: String) {
         val p = route.split(':')
@@ -52,7 +54,8 @@ object TrialRoute {
                 }
             }
             "guide" -> app.go(Screen.GUIDE)
-            "settings" -> app.go(Screen.SETTINGS)
+            // settings:debrid → rubrique ouverte (nom de l'enum SettingsCategory)
+            "settings" -> { settingsPane = p.getOrNull(1)?.uppercase(); app.go(Screen.SETTINGS) }
             "search" -> { searchQuery = p.getOrNull(1); app.go(Screen.SEARCH) }
             "detail" -> { scrollItem = p.getOrNull(3)?.toIntOrNull(); app.openDetail(p[1], p[2].toInt()) }
             "sources" -> {

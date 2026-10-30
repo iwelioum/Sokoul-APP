@@ -25,7 +25,7 @@
 - [x] 3.1 Recherche (`SearchScreen` de la tablette : pastilles Films, Séries, Chaînes et Programmes TV ; Top 10 en tendance ; meilleurs résultats, puis rangées ; « Au programme » via `DesktopDb.searchPrograms`). Vérifié par captures s1/s2 et par un test.
 - [x] 3.2 Direct (`LiveScreen` de la tablette : groupes, chaînes, aperçu). Vérifié par capture p3.
 - [x] 3.3 Guide TV (`GuideScreen` de la tablette). Vérifié par capture p3.
-- [ ] 3.4 Réglages (`SettingsPanes` : rubriques Compte et playlists, Lecture, Télévision et guide, Films et séries, Real-Debrid, Contrôle parental, Profils, Sources de données, Sauvegarde, À propos).
+- [x] 3.4 Réglages (`SettingsPanes` : rubriques Compte et playlists, Lecture, Télévision et guide, Films et séries, Real-Debrid, Contrôle parental, Profils, Sources de données, Sauvegarde, À propos). Lignes de la tablette, avec seulement ce que fait le PC (rien de factice). Masquer et verrouiller un groupe d'un clic droit dans le Direct ; changer le code exige l'ancien. Vérifié par captures r1 et par le test d'interface.
 - [ ] 3.5 Surimpression du lecteur (`VodOverlay`, direct), avec le rendu vidéo Compose actuel.
 
 ## 4. Vérification

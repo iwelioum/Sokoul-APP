@@ -115,7 +115,7 @@ fun AppContent(app: AppState) {
                             Screen.LIVE -> com.sokoul.desktop.tablet.TabletLive(app)
                             Screen.GUIDE -> com.sokoul.desktop.tablet.TabletGuide(app)
                             Screen.SEARCH -> com.sokoul.desktop.tablet.TabletSearch(app)
-                            Screen.SETTINGS -> SettingsScreen(app)
+                            Screen.SETTINGS -> com.sokoul.desktop.tablet.TabletSettings(app)
                         }
                     }
                 }

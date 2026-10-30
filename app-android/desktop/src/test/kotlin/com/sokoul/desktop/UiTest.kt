@@ -70,8 +70,16 @@ class UiTest {
         assertTrue(!app.inMyList("movie", 27205))
         app.go(Screen.SETTINGS)
         waitForIdle()
-        onNodeWithText("Clés API").performClick()
+        onNodeWithText("Sources de données").performClick()
         waitForIdle()
         onNodeWithText("TMDB").assertExists()
+        // un code existant ne se change qu'après l'avoir saisi
+        db.putSetting(com.sokoul.desktop.data.Settings.PIN, com.sokoul.iptv.data.PinHasher.hash("1234"))
+        app.dataVersion++
+        onNodeWithText("Contrôle parental").performClick()
+        waitForIdle()
+        onNodeWithText("Modifier le code parental").performClick()
+        waitForIdle()
+        onNodeWithText("Code actuel").assertExists()
     }
 }
