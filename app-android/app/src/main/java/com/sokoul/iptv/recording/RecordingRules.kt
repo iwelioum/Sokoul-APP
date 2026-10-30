@@ -145,6 +145,13 @@ object RecordingRules {
         return out
     }
 
+    /**
+     * Enregistrement en attente qui couvre au moins la moitié d'un programme (pas seulement sa marge : l'enregistrement
+     * du programme précédent déborde de 5 min sur le suivant sans qu'il soit « enregistré »).
+     */
+    fun recordingCovering(start: Long, end: Long, recordings: List<RecordingEntity>): RecordingEntity? =
+        recordings.firstOrNull { it.isPending() && minOf(end, it.endAt) - maxOf(start, it.startAt) >= (end - start) / 2 }
+
     private fun same(a: String, b: String) =
         a.lowercase().filter { it.isLetterOrDigit() } == b.lowercase().filter { it.isLetterOrDigit() }
 

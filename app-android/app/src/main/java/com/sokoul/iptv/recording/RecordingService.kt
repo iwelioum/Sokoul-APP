@@ -131,7 +131,11 @@ class RecordingService : Service() {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 val reason = if (timedOut) "Arrêté par Android (limite de 6 h d'enregistrement par jour)" else "Arrêté manuellement"
                 withContext(NonCancellable) {
-                    db.recordings().update(current.copy(status = RecordingStatus.COMPLETED, sizeBytes = file.length(), error = reason))
+                    // fin réelle : la carte affiche « 08:34 – 09:01 » et non l'horaire prévu
+                    db.recordings().update(current.copy(
+                        status = RecordingStatus.COMPLETED, sizeBytes = file.length(), error = reason,
+                        endAt = minOf(current.endAt, System.currentTimeMillis()),
+                    ))
                 }
             } catch (e: Exception) {
                 Timber.w(e, "Enregistrement $id en échec")

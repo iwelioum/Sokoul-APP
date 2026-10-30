@@ -25,6 +25,7 @@ import com.sokoul.iptv.ui.MultiviewSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -194,6 +195,15 @@ class RecordingRulesTest {
         // 1re partie déjà en base (passage précédent) : seule la 2e est ajoutée, sans chevauchement
         val again = RecordingRules.seriesAirings(key, "f2", "FR| FRANCE 2 FHD", 0, programs, listOf(first), now)
         assertEquals(listOf(now + 80 * m), again.map { it.start })
+    }
+
+    @Test fun `repere d'enregistrement dans le guide`() {
+        val m = 60_000L
+        val recs = listOf(rec("f2", now - 2 * m, now + 35 * m)) // programme 0–30 min, marges comprises
+        assertNotNull(RecordingRules.recordingCovering(now, now + 30 * m, recs))
+        // la marge de 5 min qui déborde sur le programme suivant ne le marque pas
+        assertNull(RecordingRules.recordingCovering(now + 30 * m, now + 60 * m, recs))
+        assertNull(RecordingRules.recordingCovering(now, now + 30 * m, listOf(recs[0].copy(status = RecordingStatus.CANCELLED))))
     }
 
     @Test fun `programme en cours deja enregistre depuis son milieu`() {

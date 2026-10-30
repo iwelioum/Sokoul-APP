@@ -74,6 +74,10 @@ import com.sokoul.iptv.data.db.ChannelEntity
 import com.sokoul.iptv.data.db.ContentType
 import com.sokoul.iptv.data.db.PlaylistEntity
 import com.sokoul.iptv.data.db.ProgramEntity
+import com.sokoul.iptv.data.db.RecordingEntity
+import com.sokoul.iptv.data.db.RecordingStatus
+import com.sokoul.iptv.recording.RecordingRules
+import androidx.compose.material.icons.filled.Stop
 import com.sokoul.iptv.data.repo.CatalogRepository
 import com.sokoul.iptv.data.repo.EpgRepository
 import com.sokoul.iptv.data.repo.PlaylistRepository
@@ -192,6 +196,12 @@ class GuideViewModel @Inject constructor(
         .map { list -> list.map { "${it.channelId}|${it.start}" }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
+    /** Enregistrements programmés ou en cours de la playlist, par chaîne (repère REC dans la grille, menu adapté). */
+    val recorded: StateFlow<Map<String, List<RecordingEntity>>> = combine(playlist.filterNotNull(), recordings.recordings()) { p, all ->
+        all.filter { it.playlistId == p.id && (it.status == RecordingStatus.SCHEDULED || it.status == RecordingStatus.RECORDING) }
+            .groupBy { it.channelId }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     // position de navigation, conservée en revenant du lecteur
     var windowStart = alignedNow() - HALF_HOUR
     var row = 0
@@ -230,6 +240,7 @@ class GuideViewModel @Inject constructor(
     fun removeReminder(c: ChannelEntity, p: ProgramEntity) = launch { recordings.removeReminder(it, c.id, p.start) }
     fun record(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.recordProgram(it, c, p)) }
     fun recordSeries(c: ChannelEntity, p: ProgramEntity, done: (String) -> Unit) = launch { done(actions.recordSeries(it, c, p)) }
+    fun cancelRecording(r: RecordingEntity) = viewModelScope.launch { recordings.cancel(r.id) }
     fun toggleFavorite(c: ChannelEntity) = launch { actions.toggleFavorite(it, c) }
     suspend fun unlock(pin: String) = actions.parental.tryUnlock(pin)
     fun isUnlocked() = actions.parental.isOpen()
@@ -249,6 +260,7 @@ fun GuideScreen(nav: NavHostController) {
     val channels by vm.channels.collectAsStateWithLifecycle()
     val programs by vm.programs.collectAsStateWithLifecycle()
     val reminders by vm.reminders.collectAsStateWithLifecycle()
+    val recorded by vm.recorded.collectAsStateWithLifecycle()
     val epgStatus by vm.epgStatus.collectAsStateWithLifecycle()
     val isTv = LocalIsTv.current
     val layout = LocalLayout.current
@@ -430,6 +442,7 @@ fun GuideScreen(nav: NavHostController) {
                                 focusedTime = if (i == row && gridFocused) focusTime else null,
                                 catchup = vm.supportsCatchup(c),
                                 reminders = reminders,
+                                recorded = recorded[c.id].orEmpty(),
                                 // rappels stables : une touche ne recompose que la ligne focalisée et l'aperçu
                                 onProgramClick = remember(i, c.id) { { p: ProgramEntity? -> pickRef.value(i, c, p) } },
                                 onChannelClick = remember(c.id) { { openRef.value(c) } },
@@ -476,7 +489,11 @@ fun GuideScreen(nav: NavHostController) {
                     vm.remind(c, p) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
                 })
             }
-            if (p != null && p.end > t) add(MenuOption(if (p.start > t) "Programmer l'enregistrement" else "Enregistrer jusqu'à la fin", Icons.Default.FiberManualRecord) {
+            val rec = p?.let { recordingFor(it, recorded[c.id].orEmpty()) }
+            if (rec != null) add(MenuOption(if (rec.status == RecordingStatus.RECORDING) "Arrêter l'enregistrement" else "Annuler l'enregistrement programmé", Icons.Default.Stop) {
+                vm.cancelRecording(rec)
+            })
+            else if (p != null && p.end > t) add(MenuOption(if (p.start > t) "Programmer l'enregistrement" else "Enregistrer jusqu'à la fin", Icons.Default.FiberManualRecord) {
                 vm.record(c, p) { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             })
             if (p != null && p.end > t) add(MenuOption("Enregistrer tous les épisodes", Icons.Default.FiberManualRecord) {
@@ -636,6 +653,7 @@ private fun GuideRow(
     focusedTime: Long?,
     catchup: Boolean,
     reminders: Set<String>,
+    recorded: List<RecordingEntity>,
     onProgramClick: (ProgramEntity?) -> Unit,
     onChannelClick: () -> Unit,
     /** Tactile : appui long = menu du programme (rappel, enregistrement…), comme la touche Menu. */
@@ -705,6 +723,7 @@ private fun GuideRow(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (past && catchup) Icon(Icons.Default.History, null, Modifier.size(13.dp).padding(end = 3.dp), tint = if (focused) SokoulColors.OnLight else SokoulColors.TextMuted)
                             if ("${channel.id}|${p.start}" in reminders) Icon(Icons.Default.NotificationsActive, null, Modifier.size(13.dp).padding(end = 3.dp), tint = SokoulColors.Warning)
+                            if (recordingFor(p, recorded) != null) Icon(Icons.Default.FiberManualRecord, "Enregistré", Modifier.size(13.dp).padding(end = 3.dp), tint = SokoulColors.Live)
                             Text(
                                 p.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis, color = fg,
@@ -730,6 +749,8 @@ private fun GuideRow(
 }
 
 /** Toucher sans rendre l'élément focalisable : la grille gère elle-même la télécommande. */
+private fun recordingFor(p: ProgramEntity, recorded: List<RecordingEntity>) = RecordingRules.recordingCovering(p.start, p.end, recorded)
+
 private fun Modifier.tap(onLongPress: (() -> Unit)? = null, onTap: () -> Unit): Modifier = pointerInput(onTap, onLongPress) {
     detectTapGestures(onLongPress = onLongPress?.let { long -> { long() } }, onTap = { onTap() })
 }
