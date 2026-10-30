@@ -66,13 +66,23 @@ object ReleaseName {
 
     private val CAM = setOf("CAM", "CAMRIP", "HDCAM", "TS", "HDTS", "TELESYNC", "TC", "TELECINE", "SCR", "SCREENER", "DVDSCR", "HDTC")
 
+    /**
+     * Résolution écrite d'abord : « UHD.Bluray.1080p » est un 1080p (vu sur un fichier classé 4K à tort) ;
+     * « UHD », « 4K » et « FHD » ne décident que si aucune résolution n'est écrite.
+     */
     private fun quality(up: String, t: Set<String>): VideoQuality? = when {
-        t.any { it in setOf("2160P", "4K", "UHD", "2160") } || "3840X2160" in up -> VideoQuality.UHD_4K
-        t.any { it in setOf("1080P", "1080I", "1080", "FHD") } || "1920X1080" in up -> VideoQuality.FHD_1080
+        t.any { it in setOf("2160P", "2160") } || "3840X2160" in up -> VideoQuality.UHD_4K
+        t.any { it in setOf("1080P", "1080I", "1080") } || "1920X1080" in up -> VideoQuality.FHD_1080
         t.any { it in setOf("720P", "720") } || "1280X720" in up -> VideoQuality.HD_720
-        t.any { it in setOf("480P", "576P", "SD", "DVDRIP", "XVID") } -> VideoQuality.SD
+        t.any { it in setOf("480P", "576P") } -> VideoQuality.SD
+        t.any { it in setOf("4K", "UHD") } -> VideoQuality.UHD_4K
+        "FHD" in t -> VideoQuality.FHD_1080
+        t.any { it in setOf("SD", "DVDRIP", "XVID") } -> VideoQuality.SD
         else -> null
     }
+
+    /** Marques du français dans un nom (jetons entiers : « FREE » ou « FRANCE » n'en sont pas). */
+    private val FRENCH_TAGS = setOf("FRENCH", "TRUEFRENCH", "VFF", "VFQ", "VFI", "VF", "VF2", "VFB", "FR", "FRE", "FRA")
 
     private fun hdr(up: String, t: Set<String>): HdrFormat? = when {
         t.any { it in setOf("DV", "DOVI", "DOLBYVISION") } || "DOLBY VISION" in up || "DOLBY.VISION" in up -> HdrFormat.DOLBY_VISION
@@ -90,11 +100,13 @@ object ReleaseName {
     }
 
     private fun language(all: String, up: String, t: Set<String>, others: List<String>): AudioLanguage? {
-        val french = t.any { it in setOf("FRENCH", "TRUEFRENCH", "VFF", "VFQ", "VFI", "VF", "VF2", "VFB", "FR") } || "🇫🇷" in all
-        val multi = "MULTI" in t || "MULTI AUDIO" in up || Regex("(?i)\\bdual\\b").containsMatchIn(all)
+        val french = t.any { it in FRENCH_TAGS } || "🇫🇷" in all
+        val multi = "MULTI" in t || "MULTI AUDIO" in up
+        // « DUAL » = langue locale + anglais (groupes turcs, latino-américains…) : MULTI seulement avec le français
+        val dual = Regex("(?i)\\bdual\\b").containsMatchIn(all)
         return when {
             t.any { it in setOf("VOSTFR", "SUBFRENCH", "STFR") } -> AudioLanguage.VOSTFR
-            multi && french -> AudioLanguage.MULTI
+            (multi || dual) && french -> AudioLanguage.MULTI
             // « FRENCH.ENG » : deux pistes, dont le français
             french && others.any { it != "FR" } -> AudioLanguage.MULTI
             french -> AudioLanguage.VF
@@ -123,7 +135,7 @@ object ReleaseName {
 
     /** Langues du fichier : le français d'abord s'il est annoncé, puis les autres. */
     private fun audioCodes(all: String, t: Set<String>): List<String> {
-        val french = t.any { it in setOf("FRENCH", "TRUEFRENCH", "VFF", "VFQ", "VFI", "VF", "VF2", "VFB", "FR") } || "🇫🇷" in all
+        val french = t.any { it in FRENCH_TAGS } || "🇫🇷" in all
         return (if (french) listOf("FR") else emptyList()) + audio(all)
     }
 

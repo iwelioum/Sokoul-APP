@@ -13,6 +13,7 @@ import com.sokoul.desktop.data.Movie
 import com.sokoul.desktop.data.Playlist
 import com.sokoul.desktop.data.Resume
 import com.sokoul.desktop.data.Settings
+import com.sokoul.desktop.player.AudioChoice
 import com.sokoul.desktop.player.DesktopPlayer
 import com.sokoul.desktop.player.StreamRequest
 import com.sokoul.iptv.data.PinHasher
@@ -23,7 +24,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Onglets de la barre du haut. */
 enum class Screen(val label: String) {
@@ -180,22 +183,52 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
                 val info = catalog.details(t.kind, t.tmdbId)
                 val r = debrid.find(t.query, info)
                 if (r.streams.isEmpty()) { update { it.copy(step = null, error = r.problem ?: "Aucune version trouvée") }; return@launch }
-                // chaque version pas prête est ajoutée au compte Real-Debrid par l'extension : trois essais au plus
-                r.streams.take(3)
+                r.streams
             }
             var lastError: String? = null
-            for ((i, s) in candidates.withIndex()) {
+            // chaque version pas prête est ajoutée au compte Real-Debrid par l'extension : trois essais au plus, pris
+            // dans toute la liste (les trois premières peuvent toutes être en préparation)
+            var tries = 0
+            // version lancée faute de mieux (annoncée française, sans piste française) : gardée si rien d'autre ne passe
+            var fallback: DebridStream? = null
+            for (s in candidates) {
+                if (tries >= MAX_TRIES) break
                 // après une version pas prête, on n'essaie plus que celles annoncées prêtes par l'extension
-                if (i > 0 && lastError == DesktopDebrid.NotReady().message && s.release.cached != true) continue
-                update { it.copy(stream = s, step = if (i == 0) "Préparation de la lecture…" else "Version suivante…") }
+                if (tries > 0 && lastError == DesktopDebrid.NotReady().message && s.release.cached != true) continue
+                update { it.copy(stream = s, step = if (tries == 0) "Préparation de la lecture…" else if (fallback != null) "Pas de français dans cette version, version suivante…" else "Version suivante…") }
+                tries++
                 val url = debrid.resolve(s).getOrElse { lastError = it.message; null } ?: continue
                 val start = withContext(Dispatchers.IO) { db.resume(t.resumeKey) }?.takeIf { !it.finished && it.positionMs > 30_000 }?.positionMs ?: 0
-                update { it.copy(step = null) }
                 player?.play(StreamRequest(url, null, null, t.title, live = false, startMs = start))
+                // « MULTI » ou « VF » dans le nom ne garantit pas le français (MULTI de groupes étrangers) : pistes
+                // vérifiées à l'ouverture, version suivante s'il n'y en a pas (sauf version choisie à la main)
+                if (chosen == null && tries < MAX_TRIES && s.release.language in FRENCH_EXPECTED) {
+                    // les pistes arrivent une à une : la liste est relue un peu après la première
+                    val tracks = withTimeoutOrNull(TRACKS_WAIT_MS) { player?.status?.first { it.audio.isNotEmpty() || it.error != null } }
+                        ?.let { kotlinx.coroutines.delay(TRACKS_SETTLE_MS); player?.status?.value?.audio }
+                    if (!tracks.isNullOrEmpty() && !AudioChoice.hasFrench(tracks)) {
+                        fallback = s
+                        lastError = "Pas de piste française"
+                        continue
+                    }
+                }
+                update { it.copy(stream = s, step = null) }
                 return@launch
             }
-            update { it.copy(step = null, error = lastError ?: "Lecture impossible") }
+            // aucune autre version ne passe : la version sans français continue (lue en anglais si possible)
+            if (fallback != null) update { it.copy(stream = fallback, step = null) }
+            else update { it.copy(step = null, error = lastError ?: "Lecture impossible") }
         }
+    }
+
+    private companion object {
+        /** Versions essayées au plus pour une lecture (une version pas prête est ajoutée au compte à chaque essai). */
+        const val MAX_TRIES = 3
+        /** Attente des pistes du fichier avant de vérifier le français. */
+        const val TRACKS_WAIT_MS = 20_000L
+        const val TRACKS_SETTLE_MS = 1_500L
+        /** Versions annoncées avec une piste française. */
+        val FRENCH_EXPECTED = setOf(com.sokoul.iptv.domain.AudioLanguage.MULTI, com.sokoul.iptv.domain.AudioLanguage.VF)
     }
 
     private fun update(block: (NowPlaying.Title) -> NowPlaying.Title) {

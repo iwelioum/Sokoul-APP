@@ -28,6 +28,13 @@ La définition SHALL venir de la résolution écrite dans le nom (2160p, 1080p, 
 - **WHEN** le nom contient « UHD » sans résolution écrite
 - **THEN** la définition lue est 4K
 
+### Requirement: Pistes vérifiées à l'ouverture (PC)
+Sur PC, une version lancée automatiquement et annoncée MULTI ou VF SHALL être remplacée par la suivante si son fichier ne contient aucune piste française. Le nombre d'essais reste limité à 3. La version reste lue si aucune autre ne passe, et une version choisie à la main MUST NOT être remplacée.
+
+#### Scenario: MULTI sans français
+- **WHEN** la version lancée a pour pistes English, Spanish, Italian, Ukrainian…, sans français
+- **THEN** la version suivante est lancée, et la lecture démarre sur une piste française (essai réel : « VFF AC3 5.1 - [French] »)
+
 ### Requirement: Codes FRE et FRA
 Les jetons « FRE » et « FRA » SHALL compter comme une marque de français.
 

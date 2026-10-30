@@ -152,6 +152,10 @@ class DesktopTest {
         assertEquals(3, pick(listOf(1 to "Piste 1 - [English]", 3 to "TrueFrench AC3 - [Français]")))
         assertEquals(5, pick(listOf(4 to "Track 1 - [eng]", 5 to "VFF 5.1")))
         assertEquals(null, pick(listOf(1 to "Piste 1 - [Japanese]", 2 to "Piste 2 - [German]")))
+        // « MULTI » d'un groupe étranger (pistes réelles) : pas de français, la version suivante est essayée
+        val btm = listOf(1 to "BTM DDP5.1 - [English]", 2 to "BTM DD 5.1 - [Spanish]", 6 to "BTM DD 5.1 - [Italian]", 11 to "BTM DD 5.1 - [Ukrainian]")
+        assertTrue(!com.sokoul.desktop.player.AudioChoice.hasFrench(btm))
+        assertTrue(com.sokoul.desktop.player.AudioChoice.hasFrench(btm + (12 to "VFF AC3 5.1 - [Français]")))
     }
 
     @Test fun `recherche au programme - pas fini, chaine visible, sans casse`() {
