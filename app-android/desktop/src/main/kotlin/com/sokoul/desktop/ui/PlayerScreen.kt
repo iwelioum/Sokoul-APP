@@ -125,9 +125,11 @@ fun PlayerScreen(app: AppState) {
     var lastMove by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var visible by remember { mutableStateOf(true) }
     var menu by remember { mutableStateOf<String?>(null) }
+    // essais : SOKOUL_CONTROLS=1 garde la barre affichée (capture sans souris)
+    val keep = remember { System.getenv("SOKOUL_CONTROLS") == "1" }
     LaunchedEffect(lastMove, st.paused, menu, st.playing) {
         visible = true
-        if (!st.paused && menu == null && st.playing) { delay(3_000); visible = false }
+        if (!keep && !st.paused && menu == null && st.playing) { delay(3_000); visible = false }
     }
     LaunchedEffect(now) { while (true) { delay(10_000); app.saveProgress() } }
 

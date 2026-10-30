@@ -48,6 +48,7 @@ import com.sokoul.iptv.data.net.TmdbEpisode
 import com.sokoul.iptv.data.net.TmdbInfo
 import com.sokoul.iptv.data.net.TmdbItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -61,6 +62,7 @@ fun DetailScreen(app: AppState, kind: String, id: Int) {
     val list = rememberLazyListState()
     val veil by remember { derivedStateOf { if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / 500f).coerceIn(0f, 1f) } }
     LaunchedEffect(Unit) { snapshotFlow { veil > 0.6f }.collect { app.navSolid = it } }
+    LaunchedEffect(Unit) { com.sokoul.desktop.TrialRoute.scrollItem?.let { delay(4_000); list.scrollToItem(it) } }
     val tv = kind == "tv"
     var season by remember(id) { mutableStateOf(1) }
     val episodes by produceState(emptyList<TmdbEpisode>(), id, season, info) {
@@ -205,10 +207,39 @@ fun SourcesDialog(app: AppState, t: NowPlaying.Title) {
     val result by produceState<com.sokoul.desktop.data.DebridResult?>(null, t.query) {
         value = withContext(Dispatchers.Default) { app.debrid.find(t.query, app.catalog.details(t.kind, t.tmdbId)) }
     }
+    // versions de l'abonnement IPTV (films) : même œuvre par identifiant TMDB, ou titre normalisé et année à ±1 an
+    val iptv by produceState(emptyList<com.sokoul.desktop.data.Movie>(), t.tmdbId, app.playlist) {
+        val p = app.playlist ?: return@produceState
+        if (t.kind != "movie") return@produceState
+        val year = t.subtitle?.toIntOrNull()
+        val norm = com.sokoul.iptv.data.repo.VodGrouping.normalizeTitle(t.title, year)
+        value = withContext(Dispatchers.IO) {
+            app.db.movies(p.id, t.title.take(40), 80).filter { m ->
+                m.tmdbId?.trim()?.trimStart('0') == t.tmdbId.toString() ||
+                    com.sokoul.iptv.data.repo.VodGrouping.normalizeTitle(m.name, m.year) == norm && (year == null || m.year == null || kotlin.math.abs(m.year - year) <= 1)
+            }
+        }
+    }
     SokoulDialog({ app.sources = null }, width = 820.dp) {
-        Kicker("Real-Debrid")
+        Kicker("Sources")
         Text(t.title, Modifier.padding(top = 6.dp), style = Type.Section)
         t.subtitle?.let { Text(it, style = Type.Small) }
+        if (iptv.isNotEmpty()) {
+            Text("ABONNEMENT IPTV", Modifier.padding(top = 18.dp, bottom = 6.dp), style = Type.Overline)
+            iptv.take(4).forEach { m ->
+                val h = rememberHover()
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 6.dp).background(if (h.active) SokoulColors.SurfaceHigher else SokoulColors.Surface, Radius.Card)
+                        .interactive(h) { app.sources = null; app.playMovie(m) }.padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Badge("IPTV", SokoulColors.AccentSoft)
+                    Text(m.name, Modifier.weight(1f).padding(horizontal = 12.dp), style = Type.Small.copy(color = SokoulColors.TextPrimary), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    androidx.compose.material3.Icon(Icons.Filled.PlayArrow, "Lire", tint = SokoulColors.TextMuted)
+                }
+            }
+            Text("REAL-DEBRID", Modifier.padding(top = 10.dp), style = Type.Overline)
+        }
         val r = result
         Box(Modifier.fillMaxWidth().padding(top = 18.dp).height(520.dp)) {
             when {

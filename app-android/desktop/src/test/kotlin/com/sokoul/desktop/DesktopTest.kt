@@ -137,13 +137,49 @@ class DesktopTest {
         assertFalse(LiveLogic.guideStart(now) > now)
     }
 
-    @Test fun `configuration fournisseur est masquee et surchargeable`() {
-        assertTrue(ProviderConfig.statuses(db).any { it.id == "tmdb" })
-        db.putSetting("api_key_tmdb", "cle-test-locale")
-        val tmdb = ProviderConfig.statuses(db).first { it.id == "tmdb" }
-        assertTrue(tmdb.configured)
-        assertEquals("clé desktop", tmdb.source)
-        assertEquals("cle-test-locale", ProviderConfig.key(db, "tmdb"))
+    @Test fun `cle saisie l'emporte sur la cle integree, jamais affichee en entier`() {
+        val before = ProviderConfig.builtIn
+        ProviderConfig.builtIn = { mapOf("tmdb" to "integree-1234") }
+        try {
+            assertEquals("integree-1234", ProviderConfig.key(db, "tmdb"))
+            assertEquals("Clé intégrée", ProviderConfig.statuses(db).first { it.id == "tmdb" }.source)
+            ProviderConfig.setKey(db, "tmdb", " cle-test-locale ")
+            val tmdb = ProviderConfig.statuses(db).first { it.id == "tmdb" }
+            assertEquals("Clé saisie", tmdb.source)
+            assertEquals("•••• cale", tmdb.hint)
+            assertEquals("cle-test-locale", ProviderConfig.key(db, "tmdb"))
+            ProviderConfig.setKey(db, "tmdb", "")
+            assertEquals("integree-1234", ProviderConfig.key(db, "tmdb"))
+            assertFalse(ProviderConfig.statuses(db).first { it.id == "omdb" }.configured)
+        } finally { ProviderConfig.builtIn = before }
+    }
+
+    @Test fun `reprise enregistree, une seule ligne par serie, terminee exclue`() {
+        fun r(key: String, kind: String, id: Int, s: Int?, e: Int?, pos: Long, at: Long, done: Boolean = false) =
+            com.sokoul.desktop.data.Resume(key, kind, id, s, e, "T$id", null, null, pos, 3_600_000, at, done)
+        db.saveResume(r("movie:1", "movie", 1, null, null, 600_000, 10))
+        db.saveResume(r("tv:2:1:1", "tv", 2, 1, 1, 900_000, 20))
+        db.saveResume(r("tv:2:1:2", "tv", 2, 1, 2, 300_000, 30))
+        db.saveResume(r("movie:3", "movie", 3, null, null, 3_500_000, 40, done = true))
+        val list = db.resumeList()
+        assertEquals(listOf("tv:2:1:2", "movie:1"), list.map { it.key })
+        assertEquals("tv:2:1:2", com.sokoul.desktop.data.Resume.key("tv", 2, 1, 2))
+        assertEquals("movie:5", com.sokoul.desktop.data.Resume.key("movie", 5, null, null))
+        assertEquals(600_000L, db.resume("movie:1")?.positionMs)
+    }
+
+    @Test fun `classement PC - langue, SDR avant HDR, taille lisible, echantillons ecartes`() {
+        var n = 0
+        fun s(name: String, gb: Double) = com.sokoul.iptv.data.debrid.DebridStreams.parse(
+            """{"streams":[{"name":"Torrentio","title":"$name\n💾 $gb GB","url":"https://t.example/resolve/realdebrid/x/${"a".repeat(39)}${n++}/1/f.mkv"}]}""",
+        ).single()
+        val vostfr4k = s("Film.2021.VOSTFR.2160p.WEB-DL.x265", 15.0)
+        val multiHdr = s("Film.2021.MULTi.2160p.UHD.BluRay.HDR10.x265", 20.0)
+        val multiSdr = s("Film.2021.MULTi.1080p.BluRay.x264", 10.0)
+        val tooBig = s("Film.2021.MULTi.1080p.BluRay.REMUX.AVC", 40.0)
+        val sample = s("Film.2021.MULTi.1080p.WEB.sample", 0.02)
+        val ranked = com.sokoul.desktop.data.DesktopRanker.rank(listOf(vostfr4k, multiHdr, tooBig, multiSdr, sample), maxBytes = 25_000_000_000L)
+        assertEquals(listOf(multiSdr.key, multiHdr.key, vostfr4k.key, tooBig.key), ranked.map { it.key })
     }
 
     @Test fun `catalogue vod est isole par playlist et filtrable`() {

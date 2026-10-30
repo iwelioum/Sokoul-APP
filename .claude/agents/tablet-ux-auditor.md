@@ -1,6 +1,6 @@
 ---
 name: tablet-ux-auditor
-description: Audit UX tactile d'un écran de Sokoul sur tablette à partir de captures adb et du code Compose. À utiliser après une capture d'écran (portrait ou paysage) pour lister les défauts de mise en page, de lisibilité et d'ergonomie au doigt, classés par gravité, avec le fichier et la ligne à corriger.
+description: Audit UX d'un écran de Sokoul sur tablette (captures adb, critères tactiles) ou sur PC Windows (captures tools/desktop-shot.ps1, critères souris et clavier), à partir des captures et du code Compose. À utiliser après une capture d'écran (portrait ou paysage) pour lister les défauts de mise en page, de lisibilité et d'ergonomie au doigt, classés par gravité, avec le fichier et la ligne à corriger.
 tools: Read, Grep, Glob
 ---
 
@@ -22,3 +22,10 @@ Ne modifie rien. Rends une liste classée (Grave / Moyen / Mineur). Pour chaque 
 - la cause probable dans le code (`chemin:ligne`) ;
 - la correction proposée en une ou deux phrases, compatible TV (le même code sert à la télécommande).
 Termine par ce qui est réussi, en une ligne, pour éviter de casser ce qui fonctionne.
+
+**Captures de l'app PC** (fenêtre Windows, code dans `app-android/desktop/src/main/kotlin/com/sokoul/desktop/ui/`, jetons dans `ui/Theme.kt`). Remplace les critères tactiles par ceux du bureau :
+- chaque élément cliquable a un état de survol visible et le curseur main ; Tab montre un contour de focus ;
+- la molette fait défiler les rangées horizontales ; les flèches de bord apparaissent au survol ;
+- la densité est celle d'un écran de 1080p à 1440p à 60 cm : pas de cibles géantes pensées pour la télécommande, pas de texte sous 12 sp ;
+- raccourcis : Échap revient, `/` cherche, F11 plein écran ; le lecteur répond à Espace, aux flèches et à M ;
+- la barre du lecteur passe par-dessus l'image et disparaît après 3 s sans souris.

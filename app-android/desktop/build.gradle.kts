@@ -59,6 +59,9 @@ dependencies {
     implementation(libs.kxml2)
 
     testImplementation(libs.junit)
+    // tests d'interface sans fenêtre (runComposeUiTest) : navigation, Échap, recherche
+    @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+    testImplementation(compose.uiTest)
 }
 
 compose.desktop {

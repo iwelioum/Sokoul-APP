@@ -12,6 +12,13 @@ $env:JAVA_HOME = 'C:\Program Files\Microsoft\jdk-17.0.21.21-hotspot'
 - Sorties dans `%LOCALAPPDATA%\SokoulBuild\…`. Ce dossier est partagé entre sessions : en cas d'erreur Hilt « Could not get element… », lancer `:app:clean`.
 - Pour essayer sur un appareil, utiliser le skill `sokoul-device-check` et le script `tools/adb-tablet.ps1`.
 
+## App PC (Windows)
+- `app-android/desktop` (Compose Desktop 1.7, vlcj + libVLC 3.0.21 fourni, SQLite) ; code partagé avec l'Android dans `app-android/core` (TMDB, Xtream, lecture des sources Real-Debrid, sauvegarde chiffrée).
+- Tests : `gradlew :core:test :desktop:test` ; essais réels et captures sans voler le focus : skill `sokoul-desktop-check` (`SOKOUL_ROUTE`, `tools/desktop-shot.ps1`) ; avis visuel : agent `desktop-designer`.
+- Installation : `gradlew :desktop:createDistributable` puis `tools/install-desktop.ps1` (raccourcis Bureau et menu Démarrer).
+- La vidéo est dessinée par Compose (`VideoFrame`) : on peut superposer la barre, mais sans conversion HDR (versions SDR d'abord).
+- Clés API intégrées au build (`build/generated/keys/DesktopKeys.kt`, jamais commité), remplaçables dans Réglages.
+
 ## Organisation
 - Code : `app-android/app/src/main/java/com/sokoul/iptv/`. Tests JVM : `app-android/app/src/test/`.
 - `ui/theme/Layout.kt` définit les classes d'écran : COMPACT (< 600 dp), MEDIUM (tablette portrait), EXPANDED (tablette paysage), TV. `isTouch` vaut `window != TV`.
@@ -26,3 +33,6 @@ $env:JAVA_HOME = 'C:\Program Files\Microsoft\jdk-17.0.21.21-hotspot'
 - **Secrets** : jamais de clé API dans le dépôt (`app-android/local.properties` est ignoré par Git).
 - **Essais sur appareil** : les supprimer à la fin (enregistrements, règles, rotation, luminosité). Les données existantes de l'utilisateur ne se nettoient qu'avec son accord.
 - **Avant un commit** : faire relire le diff par l'agent `android-reviewer`.
+- **Encodage** : ne jamais réécrire un fichier source avec `Get-Content`/`Set-Content` (PowerShell 5.1 casse les accents) ; utiliser Edit ou `[IO.File]` en UTF-8. Scripts `.ps1` enregistrés avec BOM.
+- **Fiche film/série** : toujours en plein cadre, jamais découpée en colonnes (Android et PC).
+- **Tout développement** passe par une proposition OpenSpec validée par l'utilisateur.

@@ -10,6 +10,8 @@ import kotlinx.coroutines.delay
 object TrialRoute {
     /** Texte de recherche imposé (lu par l'écran Recherche au premier affichage). */
     @Volatile var searchQuery: String? = null
+    /** Fiche défilée jusqu'à cette section (`detail:tv:1396:1` → saisons). */
+    @Volatile var scrollItem: Int? = null
 
     suspend fun apply(app: AppState, route: String) {
         val p = route.split(':')
@@ -23,7 +25,7 @@ object TrialRoute {
             "guide" -> app.go(Screen.GUIDE)
             "settings" -> app.go(Screen.SETTINGS)
             "search" -> { searchQuery = p.getOrNull(1); app.go(Screen.SEARCH) }
-            "detail" -> app.openDetail(p[1], p[2].toInt())
+            "detail" -> { scrollItem = p.getOrNull(3)?.toIntOrNull(); app.openDetail(p[1], p[2].toInt()) }
             "sources" -> {
                 app.openDetail(p[1], p[2].toInt())
                 delay(1500)
