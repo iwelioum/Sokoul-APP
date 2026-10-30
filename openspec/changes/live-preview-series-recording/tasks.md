@@ -17,12 +17,12 @@
 
 ## 3. Interface des règles
 
-- [ ] 3.1 Ajouter « Enregistrer tous les épisodes » au menu d'un programme du guide et du direct, avec message si la règle existe déjà ; vérifier sur le Fire TV qu'une règle crée les enregistrements attendus dans l'écran Enregistrements — *code fait, essai sur appareil à faire*
-- [ ] 3.2 Lister les règles dans Enregistrements (titre, chaîne, prochaine diffusion, diffusions ignorées) avec « Supprimer la règle », qui annule les programmations à venir et garde les enregistrements faits ; vérifier par un test du planificateur et une capture adb — *test du planificateur fait, capture à faire*
+- [x] 3.1 Ajouter « Enregistrer tous les épisodes » au menu d'un programme du guide et du direct, avec message si la règle existe déjà ; vérifier sur le Fire TV qu'une règle crée les enregistrements attendus dans l'écran Enregistrements — *vérifié sur la tablette le 30/10 (Télématin, N'oubliez pas les paroles) ; Fire TV à refaire avec l'aperçu*
+- [x] 3.2 Lister les règles dans Enregistrements (titre, chaîne, prochaine diffusion, diffusions ignorées) avec « Supprimer la règle », qui annule les programmations à venir et garde les enregistrements faits ; vérifier par un test du planificateur et une capture adb — *capture tablette : « 1 diffusion ignorée (conflit) », suppression → programmation annulée, enregistrement en cours conservé*
 
 ## 4. Vérification d'ensemble
 
-- [ ] 4.1 `gradlew testDebugUnitTest assembleDebug` au vert, installation sur le Fire TV et la tablette, essai complet : aperçu, plein écran, Accueil, règle créée depuis le guide, rafraîchissement du guide sans doublon — *compilation et 411 tests au vert ; appareils injoignables le 30/10*
+- [ ] 4.1 `gradlew testDebugUnitTest assembleDebug` au vert, installation sur le Fire TV et la tablette, essai complet : aperçu, plein écran, Accueil, règle créée depuis le guide, rafraîchissement du guide sans doublon — *compilation et 411 tests au vert ; tablette OK le 30/10 (migration 8 → 10 sur la vraie base, règles, rafraîchissement du guide sans doublon) ; reste le Fire TV : aperçu, plein écran, Accueil*
 
 ## Notes de mise en œuvre
 
@@ -34,6 +34,8 @@
 - Le schéma v9 a pu être installé par cette autre session. Il n'est donc pas modifié : la colonne `skipped` arrive par une migration 9 → 10.
 - `skipped` compte les diffusions refusées au dernier passage : un conflit levé disparaît au passage suivant.
 - Une diffusion annulée à la main après la création de la règle n'est pas reprogrammée.
+- Une diffusion déjà commencée est enregistrée tout de suite à la création de la règle.
+- Limite constatée sur la tablette : deux diffusions consécutives sur la même chaîne (« N'oubliez pas les paroles » 18:35 et 19:10) se chevauchent à cause des marges, donc la seconde est ignorée pour conflit.
 
 ## Workflow follow-up
 
