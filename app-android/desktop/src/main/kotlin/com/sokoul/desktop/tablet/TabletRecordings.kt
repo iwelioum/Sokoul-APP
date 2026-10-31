@@ -70,7 +70,6 @@ fun TabletRecordings(app: AppState) {
     val version by app.recorder.version.collectAsState()
     val recordings = remember(version, app.dataVersion, app.playlist?.id) { app.playlist?.let { app.db.recordings(it.id) }.orEmpty() }
     var menu by remember { mutableStateOf<Recording?>(null) }
-    val now = rememberNow(10_000)
     if (recordings.isEmpty()) {
         EmptyState(
             Icons.Default.FiberManualRecord, "Aucun enregistrement",
@@ -78,6 +77,8 @@ fun TabletRecordings(app: AppState) {
         )
         return
     }
+    // horloge seulement quand il y a des cartes à mettre à jour (page vide : aucune boucle)
+    val now = rememberNow(10_000)
     val sections = remember(recordings) { PcRecordingRules.sections(recordings) }
     val free = remember(recordings.size) { app.recorder.dir.usableSpace }
     val used = recordings.sumOf { it.bytes }

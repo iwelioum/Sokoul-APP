@@ -145,7 +145,8 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         saveProgress(); playJob?.cancel(); previewing = null
         playing = NowPlaying.Recorded(r)
         val start = if (live) (System.currentTimeMillis() - r.startAt - 8_000).coerceAtLeast(0) else 0
-        player?.play(StreamRequest(java.io.File(path).toURI().toString(), null, null, r.title, live = false, startMs = start))
+        // chemin Windows tel quel : File.toURI donne « file:/C:/… », que libVLC refuse
+        player?.play(StreamRequest(java.io.File(path).absolutePath, null, null, r.title, live = false, startMs = start))
     }
 
     init {

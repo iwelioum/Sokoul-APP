@@ -119,7 +119,9 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
     val l = LocalLayout.current
     val density = LocalDensity.current
     val tv = kind == "tv"
-    val info by produceState<TmdbInfo?>(null, kind, id) { value = app.catalog.details(kind, id) }
+    // fiche introuvable (pas de clé TMDB, réseau coupé) : un message au lieu d'un chargement sans fin
+    var missing by remember(kind, id) { androidx.compose.runtime.mutableStateOf(false) }
+    val info by produceState<TmdbInfo?>(null, kind, id) { value = app.catalog.details(kind, id); missing = value == null }
     val similar by produceState(emptyList<TmdbItem>(), kind, id) { value = app.catalog.similar(kind, id) }
     val ratings by produceState(emptyList<Pair<String, String>>(), info?.imdbId) { value = data.externalRatings(info?.imdbId) }
     var season by remember(id) { mutableIntStateOf(1) }
@@ -150,7 +152,8 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
     val heroPx = with(density) { heroHeight.toPx() }
     val depth by remember { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else (listState.firstVisibleItemScrollOffset / (heroPx * 0.5f)).coerceIn(0f, 1f) } }
     val kb = remember(info?.backdrop) { Animatable(1f) }
-    LaunchedEffect(kb, depth > 0f) { if (depth == 0f && kb.value < KB_MAX) kb.animateTo(KB_MAX, tween(((KB_MAX - kb.value) / (KB_MAX - 1f) * KB_MS).toInt().coerceAtLeast(1), easing = LinearEasing)) }
+    // Ken Burns seulement sur une vraie image de fond (sans image : rien à animer)
+    LaunchedEffect(kb, depth > 0f) { if (info?.backdrop != null && depth == 0f && kb.value < KB_MAX) kb.animateTo(KB_MAX, tween(((KB_MAX - kb.value) / (KB_MAX - 1f) * KB_MS).toInt().coerceAtLeast(1), easing = LinearEasing)) }
 
     fun title(s: Int? = null, e: Int? = null, ep: TmdbEpisode? = null) = NowPlaying.Title(
         kind, id, info?.title ?: "", if (s != null) "S$s · É$e${ep?.name?.let { " · $it" }.orEmpty()}" else info?.year?.toString(), ep?.still ?: info?.backdrop, s, e,
@@ -163,7 +166,10 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
                 Box(Modifier.fillMaxWidth().height(heroHeight)) {
                     val i = info
                     Column(Modifier.align(Alignment.BottomStart).padding(start = l.margin, end = l.margin, bottom = 36.dp)) {
-                        if (i == null) {
+                        if (i == null && missing) {
+                            Text("Fiche indisponible", style = MaterialTheme.typography.headlineSmall, color = SokoulColors.TextPrimary)
+                            Text("Vérifiez la clé TMDB dans Réglages › Sources de données, ou la connexion internet du PC.", Modifier.padding(top = 8.dp), color = SokoulColors.TextSecondary)
+                        } else if (i == null) {
                             Box(Modifier.size(420.dp, 110.dp).shimmer()); Spacer(Modifier.height(16.dp)); Box(Modifier.size(520.dp, 70.dp).shimmer())
                         } else HeroBlock(
                             app, i, kind, ratings, versions, resume, next, inList,
@@ -185,8 +191,8 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
                             else -> "$count sources trouvées : RD $count · cliquez pour lire"
                         },
                     )
-                    if (v == null) Row(Modifier.padding(start = l.margin, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { repeat(4) { Box(Modifier.size(244.dp, 118.dp).shimmer()) } }
-                    else if (v.isNotEmpty()) VersionsShelf(v, onSources = { sourcesOf = it }) { g ->
+                    if (v == null && !missing) Row(Modifier.padding(start = l.margin, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { repeat(4) { Box(Modifier.size(244.dp, 118.dp).shimmer()) } }
+                    else if (!v.isNullOrEmpty()) VersionsShelf(v, onSources = { sourcesOf = it }) { g ->
                         app.playTitle(if (tv) title(next?.first ?: 1, next?.second ?: 1) else title(), g.best)
                     }
                 }

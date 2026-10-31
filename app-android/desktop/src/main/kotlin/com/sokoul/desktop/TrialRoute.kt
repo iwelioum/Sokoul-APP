@@ -81,7 +81,13 @@ object TrialRoute {
                 }
             }
             "guide" -> app.go(Screen.GUIDE)
-            "enreg" -> app.go(Screen.RECORDINGS)
+            "enreg" -> {
+                app.go(Screen.RECORDINGS)
+                // enreg:play → lit le dernier enregistrement terminé (fichier local, aucune connexion IPTV)
+                if (p.getOrNull(1) == "play") app.playlist?.let { pl ->
+                    app.db.recordings(pl.id).lastOrNull { it.status == com.sokoul.desktop.data.RecordingStatus.COMPLETED }?.let { app.playRecording(it) }
+                }
+            }
             // settings:debrid → rubrique ouverte (nom de l'enum SettingsCategory)
             "settings" -> { settingsPane = p.getOrNull(1)?.uppercase(); app.go(Screen.SETTINGS) }
             "search" -> { searchQuery = p.getOrNull(1); app.go(Screen.SEARCH) }

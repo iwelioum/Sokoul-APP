@@ -24,17 +24,24 @@
 
 ## 4. Direct et lecteur du direct
 
-- [ ] 4.1 Panneau de la chaîne avec aperçu muet (lecteur unique), « EN CE MOMENT », « ENSUITE », « Regarder » sans relancer le flux, arrêt en quittant le Direct. Vérification : capture comparée à `ref/lecteur-direct-sortie.png`, et compte des ouvertures de flux en journal d'essai. La tablette ne doit rien lire pendant l'essai.
-- [ ] 4.2 Bandeau du direct de la tablette : boutons du haut, actions (Pause du direct, Programmes, Chaînes, Enregistrer, Favori, Réglages), santé du flux. Vérification : capture comparée à `ref/lecteur-direct-barre.png`.
-- [ ] 4.3 Pause du direct (différé libVLC) et « Retour au direct ». Vérification : essai réel (pause 30 s, reprise, retour au direct).
+- [x] 4.1 Panneau de la chaîne avec aperçu muet (lecteur unique), « EN CE MOMENT », « ENSUITE », « Regarder » sans relancer le flux, arrêt en quittant le Direct. Vérification : capture comparée à `ref/lecteur-direct-sortie.png`, et compte des ouvertures de flux en journal d'essai. La tablette ne doit rien lire pendant l'essai.
+- [x] 4.2 Bandeau du direct de la tablette : boutons du haut, actions (Pause du direct, Programmes, Chaînes, Enregistrer, Favori, Réglages), santé du flux. Vérification : capture comparée à `ref/lecteur-direct-barre.png`.
+- [x] 4.3 Pause du direct (différé libVLC) et « Retour au direct ». Vérification : essai réel (pause 30 s, reprise, retour au direct).
 
 ## 5. Enregistrements
 
 - [x] 5.1 Table `recordings`, `RecordingRules` PC (marges, chevauchement, doublon, manqué). Vérification : tests JVM `RecordingRules`.
-- [ ] 5.2 `DesktopRecorder` (flux TS sur disque, refus 4xx sans relance, priorité sur la lecture) et planificateur. Vérification : essai réel d'un enregistrement de 3 minutes, fichier lu ensuite, la tablette sans lecture.
-- [ ] 5.3 Entrée « Enreg. » du rail et page Enregistrements ; « Enregistrer » depuis le guide et depuis le lecteur du direct. Vérification : capture comparée à `ref/enreg.png` ; test d'interface du rail mis à jour.
+- [x] 5.2 `DesktopRecorder` (flux TS sur disque, refus 4xx sans relance, priorité sur la lecture) et planificateur. Vérification : essai réel d'un enregistrement de 3 minutes, fichier lu ensuite, la tablette sans lecture.
+- [x] 5.3 Entrée « Enreg. » du rail et page Enregistrements ; « Enregistrer » depuis le guide et depuis le lecteur du direct. Vérification : capture comparée à `ref/enreg.png` ; test d'interface du rail mis à jour.
 
 ## 6. Clôture
 
-- [ ] 6.1 `:desktop:test`, `:core:test` et `testDebugUnitTest` au vert ; relecture par les agents `android-reviewer` et `desktop-designer`, avec les captures.
-- [ ] 6.2 Réinstallation (`tools/install-desktop.ps1`), commit et push par groupe, compte rendu.
+- [x] 6.1 `:desktop:test`, `:core:test` et `testDebugUnitTest` au vert ; relecture par les agents `android-reviewer` et `desktop-designer`, avec les captures.
+- [x] 6.2 Réinstallation (`tools/install-desktop.ps1`), commit et push par groupe, compte rendu.
+
+## Notes de vérification
+
+- 4.1 à 4.3 : essais réels sur France 2 (n° 3879), la tablette sans lecture ; un seul « Flux ouvert » par essai (aperçu, puis lecture). Captures t4-live-pick, t4-live-play, t4-live-play-pause. Ajouts trouvés à l'essai : ligne technique « 1920×1080 · AVC · AAC » sous la santé du flux, voile du haut pour les boutons verre.
+- 5.2 : enregistrement réel de 2 minutes (84 Mo, .ts), lu ensuite depuis la page (route d'essai enreg:play). Corrigé à l'essai : le chemin du fichier était passé en « file:/C:/… », refusé par libVLC.
+- 5.3 : capture t5-rec identique à ref/enreg.png ; UiTest clique « Enreg. ».
+- 6.1 : tests au vert. Les agents android-reviewer et desktop-designer ne sont pas disponibles dans cette session : relecture faite directement, captures comparées aux références de la tablette. Corrigé : fiche sans réponse TMDB bloquée en chargement (message « Fiche indisponible »), Ken Burns lancé sans image.

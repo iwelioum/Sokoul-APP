@@ -48,6 +48,11 @@ class UiTest {
         waitForIdle()
         assertEquals(Screen.LIVE, app.screen)
         onNodeWithText("Aucune playlist").assertExists()
+        // « Enreg. » au-dessus de Réglages, comme sur la tablette
+        onNodeWithText("Enreg.").performClick()
+        waitForIdle()
+        assertEquals(Screen.RECORDINGS, app.screen)
+        onNodeWithText("Aucun enregistrement").assertExists()
         assertTrue(app.back())
         waitForIdle()
         assertEquals(Screen.HOME, app.screen)

@@ -55,6 +55,15 @@ class DesktopTest {
         return """{"app":"SokoulTV","format":"encrypted","version":3,"iterations":${s.iterations},"salt":"${s.salt}","iv":"${s.iv}","data":"${s.data}"}"""
     }
 
+    @Test fun `codecs de libVLC en noms lisibles`() {
+        val label = com.sokoul.desktop.player.DesktopPlayer.Companion::codecLabel
+        assertEquals("AVC", label("h264"))
+        assertEquals("HEVC", label("hevc"))
+        assertEquals("AAC", label("mp4a"))
+        assertEquals("OPUS", label("opus"))
+        assertEquals(null, label(" "))
+    }
+
     @Test fun `sauvegarde chiffree de la tablette importee`() {
         val text = encrypt(backup(), "phrase-test")
         assertTrue(BackupReader.isEncrypted(text))

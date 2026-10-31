@@ -177,7 +177,8 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
             override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) = ifCurrent { _status.update { it.copy(timeMs = newTime) } }
             override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) = ifCurrent { _status.update { it.copy(lengthMs = newLength) } }
             override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: uk.co.caprica.vlcj.media.TrackType, id: Int) = ifCurrent { refreshTracks() }
-            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) = ifCurrent { refreshTracks() }
+            // définition et codecs connus seulement une fois l'image sortie : relus hors du fil des événements
+            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) = ifCurrent { mediaPlayer.submit { if (!released) refreshTracks() } }
             override fun error(mediaPlayer: MediaPlayer) = ifCurrent { reconnect("Le flux a été interrompu") }
             override fun finished(mediaPlayer: MediaPlayer) = ifCurrent {
                 if (current?.live == true) reconnect("Le flux s'est arrêté")
@@ -339,16 +340,20 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         }
         val subs = player.subpictures().trackDescriptions().map { it.id() to if (it.id() < 0) "Désactivés" else it.description() }
         val dim = player.video().videoDimension()
+        val info = player.media().info()
+        val vt = info?.videoTracks()?.firstOrNull()
         // pixels non carrés (SD anamorphosée) : rapport appliqué au dessin
-        player.media().info()?.videoTracks()?.firstOrNull()?.let { t ->
+        vt?.let { t ->
             val num = t.sampleAspectRatio(); val den = t.sampleAspectRatioBase()
             frame.pixelAspect = if (num > 0 && den > 0) num.toFloat() / den else 1f
         }
+        // « 1920×1080 · AVC · AAC » comme la ligne technique de la tablette
+        val size = dim?.takeIf { d -> d.width > 0 && d.height > 0 }?.let { d -> "${d.width}×${d.height}" }
+            ?: vt?.takeIf { it.width() > 0 && it.height() > 0 }?.let { "${it.width()}×${it.height()}" }
+        val video = listOfNotNull(size, vt?.codecName()?.let(::codecLabel), info?.audioTracks()?.firstOrNull()?.codecName()?.let(::codecLabel))
+            .joinToString(" · ").ifBlank { null }
         _status.update {
-            it.copy(
-                audio = audio, audioId = player.audio().track(), subtitles = subs, subtitleId = player.subpictures().track(),
-                video = dim?.takeIf { d -> d.width > 0 && d.height > 0 }?.let { d -> "${d.width}×${d.height}" },
-            )
+            it.copy(audio = audio, audioId = player.audio().track(), subtitles = subs, subtitleId = player.subpictures().track(), video = video)
         }
     }
 
@@ -364,6 +369,18 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 2_000L
         private const val MAX_WIDTH = 2560
+
+        /** Code quatre lettres de libVLC → nom lisible (h264 → AVC, mp4a → AAC). */
+        fun codecLabel(fourcc: String): String? = when (val c = fourcc.trim().lowercase()) {
+            "" -> null
+            "h264", "avc1" -> "AVC"
+            "hevc", "h265", "hev1", "hvc1" -> "HEVC"
+            "mp4a" -> "AAC"
+            "a52", "a52 " -> "AC3"
+            "mpga", "mp3" -> "MP3"
+            "mpgv", "mp2v" -> "MPEG-2"
+            else -> c.uppercase()
+        }
 
         /** Dossier de libVLC : ressources de l'app installée, ou `desktop/resources/windows/vlc` en développement. */
         fun vlcDir(): File? {

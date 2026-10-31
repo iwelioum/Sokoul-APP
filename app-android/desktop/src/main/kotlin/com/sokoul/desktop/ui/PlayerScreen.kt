@@ -197,6 +197,9 @@ fun PlayerScreen(app: AppState) {
                 when (now) {
                     is NowPlaying.Live -> {
                         val c = now.list[now.index]
+                        // voile du haut : les boutons verre restent lisibles sur une image claire
+                        Box(Modifier.align(Alignment.TopStart).fillMaxWidth().height(140.dp)
+                            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(SokoulColors.black(0.7f), Color.Transparent))))
                         // boutons du haut de la tablette : Retour, Chaînes, fenêtre réduite, menu
                         Row(Modifier.align(Alignment.TopStart).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(
@@ -229,7 +232,7 @@ fun PlayerScreen(app: AppState) {
                             is NowPlaying.Recorded -> now.rec.title
                             is NowPlaying.Live -> ""
                         }
-                        val badge = listOfNotNull(t?.stream?.release?.let { r -> listOfNotNull(r.language?.name, r.source?.label).joinToString(" · ").ifBlank { null } }, st.video)
+                        val badge = listOfNotNull(t?.stream?.release?.let { r -> listOfNotNull(r.language?.name, r.source?.label).joinToString(" · ").ifBlank { null } }, st.video?.substringBefore(" · ")?.takeIf { '×' in it })
                             .joinToString(" · ").ifBlank { null }
                         Box(Modifier.align(Alignment.TopStart)) { VodTopBar(title, t?.subtitle, badge, listOf(back, reduce)) }
                         // panneau latéral ouvert : les commandes s'effacent, la vidéo reste à gauche (tablette)
