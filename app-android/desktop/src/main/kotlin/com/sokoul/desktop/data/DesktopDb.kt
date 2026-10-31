@@ -47,6 +47,10 @@ class DesktopDb(file: File) : AutoCloseable {
         """CREATE TABLE IF NOT EXISTS resume(key TEXT PRIMARY KEY, kind TEXT NOT NULL, tmdb_id INTEGER NOT NULL, season INTEGER,
             episode INTEGER, title TEXT NOT NULL, subtitle TEXT, image TEXT, position_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL,
             updated_at INTEGER NOT NULL, finished INTEGER NOT NULL)""",
+        // enregistrements du direct (programmés, en cours, terminés, échecs)
+        """CREATE TABLE IF NOT EXISTS recordings(id INTEGER PRIMARY KEY AUTOINCREMENT, playlist_id INTEGER NOT NULL, channel_id TEXT NOT NULL,
+            channel_name TEXT NOT NULL, channel_logo TEXT, title TEXT NOT NULL, start_at INTEGER NOT NULL, end_at INTEGER NOT NULL,
+            status TEXT NOT NULL, path TEXT, bytes INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL)""",
     )
 
     init {
@@ -344,6 +348,32 @@ class DesktopDb(file: File) : AutoCloseable {
     fun resumeList(limit: Int = 20): List<Resume> =
         query("SELECT * FROM resume WHERE finished=0 AND position_ms > 0 ORDER BY updated_at DESC LIMIT ?", limit * 3) { it.toResume() }
             .distinctBy { "${it.kind}:${it.tmdbId}" }.take(limit)
+
+    // --- enregistrements ----------------------------------------------------------------------------------
+
+    @Synchronized
+    fun recordings(pid: Long): List<Recording> = query("SELECT * FROM recordings WHERE playlist_id=? ORDER BY start_at", pid) { it.toRecording() }
+
+    @Synchronized
+    fun insertRecording(r: Recording): Long {
+        update(
+            "INSERT INTO recordings(playlist_id, channel_id, channel_name, channel_logo, title, start_at, end_at, status, path, bytes, error, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            r.playlistId, r.channelId, r.channelName, r.channelLogo, r.title, r.startAt, r.endAt, r.status.name, r.path, r.bytes, r.error, r.createdAt,
+        )
+        return query("SELECT last_insert_rowid()") { it.getLong(1) }.first()
+    }
+
+    @Synchronized
+    fun updateRecording(id: Long, status: RecordingStatus, path: String? = null, bytes: Long? = null, error: String? = null) =
+        update("UPDATE recordings SET status=?, path=COALESCE(?, path), bytes=COALESCE(?, bytes), error=? WHERE id=?", status.name, path, bytes, error, id)
+
+    @Synchronized
+    fun deleteRecording(id: Long) = update("DELETE FROM recordings WHERE id=?", id)
+
+    private fun ResultSet.toRecording() = Recording(
+        getLong("id"), getLong("playlist_id"), getString("channel_id"), getString("channel_name"), getString("channel_logo"), getString("title"),
+        getLong("start_at"), getLong("end_at"), RecordingStatus.valueOf(getString("status")), getString("path"), getLong("bytes"), getString("error"), getLong("created_at"),
+    )
 
     /** Historique : tout ce qui a été regardé (terminé compris), le plus récent d'abord. */
     @Synchronized

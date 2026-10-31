@@ -246,6 +246,30 @@ class DesktopTest {
         assertEquals(null, a.next(listOf(list[3]), emptySet(), readyOnly = true))
     }
 
+    @Test fun `enregistrements - une connexion, doublon, manque, rubriques, base`() {
+        val h = 3_600_000L
+        val now = 1_700_000_000_000L
+        val rules = com.sokoul.desktop.data.PcRecordingRules
+        fun r(id: Long, ch: String, s: Long, e: Long, st: com.sokoul.desktop.data.RecordingStatus) =
+            com.sokoul.desktop.data.Recording(id, 1, ch, ch, null, "P$id", s, e, st)
+        val f2 = r(1, "france2", now + 20 * h / 10, now + 30 * h / 10, com.sokoul.desktop.data.RecordingStatus.SCHEDULED)
+        // 20:30–21:30 sur TF1 pendant 20:00–21:00 sur France 2 : refusé (une connexion)
+        val v = rules.check("tf1", now + 25 * h / 10, now + 35 * h / 10, listOf(f2), now)
+        assertTrue(v is com.sokoul.desktop.data.PcRecordingRules.Verdict.Refused && v.reason.startsWith("Un seul enregistrement à la fois (une connexion)"))
+        assertTrue(rules.check("france2", now + 25 * h / 10, now + 35 * h / 10, listOf(f2), now) is com.sokoul.desktop.data.PcRecordingRules.Verdict.Refused)
+        assertTrue(rules.check("tf1", now + 4 * h, now + 5 * h, listOf(f2), now) is com.sokoul.desktop.data.PcRecordingRules.Verdict.Ok)
+        assertTrue(rules.check("tf1", now - 2 * h, now - h, emptyList(), now) is com.sokoul.desktop.data.PcRecordingRules.Verdict.Refused)
+        assertEquals(now + h - 120_000 to now + 2 * h + 300_000, rules.slot(now + h, now + 2 * h, now))
+        assertTrue(rules.missed(r(2, "x", now - 2 * h, now - h, com.sokoul.desktop.data.RecordingStatus.SCHEDULED), now))
+        assertEquals("FRANCE 2 - Télématin - ", rules.fileBase("FR| FRANCE 2 FHD", "Télématin", now).substringBeforeLast(" - ") + " - ")
+        val secs = rules.sections(listOf(f2, r(3, "y", now - h, now, com.sokoul.desktop.data.RecordingStatus.COMPLETED)))
+        assertEquals(listOf("Programmés", "Terminés"), secs.map { it.first.title })
+        val pid = db.upsertPlaylist(Playlist(0, "P", PlaylistType.M3U, "http://x/l.m3u", null, null, null, null))
+        val id = db.insertRecording(f2.copy(id = 0, playlistId = pid))
+        db.updateRecording(id, com.sokoul.desktop.data.RecordingStatus.COMPLETED, "C:/x.ts", 1234)
+        assertEquals(1234L, db.recordings(pid).single().bytes)
+    }
+
     @Test fun `reprendre - libelles de la tablette`() {
         val d = com.sokoul.desktop.tablet.TabletData
         assertEquals("Reste 1 h 05", d.remaining(65 * 60_000L))

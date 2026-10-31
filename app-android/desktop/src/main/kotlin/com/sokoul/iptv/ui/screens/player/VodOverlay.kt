@@ -392,6 +392,7 @@ data class LiveProgram(val title: String, val start: Long, val end: Long, val de
 fun LiveInfoBar(
     number: Int, logo: String?, name: String, favorite: Boolean,
     now: LiveProgram?, next: LiveProgram?, videoInfo: String?, actions: List<PlayerAction>,
+    health: String? = null, delayLabel: String? = null,
 ) {
     val time = rememberNow(15_000)
     Box(
@@ -425,6 +426,15 @@ fun LiveInfoBar(
                 }
                 Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 24.dp)) {
                     Text(formatClock(time), style = MaterialTheme.typography.headlineSmall)
+                    // santé du flux en un coup d'œil : pastille verte, orange ou rouge et un mot (tablette)
+                    health?.let { h ->
+                        val color = when (h) { "Flux stable" -> SokoulColors.Success; "Flux interrompu" -> SokoulColors.Live; else -> SokoulColors.Warning }
+                        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(8.dp).background(color, Radius.Round))
+                            Text(h, Modifier.padding(start = 6.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                        }
+                    }
+                    delayLabel?.let { Text(it, Modifier.padding(top = 2.dp), color = SokoulColors.Warning, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
                     if (!videoInfo.isNullOrBlank()) Text(videoInfo, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                 }
             }

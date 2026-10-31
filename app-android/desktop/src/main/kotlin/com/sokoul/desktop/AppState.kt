@@ -31,7 +31,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** Onglets de la barre du haut. */
 enum class Screen(val label: String) {
     HOME("Accueil"), MOVIES("Films"), SERIES("Séries"), MY_LIST("Ma liste"), SAGAS("Sagas"), LIVE("Direct"), GUIDE("Guide TV"),
-    SEARCH("Recherche"), SETTINGS("Réglages"),
+    SEARCH("Recherche"), RECORDINGS("Enregistrements"), SETTINGS("Réglages"),
 }
 
 /** Écrans poussés au-dessus d'un onglet (Échap revient). */
@@ -64,6 +64,8 @@ sealed interface NowPlaying {
         val resumeKey get() = Resume.key(kind, tmdbId, season, episode)
     }
     data class Iptv(val movie: Movie) : NowPlaying
+    /** Enregistrement du direct (fichier local). */
+    data class Recorded(val rec: com.sokoul.desktop.data.Recording) : NowPlaying
 }
 
 /** État global de l'app PC : base, catalogue, Real-Debrid, lecteur (unique), navigation et playlist active. */
@@ -96,6 +98,55 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
 
     /** Réglages de lecture et de télévision (lus par le lecteur à chaque ouverture). */
     val prefs = com.sokoul.desktop.data.DesktopPrefs(db)
+
+    /** Enregistrements du direct (planificateur démarré par la fenêtre, pas par les tests). */
+    val recorder = com.sokoul.desktop.data.DesktopRecorder(db, sync, scope)
+
+    /** Message bref en bas de la fenêtre (enregistrement prioritaire, programmation…), effacé tout seul. */
+    var notice by mutableStateOf<String?>(null)
+    private var noticeJob: Job? = null
+    fun notify(text: String) {
+        notice = text
+        noticeJob?.cancel()
+        noticeJob = scope.launch { kotlinx.coroutines.delay(6_000); notice = null }
+    }
+
+    /**
+     * Démarre le planificateur d'enregistrements. Quand un enregistrement commence, il prend la connexion : une
+     * chaîne d'une autre lecture (ou de l'aperçu) est arrêtée avec un message.
+     */
+    fun startRecorder() {
+        recorder.start { playlist }
+        scope.launch {
+            recorder.active.collect { r ->
+                r ?: return@collect
+                if (previewing != null && previewing?.id != r.channelId) stopPreview()
+                (playing as? NowPlaying.Live)?.let { live ->
+                    if (live.list[live.index].id != r.channelId) { closePlayer(); notify("Enregistrement de « ${r.title} » sur ${com.sokoul.desktop.data.PcRecordingRules.channelLabel(r.channelName)} : la lecture a été arrêtée (une seule connexion)") }
+                }
+            }
+        }
+    }
+
+    /** Programme l'enregistrement du programme [title] de [c] (créneau du guide, marges ajoutées). */
+    fun record(c: Channel, title: String, programStart: Long, programEnd: Long) {
+        val p = playlist ?: return
+        val (s, e) = com.sokoul.desktop.data.PcRecordingRules.slot(programStart, programEnd, System.currentTimeMillis())
+        when (val v = recorder.schedule(p, c, title, s, e)) {
+            is com.sokoul.desktop.data.PcRecordingRules.Verdict.Ok -> notify("« $title » sera enregistré" + (v.warning?.let { ". $it" } ?: ""))
+            is com.sokoul.desktop.data.PcRecordingRules.Verdict.Refused -> notify(v.reason)
+        }
+        dataVersion++
+    }
+
+    /** Lecture d'un enregistrement (terminé, ou en cours : on rejoint la fin du fichier). */
+    fun playRecording(r: com.sokoul.desktop.data.Recording, live: Boolean = false) {
+        val path = r.path ?: return
+        saveProgress(); playJob?.cancel(); previewing = null
+        playing = NowPlaying.Recorded(r)
+        val start = if (live) (System.currentTimeMillis() - r.startAt - 8_000).coerceAtLeast(0) else 0
+        player?.play(StreamRequest(java.io.File(path).toURI().toString(), null, null, r.title, live = false, startMs = start))
+    }
 
     init {
         reloadPlaylist()
@@ -157,11 +208,50 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
     fun play(list: List<Channel>, index: Int) {
         val p = playlist ?: return
         val c = list.getOrNull(index) ?: return
+        // un enregistrement a la connexion : sa chaîne se regarde depuis le fichier, les autres sont refusées
+        recorder.active.value?.let { r ->
+            if (r.channelId == c.id) { playRecording(r, live = true); return }
+            notify("« ${r.title} » est en cours d'enregistrement sur ${com.sokoul.desktop.data.PcRecordingRules.channelLabel(r.channelName)} : une seule connexion, la chaîne ${com.sokoul.desktop.data.PcRecordingRules.channelLabel(c.name)} attendra la fin")
+            return
+        }
         saveProgress()
         playJob?.cancel()
+        previewing = null
         playing = NowPlaying.Live(list, index)
         prefs.lastChannel = c.id
         player?.play(com.sokoul.desktop.data.LiveLogic.stream(p, c, sync.userAgent()))
+    }
+
+    /** Chaîne en aperçu dans le Direct (lecteur unique, son coupé), ou null. */
+    var previewing by mutableStateOf<Channel?>(null)
+        private set
+
+    /** Aperçu de la chaîne choisie dans le Direct : jamais pendant une lecture en plein cadre. */
+    fun preview(c: Channel) {
+        val p = playlist ?: return
+        if (playing != null || previewing?.id == c.id) return
+        // pendant un enregistrement, pas d'aperçu (il prendrait la connexion)
+        if (recorder.active.value != null) return
+        previewing = c
+        player?.preview(com.sokoul.desktop.data.LiveLogic.stream(p, c, sync.userAgent()))
+    }
+
+    /** Quitter le Direct : l'aperçu est arrêté (la connexion est libérée). */
+    fun stopPreview() {
+        if (previewing == null) return
+        previewing = null
+        if (playing == null) player?.stop()
+    }
+
+    /** « Regarder » : la chaîne en aperçu passe en plein cadre sans rouvrir le flux ; sinon lecture normale. */
+    fun watch(list: List<Channel>, index: Int) {
+        val c = list.getOrNull(index) ?: return
+        if (previewing?.id == c.id && player != null) {
+            previewing = null
+            playing = NowPlaying.Live(list, index)
+            prefs.lastChannel = c.id
+            player.endPreview()
+        } else { previewing = null; play(list, index) }
     }
 
     /** Zapping (Page préc. = −1, Page suiv. = +1), dans le sens choisi dans les Réglages. */
@@ -189,6 +279,7 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         }
         saveProgress()
         playJob?.cancel()
+        previewing = null
         playing = NowPlaying.Iptv(movie)
         player?.play(StreamRequest(url, p.userAgent, null, movie.name, live = false))
     }
@@ -204,6 +295,7 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         sources = null
         // un autre titre (ou un nouvel essai automatique) : les échecs notés ne valent plus
         if (chosen == null || (playing as? NowPlaying.Title)?.let { it.tmdbId != t.tmdbId || it.season != t.season || it.episode != t.episode } != false) failures.clear()
+        previewing = null
         playing = t.copy(step = "Recherche de la meilleure version…", error = null, stream = chosen)
         if (player == null) return  // écran « Lecteur indisponible » : ni recherche ni torrent ajouté au compte
         playJob = scope.launch {

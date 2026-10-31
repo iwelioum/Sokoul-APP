@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.draw.clip
+import com.sokoul.iptv.ui.components.dpadClickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -110,6 +114,11 @@ fun TabletLive(app: AppState) {
         }
     }
     var picked by remember(p.id) { mutableStateOf<Channel?>(null) }
+    // essai (live:pick:n) : chaîne choisie dès que la liste est là
+    LaunchedEffect(channels) {
+        val n = com.sokoul.desktop.TrialRoute.livePick ?: return@LaunchedEffect
+        channels?.firstOrNull { it.number == n }?.let { picked = it; com.sokoul.desktop.TrialRoute.livePick = null }
+    }
     var menu by remember { mutableStateOf<Channel?>(null) }
     var pinFor by remember { mutableStateOf<CategoryItem?>(null) }
     var groupMenu by remember { mutableStateOf<CategoryItem?>(null) }
@@ -118,7 +127,11 @@ fun TabletLive(app: AppState) {
     fun setLocked(g: CategoryItem, locked: Boolean) { app.db.setCategoryFlags(p.id, g.id, hidden = false, locked = locked); app.dataVersion++ }
     var pinError by remember { mutableStateOf<String?>(null) }
     val list = channels
-    fun play(c: Channel) { val all = list ?: return; app.play(all, all.indexOf(c).coerceAtLeast(0)) }
+    // « Regarder » : l'aperçu passe en plein cadre sans rouvrir le flux (une connexion)
+    fun play(c: Channel) { val all = list ?: return; app.watch(all, all.indexOf(c).coerceAtLeast(0)) }
+    // aperçu de la chaîne choisie, son coupé, après un court délai (pas un flux par chaîne survolée au clavier)
+    LaunchedEffect(picked?.id) { val c = picked ?: return@LaunchedEffect; kotlinx.coroutines.delay(700); app.preview(c) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { app.stopPreview() } }
     fun select(c: CategoryItem) {
         if (c.locked && !app.unlocked && app.hasPin()) { pinFor = c; return }
         selected = c.id; picked = null
@@ -150,7 +163,7 @@ fun TabletLive(app: AppState) {
                 }
             }
         }
-        DetailsPanel(picked?.let { it to nowNext[it.id] }, now, Modifier.width(340.dp).fillMaxHeight()) { play(it) }
+        DetailsPanel(app, picked?.let { it to nowNext[it.id] }, now, Modifier.width(400.dp).fillMaxHeight()) { play(it) }
     }
 
     menu?.let { c ->
@@ -223,10 +236,18 @@ private fun ChannelRow(c: Channel, nn: LiveLogic.NowNext?, favorite: Boolean, ti
 
 /** Panneau de la chaîne choisie : logo, nom, numéro, programme en cours (horaires, progression, résumé), ensuite, Regarder. */
 @Composable
-private fun DetailsPanel(details: Pair<Channel, LiveLogic.NowNext?>?, time: Long, modifier: Modifier, onWatch: (Channel) -> Unit) {
+private fun DetailsPanel(app: AppState, details: Pair<Channel, LiveLogic.NowNext?>?, time: Long, modifier: Modifier, onWatch: (Channel) -> Unit) {
     Column(modifier.background(Brush.horizontalGradient(listOf(SokoulColors.Surface.copy(alpha = 0.55f), SokoulColors.Surface))).padding(start = 26.dp, end = 30.dp, top = 30.dp, bottom = 20.dp)) {
         val (c, nn) = details ?: run { Text("Choisissez une chaîne", color = SokoulColors.TextMuted); return@Column }
-        ChannelLogo(c.logo, c.name, Modifier.size(150.dp, 84.dp))
+        // aperçu de la chaîne (tablette) : image du lecteur unique, son coupé ; un clic regarde en plein cadre
+        val player = app.player
+        if (player != null && app.previewing?.id == c.id) {
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(Radius.Card).background(SokoulColors.VideoBlack).dpadClickable(onClick = { onWatch(c) })) {
+                com.sokoul.desktop.ui.VideoSurface(player.frame, Modifier.fillMaxSize())
+                val st by player.status.collectAsState()
+                if (!st.playing) com.sokoul.iptv.ui.components.SokoulSpinner(Modifier.align(Alignment.Center), size = 28.dp)
+            }
+        } else ChannelLogo(c.logo, c.name, Modifier.size(150.dp, 84.dp))
         Text(c.name, Modifier.padding(top = 14.dp), style = Type.Section, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Row(Modifier.padding(top = 6.dp)) {
             Text("N° ${c.number}", Modifier.background(SokoulColors.SurfaceHigher, Radius.Tiny).padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextSecondary)

@@ -1,5 +1,7 @@
 package com.sokoul.desktop.tablet
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,6 +108,8 @@ fun TabletGuide(app: AppState) {
         value = withContext(Dispatchers.IO) { app.db.programs(p.id, list.mapNotNull { it.epgKey }.distinct(), windowStart - 4 * 3600_000L, windowEnd + 3600_000L).groupBy { it.channelKey } }
     }
     var picked by remember { mutableStateOf<Pair<Channel, Program>?>(null) }
+    val recVersion by app.recorder.version.collectAsState()
+    val recordings = remember(recVersion, app.dataVersion, p.id) { app.db.recordings(p.id) }
     val side = l.margin
     val days = remember(now / 86_400_000L) { (0 until 7).map { dayStart(System.currentTimeMillis()) + it * 86_400_000L } }
 
@@ -130,7 +134,14 @@ fun TabletGuide(app: AppState) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(formatClock(now), style = Type.Section)
                 picked?.let { (c, pr) ->
-                    if (pr.start <= now && pr.end > now) SokoulButton("Regarder", { channels?.let { list -> app.play(list, list.indexOf(c).coerceAtLeast(0)) } }, Modifier.padding(top = 10.dp), Icons.Default.PlayArrow, ButtonKind.Primary)
+                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (pr.end > now) {
+                            val covered = com.sokoul.desktop.data.PcRecordingRules.covering(pr.start, pr.end, recordings.filter { it.channelId == c.id })
+                            if (covered != null) SokoulButton("Programmé", { app.go(com.sokoul.desktop.Screen.RECORDINGS) }, icon = Icons.Default.FiberManualRecord)
+                            else SokoulButton("Enregistrer", { app.record(c, pr.title, pr.start, pr.end) }, icon = Icons.Default.FiberManualRecord)
+                        }
+                        if (pr.start <= now && pr.end > now) SokoulButton("Regarder", { channels?.let { list -> app.play(list, list.indexOf(c).coerceAtLeast(0)) } }, icon = Icons.Default.PlayArrow, kind = ButtonKind.Primary)
+                    }
                 }
             }
         }
@@ -176,6 +187,9 @@ fun TabletGuide(app: AppState) {
                             pickedStart = picked?.takeIf { it.first.id == c.id }?.second?.start,
                             onChannelClick = { app.play(list!!, i) },
                             onProgramClick = { pr -> if (pr == null) app.play(list!!, i) else if (picked?.second == pr && pr.start <= now && pr.end > now) app.play(list!!, i) else picked = c to pr },
+                            // clic droit (appui long de la tablette) : programmer l'enregistrement
+                            onProgramLongClick = { pr -> if (pr.end > now) app.record(c, pr.title, pr.start, pr.end) },
+                            recordings = recordings.filter { it.channelId == c.id },
                         )
                     }
                 }
@@ -224,6 +238,7 @@ private fun TimeRuler(windowStart: Long, channelCol: Dp, dpPerMin: Dp, now: Long
 private fun GuideRow(
     channel: Channel, programs: List<Program>, windowStart: Long, windowEnd: Long, channelCol: Dp, dpPerMin: Dp, now: Long,
     selectedRow: Boolean, pickedStart: Long?, onChannelClick: () -> Unit, onProgramClick: (Program?) -> Unit,
+    onProgramLongClick: (Program) -> Unit = {}, recordings: List<com.sokoul.desktop.data.Recording> = emptyList(),
 ) {
     Row(Modifier.fillMaxWidth().height(78.dp).padding(vertical = 2.dp)) {
         Box(Modifier.width(channelCol).fillMaxHeight().background(if (selectedRow) SokoulColors.SurfaceHigher else SokoulColors.Surface.copy(alpha = 0.6f), Radius.Card).dpadClickable(onChannelClick)) {
@@ -251,15 +266,20 @@ private fun GuideRow(
                 val live = now >= p.start && now < p.end
                 val past = p.end <= now
                 val picked = pickedStart == p.start
+                val rec = com.sokoul.desktop.data.PcRecordingRules.covering(p.start, p.end, recordings)
                 FocusSurface(
-                    onClick = { onProgramClick(p) }, style = FocusStyle.Chip, shape = Radius.Tiny,
+                    onClick = { onProgramClick(p) }, onLongClick = { onProgramLongClick(p) }, style = FocusStyle.Chip, shape = Radius.Tiny,
                     modifier = Modifier.offset(x = x).width((w - 3.dp).coerceAtLeast(1.dp)).fillMaxHeight(),
                     color = when { picked -> SokoulColors.AccentSoft; live -> SokoulColors.SurfaceHigher; past -> SokoulColors.Surface; else -> SokoulColors.SurfaceHigh },
                 ) { focused ->
                     val fg = when { focused -> SokoulColors.OnLight; past -> SokoulColors.TextSecondary; else -> SokoulColors.TextPrimary }
                     Box(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 7.dp)) {
                         Column {
-                            Text(p.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = fg)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // pastille rouge : programme enregistré (ou programmé)
+                                if (rec != null) Box(Modifier.padding(end = 6.dp).size(8.dp).background(SokoulColors.Live, Radius.Round))
+                                Text(p.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = fg)
+                            }
                             Text(formatRange(p.start, p.end), style = MaterialTheme.typography.labelSmall, maxLines = 1, color = if (focused) SokoulColors.OnLight.copy(alpha = 0.7f) else SokoulColors.TextMuted)
                         }
                         if (live) {

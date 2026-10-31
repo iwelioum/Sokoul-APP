@@ -18,7 +18,7 @@ L'utilisateur SHALL pouvoir programmer l'enregistrement d'un programme depuis le
 - **THEN** la programmation est refusée avec « Un seul enregistrement à la fois (une connexion) », vérifié par un test JVM des règles
 
 ### Requirement: Capture du flux
-À l'heure prévue, le PC SHALL lire le flux de la chaîne et l'écrire dans un fichier `.ts` du dossier de données, de 1 minute avant le début à 2 minutes après la fin. L'enregistrement en cours MUST passer avant la lecture : une lecture d'une autre chaîne est arrêtée avec un message, et la même chaîne reste regardable. Un refus du fournisseur (4xx) MUST NOT être relancé tout de suite.
+À l'heure prévue, le PC SHALL lire le flux de la chaîne et l'écrire dans un fichier `.ts` du dossier de données, de 2 minutes avant le début à 5 minutes après la fin (marges de la tablette). L'enregistrement en cours MUST passer avant la lecture : une lecture d'une autre chaîne est arrêtée avec un message, et la même chaîne reste regardable. Un refus du fournisseur (4xx) MUST NOT être relancé tout de suite.
 
 #### Scenario: Enregistrement terminé
 - **WHEN** un enregistrement de 5 minutes se termine pendant que l'app est ouverte

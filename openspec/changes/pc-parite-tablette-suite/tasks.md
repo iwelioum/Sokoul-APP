@@ -30,7 +30,7 @@
 
 ## 5. Enregistrements
 
-- [ ] 5.1 Table `recordings`, `RecordingRules` PC (marges, chevauchement, doublon, manqué). Vérification : tests JVM `RecordingRules`.
+- [x] 5.1 Table `recordings`, `RecordingRules` PC (marges, chevauchement, doublon, manqué). Vérification : tests JVM `RecordingRules`.
 - [ ] 5.2 `DesktopRecorder` (flux TS sur disque, refus 4xx sans relance, priorité sur la lecture) et planificateur. Vérification : essai réel d'un enregistrement de 3 minutes, fichier lu ensuite, la tablette sans lecture.
 - [ ] 5.3 Entrée « Enreg. » du rail et page Enregistrements ; « Enregistrer » depuis le guide et depuis le lecteur du direct. Vérification : capture comparée à `ref/enreg.png` ; test d'interface du rail mis à jour.
 

@@ -8,6 +8,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -45,6 +47,7 @@ private fun start() {
     val sync = DesktopSync(db)
     val player = DesktopPlayer.create()
     val app = AppState(db, sync, player)
+    app.startRecorder()
     application {
         val saved = remember { db.setting(Settings.WINDOW)?.split(',')?.mapNotNull { it.toIntOrNull() } }
         val state = rememberWindowState(
@@ -131,6 +134,7 @@ fun AppContent(app: AppState) {
                             Screen.GUIDE -> com.sokoul.desktop.tablet.TabletGuide(app)
                             Screen.SEARCH -> com.sokoul.desktop.tablet.TabletSearch(app)
                             Screen.SETTINGS -> com.sokoul.desktop.tablet.TabletSettings(app)
+                            Screen.RECORDINGS -> com.sokoul.desktop.tablet.TabletRecordings(app)
                         }
                     }
                 }
@@ -138,6 +142,16 @@ fun AppContent(app: AppState) {
         }
         if (app.playing != null) PlayerScreen(app)
         app.sources?.let { com.sokoul.desktop.tablet.TabletSources(app, it) }
+        // message bref (enregistrement, refus) : pastille en bas, au-dessus de tout
+        app.notice?.let { msg ->
+            androidx.compose.material3.Text(
+                msg,
+                Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 36.dp).widthIn(max = 760.dp)
+                    .background(com.sokoul.iptv.ui.theme.SokoulColors.Panel, com.sokoul.iptv.ui.theme.Radius.Card)
+                    .padding(horizontal = 22.dp, vertical = 14.dp),
+                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge, color = com.sokoul.iptv.ui.theme.SokoulColors.TextPrimary,
+            )
+        }
     }
 }
 

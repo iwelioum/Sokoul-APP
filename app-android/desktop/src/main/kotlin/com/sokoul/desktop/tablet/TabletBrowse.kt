@@ -78,13 +78,14 @@ import com.sokoul.iptv.ui.components.SokoulMark
 import com.sokoul.iptv.ui.components.Top10Card
 import com.sokoul.iptv.ui.components.WorkCard
 import com.sokoul.iptv.ui.components.shimmer
+import androidx.compose.material.icons.filled.FiberManualRecord
 import com.sokoul.iptv.ui.theme.LocalLayout
 import com.sokoul.iptv.ui.theme.Radius
 import com.sokoul.iptv.ui.theme.SokoulColors
 import com.sokoul.iptv.ui.theme.TabletRailWidth
 import kotlinx.coroutines.launch
 
-/** Entrées du rail de la tablette (`Shell.kt`, `Dest`), dans le même ordre ; Enregistrements absents du PC. */
+/** Entrées du rail de la tablette (`Shell.kt`, `Dest`), dans le même ordre ; Enregistrements et Réglages en bas. */
 enum class Dest(val label: String, val icon: ImageVector, val screen: Screen, val short: String = label) {
     SEARCH("Recherche", Icons.Default.Search, Screen.SEARCH),
     HOME("Accueil", Icons.Default.Home, Screen.HOME),
@@ -94,6 +95,7 @@ enum class Dest(val label: String, val icon: ImageVector, val screen: Screen, va
     SAGAS("Sagas", Icons.Default.CollectionsBookmark, Screen.SAGAS),
     LIVE("Direct", Icons.Default.LiveTv, Screen.LIVE),
     GUIDE("Guide TV", Icons.Default.CalendarViewWeek, Screen.GUIDE),
+    RECORDINGS("Enregistrements", Icons.Default.FiberManualRecord, Screen.RECORDINGS, short = "Enreg."),
     SETTINGS("Réglages", Icons.Default.Settings, Screen.SETTINGS),
 }
 
@@ -108,7 +110,7 @@ fun TabletRail(current: Screen, onSelect: (Screen) -> Unit) {
         SokoulMark(Modifier.padding(bottom = 10.dp), size = 36.dp)
         Dest.entries.forEach { d ->
             val selected = d.screen == current
-            if (d == Dest.SETTINGS) Spacer(Modifier.weight(1f))
+            if (d == Dest.RECORDINGS) Spacer(Modifier.weight(1f))
             FocusSurface(style = FocusStyle.Row, onClick = { onSelect(d.screen) }, modifier = Modifier.size(76.dp, 58.dp), color = Color.Transparent, shape = Radius.Card) { focused ->
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(

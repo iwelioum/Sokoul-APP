@@ -18,6 +18,8 @@ object TrialRoute {
     @Volatile var openVersionSources = false
     /** Page de saga ouverte en ordre du récit (`saga:10:recit`). */
     @Volatile var sagaNarrative = false
+    /** Chaîne (numéro) à choisir dans le Direct (`live:pick:3879`). */
+    @Volatile var livePick: Int? = null
     /** Panneau du lecteur à ouvrir (`play:…:lang`, `subs`, `more`). */
     val playerMenuFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     var playerMenu: String?
@@ -56,16 +58,30 @@ object TrialRoute {
             "sagas" -> app.go(Screen.SAGAS)
             // saga:10[:recit] → page de la saga, en ordre du récit si demandé
             "saga" -> { sagaNarrative = p.getOrNull(2) == "recit"; app.openSaga(p[1].toInt()) }
+            // rec:3879:3 → enregistre 3 min de la chaîne n° 3879 tout de suite, puis ouvre la page Enregistrements
+            "rec" -> app.playlist?.let { pl ->
+                val all = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.db.allChannels(pl.id) }
+                val c = all.firstOrNull { it.number == p[1].toInt() } ?: return
+                val t = System.currentTimeMillis()
+                val v = app.recorder.schedule(pl, c, "Essai d'enregistrement", t, t + (p.getOrNull(2)?.toLongOrNull() ?: 3) * 60_000L)
+                System.err.println("Enregistrement : $v")
+                app.go(Screen.RECORDINGS)
+            }
             "live" -> {
+                // live:pick:3879 → chaîne choisie dans le Direct (aperçu)
+                if (p.getOrNull(1) == "pick") livePick = p.getOrNull(2)?.toIntOrNull()
                 app.go(Screen.LIVE)
                 // live:play:<n> : lit la chaîne n° n (une seule connexion : la tablette ne doit rien lire)
                 if (p.getOrNull(1) == "play") app.playlist?.let { pl ->
                     val all = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.db.allChannels(pl.id) }
                     val i = all.indexOfFirst { it.number == (p.getOrNull(2)?.toIntOrNull() ?: 1) }.coerceAtLeast(0)
                     app.play(all, i)
+                    // live:play:3879:pause → pause 20 s puis reprise : le bandeau montre le différé
+                    if (p.getOrNull(3) == "pause") { delay(15_000); app.player?.togglePause(); delay(20_000); app.player?.togglePause() }
                 }
             }
             "guide" -> app.go(Screen.GUIDE)
+            "enreg" -> app.go(Screen.RECORDINGS)
             // settings:debrid → rubrique ouverte (nom de l'enum SettingsCategory)
             "settings" -> { settingsPane = p.getOrNull(1)?.uppercase(); app.go(Screen.SETTINGS) }
             "search" -> { searchQuery = p.getOrNull(1); app.go(Screen.SEARCH) }

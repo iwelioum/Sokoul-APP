@@ -77,6 +77,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.CalendarViewWeek
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.foundation.lazy.items
+import com.sokoul.iptv.ui.util.formatDuration
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.ui.draw.clipToBounds
@@ -174,7 +185,7 @@ fun PlayerScreen(app: AppState) {
         )
         if (app.mini) { MiniOverlay(app, player, st); return@Box }
         Center(app, now, st)
-        val panel = menu == "lang" || menu == "subs"
+        val panel = menu == "lang" || menu == "subs" || menu == "channels" || menu == "programs"
         AnimatedVisibility(visible, enter = fadeIn(tween(160)), exit = fadeOut(tween(400)), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
                 val back = PlayerAction("Retour", Icons.AutoMirrored.Filled.ArrowBack, onClick = app::closePlayer)
@@ -185,17 +196,39 @@ fun PlayerScreen(app: AppState) {
                 val mute = PlayerAction(if (st.muted) "Rétablir le son" else "Couper le son", if (st.muted || st.volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, iconOnly = true, onClick = player::toggleMute)
                 when (now) {
                     is NowPlaying.Live -> {
-                        Box(Modifier.align(Alignment.TopStart).padding(16.dp)) { PlayerButton(back, compact = true) }
-                        Box(Modifier.align(Alignment.BottomStart)) {
-                            LiveBar(app, now, st, listOf(
-                                PlayerAction("Chaîne précédente", Icons.Filled.KeyboardArrowUp) { app.zap(-1) },
-                                PlayerAction("Chaîne suivante", Icons.Filled.KeyboardArrowDown) { app.zap(1) },
-                            ) + tracks + listOf(mute, screen))
+                        val c = now.list[now.index]
+                        // boutons du haut de la tablette : Retour, Chaînes, fenêtre réduite, menu
+                        Row(Modifier.align(Alignment.TopStart).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                back, PlayerAction("Chaînes", Icons.AutoMirrored.Filled.List) { menu = "channels" }, reduce,
+                                PlayerAction("Menu", Icons.Filled.MoreVert) { menu = "more" },
+                            ).forEach { PlayerButton(it, compact = true) }
+                        }
+                        if (!panel && menu != "channels" && menu != "programs") Box(Modifier.align(Alignment.BottomStart)) {
+                            val delayed = st.paused || st.liveDelayMs > 0
+                            val fav = remember(c.id, app.dataVersion) { app.playlist?.let { c.id in app.db.favoriteIds(it.id) } ?: false }
+                            LiveBar(app, now, st, listOfNotNull(
+                                PlayerAction(if (st.paused) "Reprendre" else "Pause du direct", if (st.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, onClick = player::togglePause),
+                                if (delayed) PlayerAction("Retour au direct", Icons.Filled.SkipNext, onClick = player::backToLive) else null,
+                                PlayerAction("Programmes", Icons.Filled.CalendarViewWeek) { menu = "programs" },
+                                PlayerAction("Chaînes", Icons.AutoMirrored.Filled.List) { menu = "channels" },
+                                PlayerAction("Enregistrer", Icons.Filled.FiberManualRecord) { recordCurrent(app, c) },
+                                PlayerAction("Favori", if (fav) Icons.Filled.Star else Icons.Filled.StarBorder, text = if (fav) "Favori ✓" else null) {
+                                    app.playlist?.let { p -> if (fav) app.db.removeFavorite(p.id, "LIVE", c.id) else app.db.addFavorite(p.id, "LIVE", c.id, System.currentTimeMillis()) }
+                                    app.dataVersion++
+                                },
+                                PlayerAction("Réglages", Icons.Filled.Tune) { menu = "subs" },
+                            ))
                         }
                     }
                     else -> {
                         val t = now as? NowPlaying.Title
-                        val title = t?.title ?: (now as NowPlaying.Iptv).movie.name
+                        val title = when (now) {
+                            is NowPlaying.Title -> now.title
+                            is NowPlaying.Iptv -> now.movie.name
+                            is NowPlaying.Recorded -> now.rec.title
+                            is NowPlaying.Live -> ""
+                        }
                         val badge = listOfNotNull(t?.stream?.release?.let { r -> listOfNotNull(r.language?.name, r.source?.label).joinToString(" · ").ifBlank { null } }, st.video)
                             .joinToString(" · ").ifBlank { null }
                         Box(Modifier.align(Alignment.TopStart)) { VodTopBar(title, t?.subtitle, badge, listOf(back, reduce)) }
@@ -217,7 +250,9 @@ fun PlayerScreen(app: AppState) {
         when (menu) {
             "lang" -> (now as? NowPlaying.Title)?.let { t -> LanguageQualityPanel(app, t, st, player, Modifier.align(Alignment.CenterEnd)) { menu = null } }
                 ?: TrackDialog("audio", st, player) { menu = null }
-            "subs" -> SubtitlePanel(st, player, Modifier.align(Alignment.CenterEnd))
+            "subs" -> if (now is NowPlaying.Live) LiveSettingsPanel(st, player, Modifier.align(Alignment.CenterEnd)) else SubtitlePanel(st, player, Modifier.align(Alignment.CenterEnd))
+            "channels" -> (now as? NowPlaying.Live)?.let { live -> ChannelsPanel(app, live, Modifier.align(Alignment.CenterEnd)) { menu = null } }
+            "programs" -> (now as? NowPlaying.Live)?.let { live -> ProgramsPanel(app, live.list[live.index], Modifier.align(Alignment.CenterEnd)) }
             else -> Unit
         }
     }
@@ -315,7 +350,115 @@ private fun LiveBar(app: AppState, live: NowPlaying.Live, st: PlayerStatus, acti
     }
     val favorite = remember(c.id, app.dataVersion) { app.playlist?.let { c.id in app.db.favoriteIds(it.id) } ?: false }
     fun prog(p: com.sokoul.desktop.data.Program?) = p?.let { LiveProgram(it.title, it.start, it.end, it.description) }
-    LiveInfoBar(c.number, c.logo, c.name, favorite, prog(nn?.now), prog(nn?.next), st.video, actions)
+    val delay = when {
+        st.paused -> "En pause · le direct continue"
+        st.liveDelayMs > 0 -> "Différé · −" + formatDuration(st.liveDelayMs)
+        else -> null
+    }
+    LiveInfoBar(c.number, c.logo, c.name, favorite, prog(nn?.now), prog(nn?.next), st.video, actions, st.health, delay)
+}
+
+/** « Enregistrer » pendant le direct : le programme en cours (ou une heure si le guide n'a rien). */
+private fun recordCurrent(app: AppState, c: com.sokoul.desktop.data.Channel) {
+    val p = app.playlist ?: return
+    val t = System.currentTimeMillis()
+    val prog = c.epgKey?.let { k -> app.db.programs(p.id, listOf(k), t, t + 1).firstOrNull { it.start <= t && it.end > t } }
+    if (prog != null) app.record(c, prog.title, prog.start, prog.end)
+    else app.record(c, com.sokoul.desktop.data.PcRecordingRules.channelLabel(c.name), t, t + 3_600_000L)
+}
+
+/** Panneau « Chaînes » (tablette) : le groupe en cours, programme du moment ; un clic zappe. */
+@Composable
+private fun ChannelsPanel(app: AppState, live: NowPlaying.Live, modifier: Modifier, onClose: () -> Unit) {
+    val nows by produceState(emptyMap<String, String>(), live.list) {
+        val p = app.playlist ?: return@produceState
+        val t = System.currentTimeMillis()
+        value = withContext(Dispatchers.IO) {
+            val progs = app.db.programs(p.id, live.list.mapNotNull { it.epgKey }.distinct(), t, t + 1).filter { it.start <= t && it.end > t }.associateBy { it.channelKey }
+            live.list.mapNotNull { c -> c.epgKey?.let { progs[it] }?.let { c.id to it.title } }.toMap()
+        }
+    }
+    SidePanel("Chaînes", Icons.AutoMirrored.Filled.List, listOf("${live.list.size} chaînes dans ce groupe"), modifier) {
+        items(live.list.size, key = { live.list[it].id }) { i ->
+            val c = live.list[i]
+            val cur = i == live.index
+            com.sokoul.iptv.ui.components.FocusSurface(
+                style = com.sokoul.iptv.ui.components.FocusStyle.Row, onClick = { onClose(); app.play(live.list, i) }, modifier = Modifier.fillMaxWidth(),
+                shape = com.sokoul.iptv.ui.theme.Radius.Card, color = if (cur) SokoulColors.AccentTint else androidx.compose.ui.graphics.Color.Transparent,
+            ) { f ->
+                Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(c.number.toString(), Modifier.width(48.dp), color = if (cur) SokoulColors.Accent else SokoulColors.TextMuted, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+                    com.sokoul.iptv.ui.components.ChannelLogo(c.logo, c.name, Modifier.size(56.dp, 34.dp))
+                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                        Text(c.name, color = if (f || cur) SokoulColors.TextPrimary else SokoulColors.TextSecondary, style = androidx.compose.material3.MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        nows[c.id]?.let { Text(it, color = SokoulColors.TextMuted, style = androidx.compose.material3.MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Panneau « Programmes » : la journée de la chaîne ; clic droit (ou clic sur un programme à venir) = enregistrer. */
+@Composable
+private fun ProgramsPanel(app: AppState, c: com.sokoul.desktop.data.Channel, modifier: Modifier) {
+    val progs by produceState(emptyList<com.sokoul.desktop.data.Program>(), c.id) {
+        val p = app.playlist ?: return@produceState
+        val t = System.currentTimeMillis()
+        value = withContext(Dispatchers.IO) { c.epgKey?.let { app.db.programs(p.id, listOf(it), t - 3_600_000L, t + 24 * 3_600_000L) }.orEmpty() }
+    }
+    SidePanel("Programmes", Icons.Filled.CalendarViewWeek, listOf(c.name, "Cliquez un programme à venir pour l'enregistrer"), modifier) {
+        if (progs.isEmpty()) item("none") { Text("Pas d'information de programme pour cette chaîne.", Modifier.padding(8.dp), color = SokoulColors.TextMuted) }
+        items(progs.size, key = { progs[it].start }) { i ->
+            val pr = progs[i]
+            val t = System.currentTimeMillis()
+            val live = pr.start <= t && pr.end > t
+            com.sokoul.iptv.ui.components.FocusSurface(
+                style = com.sokoul.iptv.ui.components.FocusStyle.Row, onClick = { if (pr.start > t) app.record(c, pr.title, pr.start, pr.end) },
+                modifier = Modifier.fillMaxWidth(), shape = com.sokoul.iptv.ui.theme.Radius.Card,
+                color = if (live) SokoulColors.AccentTint else androidx.compose.ui.graphics.Color.Transparent,
+            ) { f ->
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(
+                        (if (live) "EN CE MOMENT · " else "") + com.sokoul.iptv.ui.util.formatRange(pr.start, pr.end),
+                        color = if (live) SokoulColors.Live else SokoulColors.Accent, style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                    )
+                    Text(pr.title, color = if (f || live) SokoulColors.TextPrimary else SokoulColors.TextSecondary, style = androidx.compose.material3.MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/** « Réglages » du direct : pistes audio et sous-titres de la chaîne. */
+@Composable
+private fun LiveSettingsPanel(st: PlayerStatus, player: DesktopPlayer, modifier: Modifier) {
+    SidePanel("Réglages", Icons.Filled.Tune, emptyList(), modifier) {
+        item("ha") { Text("AUDIO", Modifier.padding(start = 8.dp, top = 14.dp, bottom = 4.dp), style = com.sokoul.iptv.ui.theme.Type.Kicker) }
+        items(st.audio.size, key = { "a${st.audio[it].first}" }) { i ->
+            val (id, label) = st.audio[i]
+            TrackRow(shortTrack(label), id == st.audioId) { player.setAudio(id) }
+        }
+        item("hs") { Text("SOUS-TITRES", Modifier.padding(start = 8.dp, top = 14.dp, bottom = 4.dp), style = com.sokoul.iptv.ui.theme.Type.Kicker) }
+        val subs = st.subtitles.ifEmpty { listOf(-1 to "Désactivés") }
+        items(subs.size, key = { "s${subs[it].first}" }) { i ->
+            val (id, label) = subs[i]
+            TrackRow(if (id < 0) "Désactivés" else shortTrack(label), id == st.subtitleId) { player.setSubtitles(id) }
+        }
+    }
+}
+
+@Composable
+private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    com.sokoul.iptv.ui.components.FocusSurface(
+        style = com.sokoul.iptv.ui.components.FocusStyle.Row, onClick = onClick, modifier = Modifier.fillMaxWidth(),
+        shape = com.sokoul.iptv.ui.theme.Radius.Card, color = if (selected) SokoulColors.AccentTint else androidx.compose.ui.graphics.Color.Transparent,
+    ) { f ->
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (selected) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = SokoulColors.Accent) else Spacer(Modifier.width(20.dp))
+            Text(label, Modifier.padding(start = 12.dp), color = if (f || selected) SokoulColors.TextPrimary else SokoulColors.TextSecondary, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+        }
+    }
 }
 
 /** Au centre : ouverture du titre (fond de l'œuvre), mise en mémoire, ou erreur avec actions. */

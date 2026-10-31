@@ -28,7 +28,7 @@ Les captures de référence sont dans `scratchpad/ref/`.
 1. **Enregistrements**
    - Table `recordings` : id, chaîne, titre, début, fin, état, chemin, octets, erreur.
    - `RecordingRules` (pur) :
-     - marges de 1 minute avant et 2 minutes après ;
+     - marges de la tablette : 2 minutes avant et 5 minutes après ;
      - refus des chevauchements entre chaînes ;
      - doublons ;
      - état à l'ouverture de l'app : programmé dans le passé = manqué.

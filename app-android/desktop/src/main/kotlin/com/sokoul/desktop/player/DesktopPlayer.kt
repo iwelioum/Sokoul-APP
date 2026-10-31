@@ -51,7 +51,17 @@ data class PlayerStatus(
     val muted: Boolean = false,
     val rate: Float = 1f,
     val subtitleDelayMs: Long = 0,
-)
+    /** Direct : retard accumulé par les pauses (différé), 0 = au direct. */
+    val liveDelayMs: Long = 0,
+) {
+    /** Santé du flux en un mot, comme la tablette. */
+    val health: String get() = when {
+        error != null -> "Flux interrompu"
+        buffering -> "Flux fragile"
+        playing -> "Flux stable"
+        else -> "Connexion…"
+    }
+}
 
 /** Format d'image : ajusté (bandes noires), rempli (rognée), ou rapport forcé. */
 enum class VideoAspect(val label: String, val ratio: Float?) { FIT("Ajusté", null), FILL("Remplir", null), WIDE("16:9", 16f / 9f), CLASSIC("4:3", 4f / 3f) }
@@ -158,9 +168,9 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
             override fun playing(mediaPlayer: MediaPlayer) = ifCurrent {
                 retries = 0
                 _status.update { it.copy(playing = true, paused = false, buffering = false, error = null) }
-                // volume et muet choisis avant l'ouverture du flux : appliqués au flux qui démarre
+                // volume et muet choisis avant l'ouverture du flux : appliqués au flux qui démarre (aperçu : toujours muet)
                 val st = _status.value
-                mediaPlayer.submit { if (!released) { mediaPlayer.audio().setVolume(st.volume); mediaPlayer.audio().setMute(st.muted) } }
+                mediaPlayer.submit { if (!released) { mediaPlayer.audio().setVolume(st.volume); mediaPlayer.audio().setMute(st.muted || previewMuted) } }
             }
             override fun paused(mediaPlayer: MediaPlayer) = ifCurrent { _status.update { it.copy(paused = true) } }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = ifCurrent { _status.update { it.copy(buffering = newCache < 100f) } }
@@ -176,9 +186,26 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         })
     }
 
-    fun play(req: StreamRequest) {
+    /** Aperçu du Direct : le même lecteur (une connexion), son coupé sans toucher au réglage « muet ». */
+    @Volatile var previewMuted = false
+        private set
+
+    fun preview(req: StreamRequest) { previewMuted = true; start(req) }
+
+    /** « Regarder » : l'aperçu devient la lecture, sans rouvrir le flux ; le son revient au réglage. */
+    fun endPreview() {
+        if (!previewMuted) return
+        previewMuted = false
+        player.submit { if (!released) player.audio().setMute(_status.value.muted) }
+    }
+
+    fun play(req: StreamRequest) { previewMuted = false; start(req) }
+
+    private fun start(req: StreamRequest) {
         // une seule connexion : le flux précédent est fermé avant d'ouvrir le suivant
         generation++
+        // essais : chaque ouverture de flux est notée (vérifier qu'« Regarder » ne rouvre rien)
+        if (System.getenv("SOKOUL_ROUTE") != null) System.err.println("Flux ouvert : ${if (req.live) "direct" else "film"} ${req.title}${if (previewMuted) " (aperçu)" else ""}")
         player.controls().stop()
         current = req
         retries = 0
@@ -229,6 +256,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     fun retry() { current?.let { play(it) } }
 
     fun stop() {
+        previewMuted = false
         generation++
         current = null
         player.controls().stop()
@@ -236,7 +264,23 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         _status.update { PlayerStatus(volume = it.volume, muted = it.muted) }
     }
 
-    fun togglePause() = player.controls().pause()
+    /**
+     * Lecture / pause. En direct : libVLC garde le flux en mémoire pendant la pause (différé) ; le retard accumulé est
+     * suivi pour afficher « Différé · −2 min » et proposer « Retour au direct ».
+     */
+    fun togglePause() {
+        if (current?.live == true) {
+            val now = System.currentTimeMillis()
+            if (!_status.value.paused) pausedAt = now
+            else if (pausedAt > 0) { val d = now - pausedAt; pausedAt = 0; _status.update { it.copy(liveDelayMs = it.liveDelayMs + d) } }
+        }
+        player.controls().pause()
+    }
+
+    /** « Retour au direct » : le flux est rouvert, le retard retombe à zéro. */
+    fun backToLive() { pausedAt = 0; current?.takeIf { it.live }?.let { play(it) } }
+
+    @Volatile private var pausedAt = 0L
 
     fun seekBy(deltaMs: Long) {
         if (current?.live != false) return
