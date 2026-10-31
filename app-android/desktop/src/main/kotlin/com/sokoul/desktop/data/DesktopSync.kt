@@ -195,7 +195,7 @@ class DesktopSync(private val db: DesktopDb) {
 
     private fun syncEpg(p: Playlist): Int {
         val now = System.currentTimeMillis()
-        val offset = (db.setting(Settings.EPG_OFFSET)?.toIntOrNull() ?: 0) * 60_000L
+        val offset = db.setting(Settings.EPG_OFFSET)?.toIntOrNull() ?: 0
         val chans = db.allChannels(p.id)
         val epgIds = chans.mapNotNullTo(HashSet()) { it.epgKey }
         val nameKeys = chans.mapTo(HashSet()) { it.nameKey }
@@ -223,8 +223,8 @@ class DesktopSync(private val db: DesktopDb) {
                     onProgramme = { pr ->
                         val key = epgId(pr.channel) ?: return@parse
                         if (key in wanted) {
-                            val start = pr.start + offset
-                            val end = pr.stop + offset
+                            val start = DesktopPrefs.shiftGuide(pr.start, offset)
+                            val end = DesktopPrefs.shiftGuide(pr.stop, offset)
                             if (end > now - DAY && start < now + 8 * DAY) programs += Program(key, start, end, pr.title, pr.description)
                         }
                     },

@@ -137,6 +137,39 @@ class DesktopTest {
         assertFalse(LiveLogic.guideStart(now) > now)
     }
 
+    @Test fun `reglages types - defauts de la tablette, valeurs gardees, options libVLC`() {
+        val p = com.sokoul.desktop.data.DesktopPrefs(db)
+        assertEquals("fr", p.audioLanguage)
+        assertEquals(com.sokoul.desktop.data.SubtitleSize.NORMAL, p.subtitleSize)
+        assertTrue(p.autoNext)
+        p.subtitleSize = com.sokoul.desktop.data.SubtitleSize.LARGE
+        p.audioLanguage = "en"
+        p.autoNext = false
+        p.subtitleBackground = com.sokoul.desktop.data.SubtitleBackground.BOX
+        val again = com.sokoul.desktop.data.DesktopPrefs(db)
+        assertEquals(com.sokoul.desktop.data.SubtitleSize.LARGE, again.subtitleSize)
+        assertEquals("en", again.audioLanguage)
+        assertTrue(!again.autoNext)
+        val opts = again.player().subtitleOptions()
+        assertTrue(":freetype-rel-fontsize=12" in opts)
+        assertTrue(":freetype-background-opacity=160" in opts)
+    }
+
+    @Test fun `langue audio preferee, sous-titres par defaut, guide decale, zapping inverse`() {
+        val tracks = listOf(1 to "Piste 1 - [Français]", 2 to "Piste 2 - [English]", 3 to "Piste 3 - [Español]")
+        assertEquals(1, com.sokoul.desktop.player.AudioChoice.pick(tracks))
+        assertEquals(2, com.sokoul.desktop.player.AudioChoice.pick(tracks, "en"))
+        assertEquals(3, com.sokoul.desktop.player.AudioChoice.pick(tracks, "es"))
+        // allemand absent : l'anglais plutôt qu'une piste au hasard
+        assertEquals(2, com.sokoul.desktop.player.AudioChoice.pick(tracks, "de"))
+        val subs = listOf(-1 to "Désactivés", 4 to "Sous-titres 1 - [French]")
+        assertEquals(4, com.sokoul.desktop.player.AudioChoice.pickSubtitle(subs, "fr"))
+        assertEquals(null, com.sokoul.desktop.player.AudioChoice.pickSubtitle(subs, ""))
+        assertEquals(3_600_000L + 1000, com.sokoul.desktop.data.DesktopPrefs.shiftGuide(1000, 60))
+        assertEquals(-1, com.sokoul.desktop.data.DesktopPrefs.zapStep(-1, inverted = false))
+        assertEquals(1, com.sokoul.desktop.data.DesktopPrefs.zapStep(-1, inverted = true))
+    }
+
     @Test fun `reprendre - libelles de la tablette`() {
         val d = com.sokoul.desktop.tablet.TabletData
         assertEquals("Reste 1 h 05", d.remaining(65 * 60_000L))
@@ -146,7 +179,7 @@ class DesktopTest {
     }
 
     @Test fun `piste audio - francais, sinon anglais, jamais la premiere au hasard`() {
-        val pick = com.sokoul.desktop.player.AudioChoice::pick
+        val pick = { t: List<Pair<Int, String>> -> com.sokoul.desktop.player.AudioChoice.pick(t) }
         // pistes réelles d'une version « MULTI » sans français : l'anglais plutôt que le turc
         assertEquals(2, pick(listOf(1 to "HDM UHD Bluray AUDIO - [Turkish]", 2 to "HDM - [English]")))
         assertEquals(3, pick(listOf(1 to "Piste 1 - [English]", 3 to "TrueFrench AC3 - [Français]")))

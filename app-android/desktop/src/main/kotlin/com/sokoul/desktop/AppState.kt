@@ -86,7 +86,13 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
     var sources by mutableStateOf<NowPlaying.Title?>(null)
     private var playJob: Job? = null
 
-    init { reloadPlaylist() }
+    /** Réglages de lecture et de télévision (lus par le lecteur à chaque ouverture). */
+    val prefs = com.sokoul.desktop.data.DesktopPrefs(db)
+
+    init {
+        reloadPlaylist()
+        player?.prefs = { prefs.player() }
+    }
 
     val route: Route? get() = stack.lastOrNull()
 
@@ -146,12 +152,24 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         saveProgress()
         playJob?.cancel()
         playing = NowPlaying.Live(list, index)
+        prefs.lastChannel = c.id
         player?.play(com.sokoul.desktop.data.LiveLogic.stream(p, c, sync.userAgent()))
     }
 
+    /** Zapping (Page préc. = −1, Page suiv. = +1), dans le sens choisi dans les Réglages. */
     fun zap(delta: Int) {
         val live = playing as? NowPlaying.Live ?: return
-        play(live.list, com.sokoul.desktop.data.LiveLogic.zap(live.list.size, live.index, delta))
+        play(live.list, com.sokoul.desktop.data.LiveLogic.zap(live.list.size, live.index, com.sokoul.desktop.data.DesktopPrefs.zapStep(delta, prefs.zapInverted)))
+    }
+
+    /** « Au démarrage : dernière chaîne regardée » : relance la dernière chaîne, dans son groupe. */
+    fun resumeLastChannel() {
+        val p = playlist ?: return
+        val id = prefs.lastChannel ?: return
+        val all = db.allChannels(p.id)
+        val i = all.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
+        val group = all.filter { it.categoryId == all[i].categoryId }
+        play(group, group.indexOfFirst { it.id == id }.coerceAtLeast(0))
     }
 
     fun playMovie(movie: Movie) {

@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -58,6 +61,24 @@ fun SettingRow(
                 color = valueColor, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
             )
             if (trailing != null) Box(Modifier.padding(start = 16.dp)) { trailing() }
+        }
+    }
+}
+
+/** Section « Avancé » repliable : réglages techniques qu'on touche rarement. */
+@Composable
+fun AdvancedRow(open: Boolean, count: Int, onToggle: () -> Unit) {
+    FocusSurface(style = FocusStyle.Row, onClick = onToggle, modifier = Modifier.fillMaxWidth(), color = SokoulColors.Surface) { _ ->
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(androidx.compose.material.icons.Icons.Default.Tune, null, Modifier.padding(end = 14.dp).size(22.dp), tint = SokoulColors.TextSecondary)
+            Column(Modifier.weight(1f)) {
+                Text("Avancé", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Text(if (open) "Réglages techniques" else "$count réglages techniques, à ne changer qu'en cas de problème", color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+            }
+            Icon(
+                if (open) androidx.compose.material.icons.Icons.Default.ExpandLess else androidx.compose.material.icons.Icons.Default.ExpandMore,
+                if (open) "Replier" else "Déplier", tint = SokoulColors.TextSecondary,
+            )
         }
     }
 }

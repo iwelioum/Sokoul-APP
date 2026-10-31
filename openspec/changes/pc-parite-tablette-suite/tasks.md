@@ -2,9 +2,9 @@
 
 ## 1. Réglages modifiables (socle des autres groupes)
 
-- [ ] 1.1 Clés de réglages et `DesktopPrefs` (lecture et écriture typées dans `settings`). Vérification : test JVM `DesktopTest.reglages typés`.
-- [ ] 1.2 Rubriques Lecture et Télévision et guide modifiables (`OptionsDialog`, `ToggleRow`, « Avancé » repliable), avec les libellés de la tablette. Vérification : captures `settings:playback` et `settings:tv`, comparées à `ref/reg-lecture.png` et `ref/reg-tv.png`.
-- [ ] 1.3 Application au lecteur : langue préférée dans `AudioChoice`, apparence des sous-titres (fabrique libVLC recréée hors lecture), mise en mémoire, décalage du guide (`GuideOffset`, pur). Vérification : tests JVM `AudioChoice` (langue préférée) et `GuideOffset`.
+- [x] 1.1 Clés de réglages et `DesktopPrefs` (lecture et écriture typées dans `settings`). Vérification : test JVM `DesktopTest.reglages typés`.
+- [x] 1.2 Rubriques Lecture et Télévision et guide modifiables (`OptionsDialog`, `ToggleRow`, « Avancé » repliable), avec les libellés de la tablette. Vérification : captures `settings:playback` et `settings:tv`, comparées à `ref/reg-lecture.png` et `ref/reg-tv.png`.
+- [x] 1.3 Application au lecteur : langue préférée dans `AudioChoice`, apparence des sous-titres (options freetype du média plutôt que fabrique recréée : appliquées dès le titre suivant), mise en mémoire, décalage du guide (`GuideOffset`, pur). Vérification : tests JVM `AudioChoice` (langue préférée) et `GuideOffset`.
 
 ## 2. Fiche, sources d'une version et pages de bibliothèque
 

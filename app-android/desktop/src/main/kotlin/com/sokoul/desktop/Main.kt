@@ -74,6 +74,7 @@ private fun start() {
                 if (trial != null) { TrialRoute.apply(app, trial); return@LaunchedEffect }
                 db.setting(Settings.LAST_SCREEN)?.let { s -> runCatching { Screen.valueOf(s) }.getOrNull() }
                     ?.takeIf { it != Screen.SEARCH }?.let { app.go(it) }
+                if (app.prefs.resumeLastChannel) app.resumeLastChannel()
                 // chaînes et guide plus vieux que 12 h : mis à jour en arrière-plan, la liste s'affiche avec l'existant
                 app.playlist?.let { p -> if (sync.isStale(p)) { sync.sync(p); app.reloadPlaylist() } }
             }

@@ -48,7 +48,22 @@ import com.sokoul.desktop.data.PlaylistType
 import com.sokoul.desktop.data.ProbeResult
 import com.sokoul.desktop.data.ProviderConfig
 import com.sokoul.desktop.data.ProviderProbe
+import com.sokoul.desktop.data.BufferProfile
+import com.sokoul.desktop.data.DesktopPrefs
 import com.sokoul.desktop.data.Settings
+import com.sokoul.desktop.data.SubtitleBackground
+import com.sokoul.desktop.data.SubtitleColor
+import com.sokoul.desktop.data.SubtitlePosition
+import com.sokoul.desktop.data.SubtitleSize
+import com.sokoul.iptv.ui.screens.settings.AdvancedRow
+import androidx.compose.material.icons.filled.Contrast
+import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.VerticalAlignBottom
 import com.sokoul.iptv.data.PinHasher
 import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.ConfirmDialog
@@ -88,6 +103,9 @@ private sealed interface SettingsDialog {
     /** Changer de code : l'ancien d'abord (sinon n'importe qui le remplace). */
     data object VerifyPin : SettingsDialog
     data object RemovePin : SettingsDialog
+    /** Choix d'une valeur (comme `c.choose` de la tablette). */
+    data class Choose(val title: String, val options: List<MenuOption>) : SettingsDialog
+    data object UserAgent : SettingsDialog
 }
 
 /**
@@ -102,6 +120,7 @@ fun TabletSettings(app: AppState) {
     var probes by remember { mutableStateOf<Map<String, ProbeResult>>(emptyMap()) }
     var testing by remember { mutableStateOf(setOf<String>()) }
     var pinError by remember { mutableStateOf<String?>(null) }
+    var advanced by remember { mutableStateOf(false) }
     fun test(id: String) {
         testing = testing + id
         scope.launch { probes = probes + (id to ProviderProbe.check(app.db, id)); testing = testing - id }
@@ -133,17 +152,82 @@ fun TabletSettings(app: AppState) {
                     note("one", "Une seule connexion à la fois : ne regardez pas la même playlist sur la tablette et sur le PC en même temps.")
                 }
                 SettingsCategory.PLAYBACK -> {
-                    item("pb-audio") { SettingRow("Langue audio préférée", "Français", "Piste choisie à l'ouverture, si le fichier en a une", icon = Icons.Default.RecordVoiceOver) {} }
-                    item("pb-subs") { SettingRow("Sous-titres par défaut", "Désactivés", "Choisissez une piste depuis le lecteur", icon = Icons.Default.ClosedCaption) {} }
-                    item("pb-resume") { SettingRow("Reprise de la lecture", "Automatique", "Les films et épisodes reprennent là où vous vous étiez arrêté", icon = Icons.Default.Refresh) {} }
-                    subsection("Lecteur")
-                    item("pb-player") { SettingRow("Lecteur vidéo", if (app.player != null) "libVLC 3.0.21" else "Introuvable", "Fourni avec l'application", icon = Icons.Default.CheckCircle, valueColor = if (app.player != null) SokoulColors.TextSecondary else SokoulColors.Warning) {} }
-                    item("pb-ua") { SettingRow("User-Agent", app.db.setting(Settings.USER_AGENT) ?: Settings.DEFAULT_USER_AGENT, "Le même que l'app Android : le fournisseur voit le même client") {} }
+                    val pr = app.prefs
+                    fun set(block: () -> Unit) { block(); app.dataVersion++ }
+                    item("pb-audio") {
+                        SettingRow("Langue audio préférée", DesktopPrefs.languageName(pr.audioLanguage), icon = Icons.Default.RecordVoiceOver) {
+                            dialog = SettingsDialog.Choose("Langue audio", DesktopPrefs.languages.map { (code, name) -> MenuOption(name, selected = code == pr.audioLanguage) { set { pr.audioLanguage = code } } })
+                        }
+                    }
+                    item("pb-subs") {
+                        SettingRow("Sous-titres par défaut", if (pr.subtitleLanguage.isBlank()) "Désactivés" else DesktopPrefs.languageName(pr.subtitleLanguage), icon = Icons.Default.ClosedCaption) {
+                            dialog = SettingsDialog.Choose("Sous-titres", (listOf("" to "Désactivés") + DesktopPrefs.languages).map { (code, name) ->
+                                MenuOption(name, selected = code == pr.subtitleLanguage) { set { pr.subtitleLanguage = code } }
+                            })
+                        }
+                    }
+                    // apparence : options du média, appliquées dès le titre suivant
+                    item("pb-sub-size") {
+                        SettingRow("Taille des sous-titres", pr.subtitleSize.label, icon = Icons.Default.FormatSize) {
+                            dialog = SettingsDialog.Choose("Taille des sous-titres", SubtitleSize.entries.map { v -> MenuOption(v.label, selected = v == pr.subtitleSize) { set { pr.subtitleSize = v } } })
+                        }
+                    }
+                    item("pb-sub-color") {
+                        SettingRow("Couleur des sous-titres", pr.subtitleColor.label, icon = Icons.Default.Palette) {
+                            dialog = SettingsDialog.Choose("Couleur des sous-titres", SubtitleColor.entries.map { v -> MenuOption(v.label, selected = v == pr.subtitleColor) { set { pr.subtitleColor = v } } })
+                        }
+                    }
+                    item("pb-sub-bg") {
+                        SettingRow("Lisibilité des sous-titres", pr.subtitleBackground.label, "Contour noir, fond noir semi-transparent ou simple ombre", icon = Icons.Default.Contrast) {
+                            dialog = SettingsDialog.Choose("Lisibilité des sous-titres", SubtitleBackground.entries.map { v -> MenuOption(v.label, selected = v == pr.subtitleBackground) { set { pr.subtitleBackground = v } } })
+                        }
+                    }
+                    item("pb-sub-pos") {
+                        SettingRow("Position des sous-titres", pr.subtitlePosition.label, "« Plus haut » quand un bandeau ou le bas de l'écran les cache", icon = Icons.Default.VerticalAlignBottom) {
+                            dialog = SettingsDialog.Choose("Position des sous-titres", SubtitlePosition.entries.map { v -> MenuOption(v.label, selected = v == pr.subtitlePosition) { set { pr.subtitlePosition = v } } })
+                        }
+                    }
+                    item("pb-next") {
+                        SettingRow("Épisode suivant automatique", null, "Enchaîne l'épisode suivant à la fin du générique", icon = Icons.Default.SkipNext, trailing = { com.sokoul.iptv.ui.components.SokoulSwitch(pr.autoNext) }) {
+                            set { pr.autoNext = !pr.autoNext }
+                        }
+                    }
+                    item("pb-advanced") { AdvancedRow(advanced, 3) { advanced = !advanced } }
+                    if (advanced) {
+                        item("pb-buffer") {
+                            SettingRow("Mémoire tampon", pr.buffer.label) {
+                                dialog = SettingsDialog.Choose("Mémoire tampon", BufferProfile.entries.map { b -> MenuOption(b.label, selected = b == pr.buffer) { set { pr.buffer = b } } })
+                            }
+                        }
+                        item("pb-ua") { SettingRow("User-Agent", pr.userAgent, "Le même que l'app Android : le fournisseur voit le même client") { dialog = SettingsDialog.UserAgent } }
+                        item("pb-player") { SettingRow("Lecteur vidéo", if (app.player != null) "libVLC 3.0.21" else "Introuvable", "Fourni avec l'application", icon = Icons.Default.CheckCircle, valueColor = if (app.player != null) SokoulColors.TextSecondary else SokoulColors.Warning) {} }
+                    }
                 }
                 SettingsCategory.TV -> {
-                    item("tv-start") { SettingRow("Au démarrage", "Dernier écran ouvert", icon = Icons.Default.Refresh) {} }
-                    item("tv-zap") { SettingRow("Zapping", "Page précédente / suivante", "Dans le lecteur, en direct", icon = Icons.Default.Keyboard) {} }
+                    val pr = app.prefs
+                    fun set(block: () -> Unit) { block(); app.dataVersion++ }
+                    item("tv-start") {
+                        SettingRow("Au démarrage", if (pr.resumeLastChannel) "Dernière chaîne regardée" else "Dernier écran ouvert", "Pour ceux qui allument le PC pour regarder la télé", icon = Icons.Default.PowerSettingsNew) {
+                            dialog = SettingsDialog.Choose("Au démarrage", listOf(false to "Dernier écran ouvert", true to "Dernière chaîne regardée").map { (v, label) ->
+                                MenuOption(label, selected = v == pr.resumeLastChannel) { set { pr.resumeLastChannel = v } }
+                            })
+                        }
+                    }
+                    item("tv-zap") {
+                        SettingRow("Sens du zapping", DesktopPrefs.zapLabel(pr.zapInverted), icon = Icons.Default.SwapVert) {
+                            dialog = SettingsDialog.Choose("Sens du zapping", listOf(false, true).map { v -> MenuOption(DesktopPrefs.zapLabel(v), selected = v == pr.zapInverted) { set { pr.zapInverted = v } } })
+                        }
+                    }
                     subsection("Guide des programmes")
+                    item("tv-offset") {
+                        SettingRow("Décalage horaire du guide", DesktopPrefs.offsetLabel(pr.epgOffsetMinutes), "À ajuster si les programmes sont décalés (le guide est rechargé)", icon = Icons.Default.Schedule) {
+                            dialog = SettingsDialog.Choose("Décalage du guide", (-12..12).map { h -> h * 60 }.map { m ->
+                                MenuOption(DesktopPrefs.offsetLabel(m), selected = m == pr.epgOffsetMinutes) {
+                                    if (m != pr.epgOffsetMinutes) { set { pr.epgOffsetMinutes = m }; app.playlist?.takeIf { !sync.running }?.let(::syncNow) }
+                                }
+                            })
+                        }
+                    }
                     item("tv-epg") {
                         val n = remember(version, sync.running) { app.playlist?.let { app.db.programCount(it.id) } ?: 0 }
                         SettingRow("Guide TV", if (n > 0) "$n programmes" else "Vide", "Mis à jour avec la playlist", icon = Icons.Default.Sync) {}
@@ -245,6 +329,18 @@ fun TabletSettings(app: AppState) {
             if (pin.length == 4 && pin.all(Char::isDigit)) { app.db.putSetting(Settings.PIN, PinHasher.hash(pin)); app.dataVersion++; dialog = null }
             else pinError = "4 chiffres"
         }, { dialog = null }, pinError)
+        is SettingsDialog.Choose -> OptionsDialog(d.title, d.options, { if (dialog === d) dialog = null })
+        SettingsDialog.UserAgent -> {
+            var v by remember { mutableStateOf(app.prefs.userAgent) }
+            SokoulDialog({ dialog = null }, maxWidth = 620.dp) {
+                DialogHeader("User-Agent", "Laissé vide : celui de l'app Android")
+                FormField("User-Agent", v, { v = it }, Modifier.padding(top = Space.m).fillMaxWidth())
+                Row(Modifier.padding(top = Space.l), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                    SokoulButton("Enregistrer", { app.prefs.userAgent = v; app.dataVersion++; dialog = null }, kind = ButtonKind.Primary)
+                    SokoulButton("Par défaut", { app.prefs.userAgent = ""; app.dataVersion++; dialog = null })
+                }
+            }
+        }
         SettingsDialog.VerifyPin -> PinDialog("Code actuel", { pin ->
             if (app.checkPin(pin)) { pinError = null; dialog = SettingsDialog.SetPin } else pinError = "Code incorrect"
         }, { dialog = null }, pinError)

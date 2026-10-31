@@ -121,6 +121,10 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     @Volatile private var accepted = -1
     /** Piste audio choisie dans le menu : la langue n'est plus imposée pour ce titre. */
     @Volatile private var audioChosenByUser = false
+    /** Sous-titres par défaut déjà posés (ou choisis à la main) pour ce titre. */
+    @Volatile private var subtitleChosen = false
+    /** Réglages lus à chaque ouverture (langues, mémoire tampon, apparence des sous-titres). */
+    @Volatile var prefs: () -> com.sokoul.desktop.data.PlayerPrefs = { com.sokoul.desktop.data.PlayerPrefs() }
     private val timer = Timer("sokoul-reconnect", true)
 
     private inline fun ifCurrent(block: () -> Unit) { if (accepted == generation) block() }
@@ -172,14 +176,18 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         current = req
         retries = 0
         audioChosenByUser = false
+        subtitleChosen = false
         _status.update { PlayerStatus(title = req.title, buffering = true, volume = it.volume, muted = it.muted) }
         open(req)
     }
 
     private fun open(req: StreamRequest) {
+        val p = prefs()
         val opts = buildList {
-            add(":network-caching=${if (req.live) 1500 else 3000}")
+            add(":network-caching=${if (req.live) p.buffer.liveMs else p.buffer.vodMs}")
             add(":http-reconnect")
+            // apparence des sous-titres des Réglages (options du média : appliquées dès ce titre)
+            addAll(p.subtitleOptions())
             // reprise : libVLC ouvre directement à la position (aussi après une reconnexion)
             if (!req.live && req.startMs > 0) add(":start-time=${req.startMs / 1000.0}")
             req.userAgent?.takeIf { it.isNotBlank() }?.let { add(":http-user-agent=$it") }
@@ -238,7 +246,7 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     }
 
     fun setAudio(id: Int) { audioChosenByUser = true; player.audio().setTrack(id); refreshTracks() }
-    fun setSubtitles(id: Int) { player.subpictures().setTrack(id); refreshTracks() }
+    fun setSubtitles(id: Int) { subtitleChosen = true; player.subpictures().setTrack(id); refreshTracks() }
 
     fun volume(delta: Int) = setVolume(_status.value.volume + delta)
 
@@ -258,8 +266,17 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
     private fun refreshTracks() {
         val audio = player.audio().trackDescriptions().filter { it.id() >= 0 }.map { it.id() to it.description() }
         // les pistes arrivent une à une : la langue est revue à chaque ajout, tant que l'utilisateur n'a rien choisi
-        if (!audioChosenByUser) AudioChoice.pick(audio)?.takeIf { it != player.audio().track() }?.let { id ->
+        val p = prefs()
+        if (!audioChosenByUser) AudioChoice.pick(audio, p.audioLanguage)?.takeIf { it != player.audio().track() }?.let { id ->
             player.submit { if (!released) { player.audio().setTrack(id); refreshTracks() } }
+        }
+        // sous-titres par défaut des Réglages : posés une fois, dès qu'une piste de la langue apparaît
+        if (!subtitleChosen) {
+            val subTracks = player.subpictures().trackDescriptions().map { it.id() to it.description() }
+            AudioChoice.pickSubtitle(subTracks, p.subtitleLanguage)?.let { id ->
+                subtitleChosen = true
+                player.submit { if (!released) { player.subpictures().setTrack(id); refreshTracks() } }
+            }
         }
         val subs = player.subpictures().trackDescriptions().map { it.id() to if (it.id() < 0) "Désactivés" else it.description() }
         val dim = player.video().videoDimension()
