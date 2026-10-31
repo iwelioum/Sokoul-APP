@@ -102,6 +102,8 @@ fun AppContent(app: AppState) {
                         is Route.Detail -> com.sokoul.desktop.tablet.TabletDetail(app, data, route.kind, route.id)
                         is Route.Saga -> com.sokoul.desktop.tablet.TabletSaga(app, route.id)
                         is Route.Platform -> com.sokoul.desktop.tablet.TabletPlatform(app, route.platform, route.kind)
+                        Route.Upcoming -> com.sokoul.desktop.tablet.TabletUpcoming(app)
+                        Route.History -> com.sokoul.desktop.tablet.TabletHistory(app)
                         null -> when (app.screen) {
                             Screen.HOME -> com.sokoul.desktop.tablet.TabletBrowse(app, com.sokoul.iptv.data.repo.BrowseKind.HOME, data)
                             Screen.MOVIES -> com.sokoul.desktop.tablet.TabletBrowse(app, com.sokoul.iptv.data.repo.BrowseKind.MOVIES, data)

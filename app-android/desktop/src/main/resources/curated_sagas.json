@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "verified": "2026-10-25 et 2026-10-26, identifiants relevés sur themoviedb.org (nom de la collection et films)",
+  "sagas": [
+    {
+      "key": "star-wars",
+      "name": "Star Wars",
+      "collectionIds": [10],
+      "extraMovieIds": [330459, 348350],
+      "chronologicalOrderIds": [1893, 1894, 1895, 348350, 330459, 11, 1891, 1892, 140607, 181808, 181812],
+      "relatedSeriesTmdbIds": [4194, 83867, 82856, 114461]
+    },
+    {
+      "key": "wizarding-world",
+      "name": "Le monde des sorciers",
+      "collectionIds": [1241, 435259],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [259316, 338952, 338953, 671, 672, 673, 674, 675, 767, 12444, 12445],
+      "relatedSeriesTmdbIds": []
+    },
+    {
+      "key": "middle-earth",
+      "name": "La Terre du Milieu",
+      "collectionIds": [119, 121938],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [49051, 57158, 122917, 120, 121, 122],
+      "relatedSeriesTmdbIds": [84773]
+    },
+    {
+      "key": "fast-furious",
+      "name": "Fast & Furious",
+      "collectionIds": [9485],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [9799, 584, 13804, 51497, 82992, 9615, 168259, 337339, 384018, 385128, 385687],
+      "relatedSeriesTmdbIds": []
+    },
+    {
+      "key": "alien",
+      "name": "Alien",
+      "collectionIds": [8091, 135416],
+      "extraMovieIds": [945961],
+      "chronologicalOrderIds": [70981, 126889, 348, 945961, 679, 8077, 8078],
+      "relatedSeriesTmdbIds": [157239]
+    },
+    {
+      "key": "hunger-games",
+      "name": "Hunger Games",
+      "collectionIds": [131635],
+      "extraMovieIds": [695721],
+      "chronologicalOrderIds": [695721, 70160, 101299, 131631, 131634],
+      "relatedSeriesTmdbIds": []
+    },
+    {
+      "key": "jurassic",
+      "name": "Jurassic Park",
+      "collectionIds": [328],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [],
+      "relatedSeriesTmdbIds": [93741]
+    },
+    {
+      "key": "dune",
+      "name": "Dune",
+      "collectionIds": [726871],
+      "extraMovieIds": [],
+      "chronologicalOrderIds": [],
+      "relatedSeriesTmdbIds": [90228]
+    },
+    { "key": "marvel", "name": "Univers Marvel", "collectionIds": [86311, 131292, 131295, 131296, 284433, 531241, 422834, 529892, 618529] },
+    { "key": "x-men", "name": "X-Men", "collectionIds": [748] },
+    { "key": "mission-impossible", "name": "Mission : Impossible", "collectionIds": [87359] },
+    { "key": "james-bond", "name": "James Bond 007", "collectionIds": [645] },
+    { "key": "pirates", "name": "Pirates des Caraïbes", "collectionIds": [295] },
+    { "key": "matrix", "name": "Matrix", "collectionIds": [2344] },
+    { "key": "indiana-jones", "name": "Indiana Jones", "collectionIds": [84] },
+    { "key": "back-to-the-future", "name": "Retour vers le futur", "collectionIds": [264] },
+    { "key": "terminator", "name": "Terminator", "collectionIds": [528] },
+    { "key": "rocky-creed", "name": "Rocky & Creed", "collectionIds": [1575, 553717] },
+    { "key": "john-wick", "name": "John Wick", "collectionIds": [404609] },
+    { "key": "toy-story", "name": "Toy Story", "collectionIds": [10194] },
+    { "key": "shrek", "name": "Shrek", "collectionIds": [2150] },
+    { "key": "avatar", "name": "Avatar", "collectionIds": [87096] },
+    { "key": "planet-apes", "name": "La Planète des singes", "collectionIds": [1709, 173710] },
+    { "key": "mad-max", "name": "Mad Max", "collectionIds": [8945] },
+    { "key": "die-hard", "name": "Die Hard", "collectionIds": [1570] },
+    { "key": "bourne", "name": "Jason Bourne", "collectionIds": [31562] }
+  ]
+}

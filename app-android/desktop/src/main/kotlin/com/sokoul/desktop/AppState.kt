@@ -39,6 +39,8 @@ sealed interface Route {
     data class Detail(val kind: String, val id: Int) : Route
     data class Saga(val id: Int) : Route
     data class Platform(val platform: com.sokoul.iptv.data.repo.Platform, val kind: String) : Route
+    data object Upcoming : Route
+    data object History : Route
 }
 
 /** Ce que montre le lecteur : une chaîne (liste de zapping) ou une œuvre TMDB (film, épisode). */
@@ -68,6 +70,7 @@ sealed interface NowPlaying {
 class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlayer?) {
     val catalog = Catalog(db)
     val debrid = DesktopDebrid(db, catalog)
+    val upcoming = com.sokoul.desktop.data.DesktopUpcoming(db, catalog)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     var screen by mutableStateOf(Screen.HOME)

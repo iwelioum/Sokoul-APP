@@ -345,6 +345,21 @@ class DesktopDb(file: File) : AutoCloseable {
         query("SELECT * FROM resume WHERE finished=0 AND position_ms > 0 ORDER BY updated_at DESC LIMIT ?", limit * 3) { it.toResume() }
             .distinctBy { "${it.kind}:${it.tmdbId}" }.take(limit)
 
+    /** Historique : tout ce qui a été regardé (terminé compris), le plus récent d'abord. */
+    @Synchronized
+    fun history(limit: Int = 300): List<Resume> =
+        query("SELECT * FROM resume WHERE finished=1 OR position_ms > 0 ORDER BY updated_at DESC LIMIT ?", limit) { it.toResume() }
+
+    @Synchronized
+    fun deleteResume(key: String) = update("DELETE FROM resume WHERE key=?", key)
+
+    @Synchronized
+    fun clearHistory() = update("DELETE FROM resume")
+
+    /** Séries commencées (identifiants TMDB), pour « À venir ». */
+    @Synchronized
+    fun startedSeries(): List<Int> = query("SELECT DISTINCT tmdb_id FROM resume WHERE kind='tv'") { it.getInt(1) }
+
     /** Films vus jusqu'au bout (identifiants TMDB) : part déjà vue d'une saga. */
     @Synchronized
     fun finishedMovies(): Set<Int> =

@@ -8,10 +8,10 @@
 
 ## 2. Fiche, sources d'une version et pages de bibliothèque
 
-- [ ] 2.1 Fiche : « Finit à », « Aussi sur » (`TmdbClient.providers` dans `:core`) et section « Saga : *nom* ». Vérification : capture `detail:movie:140607`, comparée à `ref/fiche-sw.png` ; `:core:test` et `testDebugUnitTest` au vert.
-- [ ] 2.2 Fenêtre des sources d'une version (« +n sources »). Vérification : capture comparée à `ref/sources-fiche.png`.
-- [ ] 2.3 `curated_sagas.json` en ressource, `CuratedSagas` et `SagaOrder` (purs), page d'une saga façon tablette, accroche de la page Sagas. Vérification : tests JVM `SagaOrder` (récit et prochain film) ; capture `saga:10` comparée à `ref/saga-page.png`.
-- [ ] 2.4 « À venir » (TVmaze par IMDb, avec cache) et « Historique » (groupé par jour), boutons dans Ma liste. Vérification : tests JVM du tri d'« À venir » et du groupement par jour ; captures comparées à `ref/maliste-avenir.png` et `ref/maliste-historique.png`.
+- [x] 2.1 Fiche : « Finit à », « Aussi sur » (`TmdbClient.providers` dans `:core`) et section « Saga : *nom* ». Vérification : capture `detail:movie:140607`, comparée à `ref/fiche-sw.png` ; `:core:test` et `testDebugUnitTest` au vert.
+- [x] 2.2 Fenêtre des sources d'une version (« +n sources »). Vérification : capture comparée à `ref/sources-fiche.png`.
+- [x] 2.3 `curated_sagas.json` en ressource, `CuratedSagas` et `SagaOrder` (purs), page d'une saga façon tablette, accroche de la page Sagas. Vérification : tests JVM `SagaOrder` (récit et prochain film) ; capture `saga:10` comparée à `ref/saga-page.png`.
+- [x] 2.4 « À venir » (TVmaze par IMDb, avec cache) et « Historique » (groupé par jour), boutons dans Ma liste. Les 63 reprises importées de la tablette sont dans une autre table (`progress`) : elles n'alimentent pas encore l'Historique du PC. Vérification : tests JVM du tri d'« À venir » et du groupement par jour ; captures comparées à `ref/maliste-avenir.png` et `ref/maliste-historique.png`.
 
 ## 3. Lecteur de films
 

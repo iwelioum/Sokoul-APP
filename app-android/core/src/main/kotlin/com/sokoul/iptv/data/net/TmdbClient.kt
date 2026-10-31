@@ -176,6 +176,12 @@ class TmdbClient @Inject constructor(
         return safe { get(apiKey, "/3/$kind/$id/external_ids", emptyMap(), ttlMs = 30 * 24 * HOUR)?.str("imdb_id")?.takeIf { it.startsWith("tt") } }
     }
 
+    /** « Aussi sur » : plateformes d'abonnement qui proposent l'œuvre en France (TMDB / JustWatch), par ordre d'affichage. */
+    suspend fun providers(apiKey: String, kind: String, id: Int, region: String = "FR"): List<String> {
+        if (apiKey.isBlank()) return emptyList()
+        return safe { parseProviders(get(apiKey, "/3/$kind/$id/watch/providers", emptyMap(), ttlMs = 2 * 24 * HOUR), region) } ?: emptyList()
+    }
+
     suspend fun trending(apiKey: String, kind: String): List<TmdbItem> {
         if (apiKey.isBlank()) return emptyList()
         return safe {
@@ -436,6 +442,16 @@ class TmdbClient @Inject constructor(
 
     companion object {
         const val IMG = "https://image.tmdb.org/t/p"
+
+        /** Plateformes d'abonnement (« flatrate ») de [region] dans une réponse `watch/providers`, par priorité TMDB. */
+        fun parseProviders(o: JsonObject?, region: String): List<String> {
+            val r = (o?.get("results") as? JsonObject)?.get(region) as? JsonObject ?: return emptyList()
+            return (r["flatrate"] as? kotlinx.serialization.json.JsonArray).orEmpty()
+                .mapNotNull { it as? JsonObject }
+                .sortedBy { it.int("display_priority") ?: 99 }
+                .mapNotNull { it.str("provider_name") }
+                .distinct()
+        }
         /** Genres TV écartés des filmographies : actualité, téléréalité, talk-show. */
         private val NOT_FICTION_TV = setOf(10763, 10764, 10767)
         private val DIRECTING_JOBS = setOf("Director", "Creator")

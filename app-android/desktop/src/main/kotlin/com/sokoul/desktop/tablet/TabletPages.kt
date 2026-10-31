@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -85,7 +87,16 @@ fun TabletMyList(app: AppState) {
         val ids = withContext(Dispatchers.IO) { app.myList() }
         value = coroutineScope { ids.map { (k, id) -> async { app.catalog.details(k, id)?.toWork(k) } }.mapNotNull { it.await() } }
     }
-    WorkGrid(app, works, { PageTitle("Ma liste", works?.let { "${it.size} titre" + if (it.size > 1) "s" else "" }) }, empty = {
+    WorkGrid(app, works, {
+        // « À venir » et « Historique » à droite du titre, comme la tablette
+        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.Bottom) {
+            Box(Modifier.weight(1f)) { PageTitle("Ma liste", works?.let { "${it.size} titre" + if (it.size > 1) "s" else "" }) }
+            androidx.compose.foundation.layout.Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                com.sokoul.iptv.ui.components.SokoulButton("À venir", { app.open(com.sokoul.desktop.Route.Upcoming) }, icon = Icons.Default.Event)
+                com.sokoul.iptv.ui.components.SokoulButton("Historique", { app.open(com.sokoul.desktop.Route.History) }, icon = Icons.Default.History)
+            }
+        }
+    }, empty = {
         EmptyState(Icons.Default.BookmarkBorder, "Votre liste est vide", "Ajoutez un film ou une série avec le bouton « Ma liste » de sa fiche.")
     })
 }
@@ -100,32 +111,12 @@ fun TabletSagas(app: AppState, data: TabletData) {
         contentPadding = PaddingValues(start = l.margin, end = l.margin, top = 24.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(l.gutter), verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { PageTitle("Sagas", "Une histoire, plusieurs films : à voir dans l'ordre.") }
+        item(span = { GridItemSpan(maxLineSpan) }) { PageTitle("Sagas", "Les grandes histoires du catalogue, film après film.") }
         val s = sagas
         if (s == null) items(9) { Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).shimmer()) }
         else if (s.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyState(Icons.Default.CollectionsBookmark, "Aucune saga", "TMDB ne répond pas pour le moment.") }
         else items(s, key = { it.id }) { saga -> SagaTile(saga, { app.openSaga(saga.id) }, width = Dp.Unspecified) }
     }
-}
-
-/** Page d'une saga : fond, nom, résumé, puis les films dans l'ordre de sortie. */
-@Composable
-fun TabletSaga(app: AppState, id: Int) {
-    val c by produceState<com.sokoul.iptv.data.net.TmdbCollection?>(null, id) { value = app.catalog.tmdb.collection(app.catalog.key(), id) }
-    val works = c?.parts?.map { it.toWork("movie", Catalog::genreName) }
-    WorkGrid(app, works, {
-        val col = c
-        Box(Modifier.fillMaxWidth().height(260.dp)) {
-            if (col?.backdrop != null) NetImage(col.backdrop, null, Modifier.fillMaxSize())
-            // voile du bas : le texte reste lisible sur le fond de la saga
-            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(0.2f to androidx.compose.ui.graphics.Color.Transparent, 1f to SokoulColors.Background)))
-            Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-                Text("SAGA", style = Type.SagaKicker)
-                Text(col?.name?.let { com.sokoul.iptv.ui.components.sagaLabel(it) } ?: "", style = Type.ScreenTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                col?.overview?.let { Text(it, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium, color = SokoulColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            }
-        }
-    }, back = true)
 }
 
 /** Page d'une plateforme : ses films ou séries les plus populaires en France. */

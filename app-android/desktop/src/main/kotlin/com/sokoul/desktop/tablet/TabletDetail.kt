@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -134,6 +135,13 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
     }
     val episodes by produceState(emptyList<TmdbEpisode>(), id, season, info) { value = if (tv && info != null) app.catalog.season(id, season) else emptyList() }
     val inList = remember(id, app.dataVersion) { app.inMyList(kind, id) }
+    var sourcesOf by remember(id) { androidx.compose.runtime.mutableStateOf<VersionGroup?>(null) }
+    LaunchedEffect(versions) {
+        if (com.sokoul.desktop.TrialRoute.openVersionSources) versions?.firstOrNull { it.streams.size > 1 }?.let {
+            com.sokoul.desktop.TrialRoute.openVersionSources = false
+            kotlinx.coroutines.delay(5_500); sourcesOf = it
+        }
+    }
 
     val listState = rememberLazyListState()
     // essais (SOKOUL_ROUTE detail:…:<n>) : fiche défilée jusqu'à la section n
@@ -174,11 +182,11 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
                         when {
                             v == null -> "Recherche des versions sur Real-Debrid…"
                             count == 0 -> "Aucune version trouvée sur Real-Debrid pour le moment"
-                            else -> "$count sources trouvées · RD $count · cliquez pour lire, clic droit : toutes les sources"
+                            else -> "$count sources trouvées : RD $count · cliquez pour lire"
                         },
                     )
                     if (v == null) Row(Modifier.padding(start = l.margin, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { repeat(4) { Box(Modifier.size(244.dp, 118.dp).shimmer()) } }
-                    else if (v.isNotEmpty()) VersionsShelf(v) { g ->
+                    else if (v.isNotEmpty()) VersionsShelf(v, onSources = { sourcesOf = it }) { g ->
                         app.playTitle(if (tv) title(next?.first ?: 1, next?.second ?: 1) else title(), g.best)
                     }
                 }
@@ -210,6 +218,19 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
                     }
                 }
             }
+            // film d'une collection : « Saga : Star Wars », toute l'histoire dans l'ordre de sortie (comme la tablette)
+            info?.collectionId?.let { cid ->
+                item("saga") {
+                    val col by produceState<com.sokoul.iptv.data.net.TmdbCollection?>(null, cid) { value = app.catalog.tmdb.collection(app.catalog.key(), cid) }
+                    val c = col
+                    if (c != null && c.parts.size > 1) Column(Modifier.padding(top = l.rowSpacing)) {
+                        RowHeader("Saga : " + com.sokoul.iptv.data.repo.SagaLogic.displayName(c.name), "Toute l'histoire, dans l'ordre de sortie.", onSeeAll = { app.openSaga(cid) })
+                        CardRow(c.parts.filter { it.poster != null }, { it.id }) { _, p ->
+                            WorkCard(p.toWork("movie", Catalog::genreName), { if (p.id != id) app.openDetail("movie", p.id) })
+                        }
+                    }
+                }
+            }
             if (similar.isNotEmpty()) item("similar") {
                 Column(Modifier.padding(top = l.rowSpacing)) {
                     RowHeader("Vous aimerez aussi", "Dans la même veine.")
@@ -218,6 +239,59 @@ fun TabletDetail(app: AppState, data: TabletData, kind: String, id: Int) {
             }
         }
         TouchTopBar(onBack = { app.back() }, scrimProvider = { (depth * 6f).coerceAtMost(1f) })
+    }
+    sourcesOf?.let { g ->
+        VersionSourcesDialog(g, onPlay = { s -> sourcesOf = null; app.playTitle(if (tv) title(next?.first ?: 1, next?.second ?: 1) else title(), s) }) { sourcesOf = null }
+    }
+}
+
+/** Langue d'une version en clair, comme les titres de la tablette (« Français (VF) »). */
+internal fun languageTitle(l: com.sokoul.iptv.domain.AudioLanguage?) = when (l) {
+    com.sokoul.iptv.domain.AudioLanguage.VF -> "Français (VF)"
+    com.sokoul.iptv.domain.AudioLanguage.MULTI -> "Plusieurs langues (MULTI)"
+    com.sokoul.iptv.domain.AudioLanguage.VOSTFR -> "VO sous-titrée français (VOSTFR)"
+    com.sokoul.iptv.domain.AudioLanguage.VO -> "Version originale (VO)"
+    null -> "Langue non précisée"
+}
+
+/**
+ * Sources d'une version, ouvertes par « +n sources » (fenêtre de la tablette) : une ligne par source, la première
+ * lue par défaut ; origine, codec, taille, « à télécharger » quand elle n'est pas prête, nom du fichier.
+ */
+@Composable
+private fun VersionSourcesDialog(g: VersionGroup, onPlay: (com.sokoul.iptv.data.debrid.DebridStream) -> Unit, onDismiss: () -> Unit) {
+    com.sokoul.iptv.ui.components.SokoulDialog(onDismiss, maxWidth = 860.dp) {
+        com.sokoul.iptv.ui.components.DialogHeader(
+            listOfNotNull(languageTitle(g.language), g.title.takeIf { it != "Version" }).joinToString(" · "),
+            "${g.streams.size} sources · la première est lue par défaut",
+        )
+        LazyColumn(Modifier.weight(1f, fill = false).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            itemsIndexed(g.streams, key = { _, s -> s.key }) { i, s ->
+                val d = i == 0
+                val r = s.release
+                FocusSurface(style = FocusStyle.Row, onClick = { onPlay(s) }, modifier = Modifier.fillMaxWidth(), shape = Radius.Card, color = if (d) SokoulColors.AccentTint else Color.Transparent) { f ->
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (d) Icon(Icons.Default.Check, null, Modifier.size(20.dp), tint = SokoulColors.Accent) else Spacer(Modifier.width(20.dp))
+                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    listOfNotNull(r.source?.label, SourceLabels.sizeOrNull(r.sizeBytes), if (r.cached == true || s.inAccount) null else "à télécharger").joinToString(" · ").ifEmpty { "Real-Debrid" },
+                                    Modifier.weight(1f, fill = false), color = if (f || d) SokoulColors.TextPrimary else SokoulColors.TextSecondary,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = if (d) FontWeight.Bold else FontWeight.Medium,
+                                )
+                                if (d) Text("  PAR DÉFAUT", style = Type.Badge, color = SokoulColors.Accent, maxLines = 1)
+                                Row(Modifier.padding(start = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    SourceBadge("RD", filled = true)
+                                    listOfNotNull(r.hdr?.let(SourceLabels::hdr), r.codec).forEach { SourceBadge(it, filled = false) }
+                                }
+                            }
+                            Text("qualité d'après le nom", Modifier.padding(top = 2.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            Text(s.title, color = SokoulColors.TextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -304,6 +378,25 @@ private fun HeroBlock(
     }
     val credit = i.director?.let { (if (tv) "Création : " else "Réalisation : ") + it }
     credit?.let { Text(it, tw.padding(top = 14.dp), color = SokoulColors.TextSecondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    val services by produceState(emptyList<String>(), kind, i.id) { value = app.catalog.tmdb.providers(app.catalog.key(), kind, i.id) }
+    if (services.isNotEmpty()) AvailabilityLine(services, tw.padding(top = if (credit != null) 8.dp else 14.dp))
+}
+
+/** « Aussi sur  ● Netflix  ● Prime Video » : nom du service et pastille à sa couleur (pas de logo de marque). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AvailabilityLine(services: List<String>, modifier: Modifier) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Aussi sur", Modifier.align(Alignment.CenterVertically), style = MaterialTheme.typography.bodyMedium, color = SokoulColors.TextSecondary)
+        services.take(5).forEach { name ->
+            val color = com.sokoul.iptv.data.repo.Platform.entries.firstOrNull { it.matches(name) }?.color
+            Row(Modifier.background(SokoulColors.GlassLight.copy(alpha = 0.12f), Radius.Pill).padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                // contour clair : une couleur de marque sombre (Disney+) reste visible sur le fond
+                Box(Modifier.size(9.dp).background(color?.let { Color(it) } ?: SokoulColors.TextSecondary, Radius.Round).border(1.dp, SokoulColors.OnVideo.copy(alpha = 0.55f), Radius.Round))
+                Text(name.replace(" Plus", "+").replace("Amazon Prime Video", "Prime Video"), Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, color = SokoulColors.TextPrimary, maxLines = 1)
+            }
+        }
+    }
 }
 
 /** Note externe : « IMDb 8,7 » (fond jaune IMDb), « RT 73 % », « MC 74 ». */
@@ -355,7 +448,7 @@ private fun DetailActionButton(label: String, icon: ImageVector, onClick: () -> 
 
 /** Étagère des versions de la tablette : une section par langue, une carte par définition (« 4K · HDR10 »). */
 @Composable
-private fun VersionsShelf(groups: List<VersionGroup>, onPlay: (VersionGroup) -> Unit) {
+private fun VersionsShelf(groups: List<VersionGroup>, onSources: (VersionGroup) -> Unit, onPlay: (VersionGroup) -> Unit) {
     val l = LocalLayout.current
     val byLanguage = groups.groupBy { it.language }
     LazyRow(contentPadding = PaddingValues(horizontal = l.margin, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -373,7 +466,7 @@ private fun VersionsShelf(groups: List<VersionGroup>, onPlay: (VersionGroup) -> 
             }
             items(list.take(6), key = { "${it.language}:${it.quality}:${it.hdr}" }) { g ->
                 val firstCard = g == groups.first()
-                FocusSurface(style = FocusStyle.Chip, onClick = { onPlay(g) }, modifier = Modifier.width(244.dp).height(118.dp), shape = Radius.Card, color = if (firstCard) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh) { focused ->
+                FocusSurface(style = FocusStyle.Chip, onClick = { onPlay(g) }, modifier = Modifier.width(300.dp).height(128.dp), shape = Radius.Card, color = if (firstCard) SokoulColors.AccentSoft else SokoulColors.SurfaceHigh) { focused ->
                     val ink = if (focused) SokoulColors.OnLight else SokoulColors.TextPrimary
                     val soft = if (focused) SokoulColors.OnLight.copy(alpha = 0.72f) else SokoulColors.TextSecondary
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -387,7 +480,14 @@ private fun VersionsShelf(groups: List<VersionGroup>, onPlay: (VersionGroup) -> 
                             SourceBadge("RD", filled = true, onLight = focused)
                             Spacer(Modifier.weight(1f))
                             val more = g.streams.size - 1
-                            if (more > 0) Text("+$more", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = soft, maxLines = 1)
+                            // « +4 sources » : toutes les sources de cette version (fenêtre de la tablette)
+                            if (more > 0) FocusSurface(style = FocusStyle.Chip, onClick = { onSources(g) }, shape = Radius.Card, color = Color.Transparent) { f ->
+                                Text(
+                                    if (more == 1) "+1 source" else "+$more sources",
+                                    Modifier.border(1.dp, if (f) Color.Transparent else soft.copy(alpha = 0.6f), Radius.Card).padding(horizontal = 12.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = if (f) SokoulColors.OnLight else ink, maxLines = 1,
+                                )
+                            }
                         }
                     }
                 }

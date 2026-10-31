@@ -170,6 +170,47 @@ class DesktopTest {
         assertEquals(1, com.sokoul.desktop.data.DesktopPrefs.zapStep(-1, inverted = true))
     }
 
+    @Test fun `saga - ordre du recit, prochain film, reperes, fichier des franchises`() {
+        fun f(id: Int, y: Int) = com.sokoul.desktop.data.SagaFilm(id, "F$id", y, null, null, 7.0)
+        val films = listOf(f(11, 1977), f(1891, 1980), f(1893, 1999), f(1894, 2002))
+        val chrono = listOf(1893, 1894, 11, 1891)
+        val o = com.sokoul.desktop.data.SagaOrder
+        assertEquals(listOf(11, 1891, 1893, 1894), o.ordered(films, chrono, narrative = false).map { it.id })
+        assertEquals(listOf(1893, 1894, 11, 1891), o.ordered(films, chrono, narrative = true).map { it.id })
+        // les trois premiers vus jusqu'au bout : le quatrième est le prochain
+        val sortie = o.ordered(films, chrono, narrative = false)
+        assertEquals(1894, o.next(sortie, setOf(11, 1891, 1893))?.id)
+        assertEquals(null, o.next(sortie, setOf(11, 1891, 1893, 1894)))
+        assertEquals("4 films · 1977 → 2002 · ★ 7,0 de moyenne · 4 au catalogue · 2 séries", o.facts(films, 2, thisYear = 2026))
+        val sw = com.sokoul.desktop.data.CuratedSagas.forCollection(10)
+        assertEquals("Star Wars", sw?.name)
+        assertEquals(1893, sw?.chronologicalOrderIds?.first())
+    }
+
+    @Test fun `a venir trie, TVmaze lu, historique par jour avec les films termines`() {
+        val now = 1_700_000_000_000L
+        val day = 86_400_000L
+        fun u(id: Int, at: Long) = com.sokoul.desktop.data.Upcoming(id, "S$id", null, 1, 1, null, at)
+        val sorted = com.sokoul.desktop.data.LibraryRules.upcoming(listOf(u(1, now + 3 * day), u(2, now + day), u(3, now - 2 * day), u(2, now + 5 * day)), now)
+        assertEquals(listOf(2, 1), sorted.map { it.tvId })
+        val tvmaze = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"_embedded":{"nextepisode":{"season":4,"number":2,"name":"Chapitre 2","airstamp":"2026-11-03T20:00:00+00:00"}}}""",
+        ) as kotlinx.serialization.json.JsonObject
+        val (s, e, rest) = com.sokoul.desktop.data.LibraryRules.parseTvmazeNext(tvmaze)!!
+        assertEquals(4 to 2, s to e)
+        assertEquals("Chapitre 2", rest.first)
+        fun r(key: String, at: Long, done: Boolean) = com.sokoul.desktop.data.Resume(key, "movie", key.length, null, null, key, null, null, 600_000, 3_600_000, at, done)
+        db.saveResume(r("vu-hier", now - day, true))
+        db.saveResume(r("en-cours", now, false))
+        val h = db.history()
+        assertEquals(listOf("en-cours", "vu-hier"), h.map { it.key })
+        val groups = com.sokoul.desktop.data.LibraryRules.byDay(h, { it.updatedAt }, now) { t, n -> if (n - t < day / 2) "Aujourd'hui" else "Hier" }
+        assertEquals(listOf("Aujourd'hui", "Hier"), groups.map { it.first })
+        assertEquals("20:30 · vu", com.sokoul.desktop.data.LibraryRules.status(h[1], "20:30"))
+        assertEquals("20:30 · 16 %", com.sokoul.desktop.data.LibraryRules.status(h[0], "20:30"))
+        assertTrue(db.resumeList().none { it.key == "vu-hier" })
+    }
+
     @Test fun `reprendre - libelles de la tablette`() {
         val d = com.sokoul.desktop.tablet.TabletData
         assertEquals("Reste 1 h 05", d.remaining(65 * 60_000L))

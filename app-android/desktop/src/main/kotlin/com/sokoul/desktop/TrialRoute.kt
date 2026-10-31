@@ -14,6 +14,10 @@ object TrialRoute {
     @Volatile var scrollItem: Int? = null
     /** Rubrique des réglages ouverte (`settings:debrid`). */
     @Volatile var settingsPane: String? = null
+    /** Ouvrir la fenêtre des sources d'une version dès que la fiche les a (`versources:…`). */
+    @Volatile var openVersionSources = false
+    /** Page de saga ouverte en ordre du récit (`saga:10:recit`). */
+    @Volatile var sagaNarrative = false
 
     suspend fun apply(app: AppState, route: String) {
         val p = route.split(':')
@@ -42,8 +46,11 @@ object TrialRoute {
             "movies" -> { scrollItem = p.getOrNull(1)?.toIntOrNull(); app.go(Screen.MOVIES) }
             "series" -> { scrollItem = p.getOrNull(1)?.toIntOrNull(); app.go(Screen.SERIES) }
             "mylist" -> app.go(Screen.MY_LIST)
+            "upcoming" -> { app.go(Screen.MY_LIST); app.open(Route.Upcoming) }
+            "history" -> { app.go(Screen.MY_LIST); app.open(Route.History) }
             "sagas" -> app.go(Screen.SAGAS)
-            "saga" -> app.openSaga(p[1].toInt())
+            // saga:10[:recit] → page de la saga, en ordre du récit si demandé
+            "saga" -> { sagaNarrative = p.getOrNull(2) == "recit"; app.openSaga(p[1].toInt()) }
             "live" -> {
                 app.go(Screen.LIVE)
                 // live:play:<n> : lit la chaîne n° n (une seule connexion : la tablette ne doit rien lire)
@@ -58,6 +65,8 @@ object TrialRoute {
             "settings" -> { settingsPane = p.getOrNull(1)?.uppercase(); app.go(Screen.SETTINGS) }
             "search" -> { searchQuery = p.getOrNull(1); app.go(Screen.SEARCH) }
             "detail" -> { scrollItem = p.getOrNull(3)?.toIntOrNull(); app.openDetail(p[1], p[2].toInt()) }
+            // versources:movie:140607 → fiche, puis la fenêtre « +n sources » de la première version qui en a plusieurs
+            "versources" -> { openVersionSources = true; scrollItem = 1; app.openDetail(p[1], p[2].toInt()) }
             "sources" -> {
                 app.openDetail(p[1], p[2].toInt())
                 delay(1500)
