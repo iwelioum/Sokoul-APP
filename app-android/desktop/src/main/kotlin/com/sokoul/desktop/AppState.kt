@@ -79,6 +79,8 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         private set
     var playing by mutableStateOf<NowPlaying?>(null)
     var fullscreen by mutableStateOf(false)
+    /** Fenêtre réduite (480×270, toujours au premier plan) : l'image dans l'image du PC. */
+    var mini by mutableStateOf(false)
     /** Barre du haut opaque (page défilée). */
     var navSolid by mutableStateOf(false)
     /** Code parental saisi pendant cette session (groupes verrouillés accessibles jusqu'à la fermeture). */
@@ -88,6 +90,9 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
     /** Fenêtre Sources ouverte pour cette œuvre. */
     var sources by mutableStateOf<NowPlaying.Title?>(null)
     private var playJob: Job? = null
+
+    /** Versions en échec pour le titre en cours (clé → raison), affichées dans « Langue et qualité ». */
+    val failures = androidx.compose.runtime.mutableStateMapOf<String, String>()
 
     /** Réglages de lecture et de télévision (lus par le lecteur à chaque ouverture). */
     val prefs = com.sokoul.desktop.data.DesktopPrefs(db)
@@ -197,6 +202,8 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         playJob?.cancel()
         player?.stop()
         sources = null
+        // un autre titre (ou un nouvel essai automatique) : les échecs notés ne valent plus
+        if (chosen == null || (playing as? NowPlaying.Title)?.let { it.tmdbId != t.tmdbId || it.season != t.season || it.episode != t.episode } != false) failures.clear()
         playing = t.copy(step = "Recherche de la meilleure version…", error = null, stream = chosen)
         if (player == null) return  // écran « Lecteur indisponible » : ni recherche ni torrent ajouté au compte
         playJob = scope.launch {
@@ -212,13 +219,20 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
             var tries = 0
             // version lancée faute de mieux (annoncée française, sans piste française) : gardée si rien d'autre ne passe
             var fallback: DebridStream? = null
-            for (s in candidates) {
-                if (tries >= MAX_TRIES) break
+            // après un échec, une autre extension d'abord (Comet peut annoncer prêt un fichier refusé par Real-Debrid)
+            val remaining = candidates.toMutableList()
+            val failedHosts = HashSet<String>()
+            while (tries < MAX_TRIES) {
                 // après une version pas prête, on n'essaie plus que celles annoncées prêtes par l'extension
-                if (tries > 0 && lastError == DesktopDebrid.NotReady().message && s.release.cached != true) continue
+                val s = com.sokoul.desktop.data.PlayAttempts.next(remaining, failedHosts, readyOnly = tries > 0 && lastError == DesktopDebrid.NotReady().message) ?: break
+                remaining.remove(s)
                 update { it.copy(stream = s, step = if (tries == 0) "Préparation de la lecture…" else if (fallback != null) "Pas de français dans cette version, version suivante…" else "Version suivante…") }
                 tries++
-                val url = debrid.resolve(s).getOrElse { lastError = it.message; null } ?: continue
+                val url = debrid.resolve(s).getOrElse {
+                    lastError = it.message; failures[s.key] = it.message ?: "échec"
+                    com.sokoul.desktop.data.PlayAttempts.host(s)?.let(failedHosts::add)
+                    null
+                } ?: continue
                 val start = withContext(Dispatchers.IO) { db.resume(t.resumeKey) }?.takeIf { !it.finished && it.positionMs > 30_000 }?.positionMs ?: 0
                 player?.play(StreamRequest(url, null, null, t.title, live = false, startMs = start))
                 // « MULTI » ou « VF » dans le nom ne garantit pas le français (MULTI de groupes étrangers) : pistes
@@ -230,6 +244,7 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
                     if (!tracks.isNullOrEmpty() && !AudioChoice.hasFrench(tracks)) {
                         fallback = s
                         lastError = "Pas de piste française"
+                        failures[s.key] = "pas de piste française dans le fichier"
                         continue
                     }
                 }
@@ -277,6 +292,7 @@ class AppState(val db: DesktopDb, val sync: DesktopSync, val player: DesktopPlay
         player?.stop()
         playing = null
         fullscreen = false
+        mini = false
         dataVersion++
     }
 }

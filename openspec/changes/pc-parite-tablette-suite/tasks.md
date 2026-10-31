@@ -15,10 +15,12 @@
 
 ## 3. Lecteur de films
 
-- [ ] 3.1 Pastille « langue · définition · origine » et panneau latéral « Langue et qualité » (pistes, versions par langue, autres sources, échecs, changement de version à la même position). Vérification : capture `play:movie:27205` avec le panneau ouvert, comparée à `ref/lecteur-langue.png`.
-- [ ] 3.2 Panneau « Sous-titres » et menu « … » (vitesse, format d'image). Vérification : capture et test réel de la vitesse.
-- [ ] 3.3 Fenêtre réduite (480×270, toujours au premier plan, retour à la taille d'avant). Vérification : essai réel et capture.
-- [ ] 3.4 `NextEpisodeRule` (pur) et carte « Épisode suivant » avec compte à rebours. Vérification : test JVM `NextEpisodeRule` ; capture en fin d'épisode (route d'essai qui se place à 30 s de la fin).
+- [x] 3.1 Pastille « langue · définition · origine » et panneau latéral « Langue et qualité » (pistes, versions par langue, autres sources, échecs, changement de version à la même position). Vérification : capture `play:movie:27205` avec le panneau ouvert, comparée à `ref/lecteur-langue.png`.
+- [x] 3.2 Panneau « Sous-titres » et menu « … » (vitesse, format d'image). Vérification : capture et test réel de la vitesse.
+- [x] 3.3 Fenêtre réduite (480×270, toujours au premier plan, retour à la taille d'avant). Vérification : essai réel et capture.
+- [x] 3.4 `NextEpisodeRule` (pur) et carte « Épisode suivant » avec compte à rebours. Vérification : test JVM `NextEpisodeRule` ; capture en fin d'épisode (route d'essai qui se place à 30 s de la fin).
+
+- [x] 3.5 Trouvé pendant l'essai 3.4 : les épisodes ne se lisaient pas. Comet (elfhosted) annonce prêts des fichiers que Real-Debrid refuse, et renvoie sa vidéo d'erreur ; les trois essais tombaient sur Comet. Après un échec, l'essai suivant vise une autre extension (`PlayAttempts`, avec test). Vérifié par la capture g3e (Breaking Bad S2E3 lu en français, puis carte « Épisode suivant »).
 
 ## 4. Direct et lecteur du direct
 

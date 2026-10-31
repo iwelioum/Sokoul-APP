@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -327,6 +328,54 @@ fun ErrorCard(title: String, message: String, hint: String?, buttons: @Composabl
         if (message.isNotBlank()) Text(message, Modifier.padding(top = 10.dp), color = SokoulColors.TextSecondary, textAlign = TextAlign.Center)
         if (hint != null) Text(hint, Modifier.padding(top = 8.dp), color = SokoulColors.TextMuted, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         Row(Modifier.padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { buttons() }
+    }
+}
+
+// --- Épisode suivant -----------------------------------------------------------------------------------
+
+/** Durée du compte à rebours avant l'épisode suivant (secondes), utilisée pour remplir le bouton. */
+const val NEXT_COUNTDOWN_S = 20
+
+/**
+ * Carte « Épisode suivant » de la tablette : vignette de l'épisode suivant (sinon fond de la série), titre, et bouton
+ * « Lire maintenant » qui se remplit pendant le compte à rebours ([seconds] null = pas d'enchaînement automatique).
+ */
+@Composable
+fun NextUpCard(season: Int, episode: Int, title: String?, image: String?, seconds: Int?, modifier: Modifier, onPlay: () -> Unit, onCancel: () -> Unit) {
+    Column(modifier.fillMaxWidth(0.5f).widthIn(max = 560.dp).background(SokoulColors.Panel, Radius.Panel).padding(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(168.dp, 94.dp).background(SokoulColors.SurfaceHigher, Radius.Card)) {
+                com.sokoul.iptv.ui.components.NetImage(image, null, Modifier.fillMaxSize()) { Icon(Icons.Default.PlayArrow, null, tint = SokoulColors.TextMuted) }
+            }
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(if (seconds != null) "Épisode suivant dans $seconds s" else "Épisode suivant", color = SokoulColors.Accent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("S$season · É$episode" + (title?.takeIf { it.isNotBlank() }?.let { " — $it" } ?: ""), Modifier.padding(top = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+            }
+        }
+        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            CountdownButton("Lire maintenant", seconds?.let { 1f - it.toFloat() / NEXT_COUNTDOWN_S }, onPlay)
+            com.sokoul.iptv.ui.components.SokoulButton(if (seconds != null) "Annuler" else "Fermer", onCancel)
+        }
+    }
+}
+
+@Composable
+private fun CountdownButton(label: String, fraction: Float?, onClick: () -> Unit) {
+    val fill by androidx.compose.animation.core.animateFloatAsState((fraction ?: 0f).coerceIn(0f, 1f), androidx.compose.animation.core.tween(1_000, easing = androidx.compose.animation.core.LinearEasing), label = "countdown")
+    FocusSurface(
+        style = FocusStyle.Chip, onClick = onClick, modifier = Modifier.semantics { contentDescription = label },
+        shape = Radius.Pill, color = SokoulColors.GlassHeavy, focusedColor = SokoulColors.OnVideo,
+    ) { focused ->
+        val fg = if (focused) SokoulColors.OnLight else SokoulColors.OnVideo
+        Row(
+            Modifier.height(46.dp)
+                .drawBehind { if (fraction != null) drawRect(if (focused) SokoulColors.AccentTint.copy(alpha = 0.35f) else SokoulColors.GlassLight, size = androidx.compose.ui.geometry.Size(size.width * fill, size.height)) }
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.PlayArrow, null, Modifier.size(22.dp), tint = fg)
+            Text(label, Modifier.padding(start = 8.dp), color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        }
     }
 }
 

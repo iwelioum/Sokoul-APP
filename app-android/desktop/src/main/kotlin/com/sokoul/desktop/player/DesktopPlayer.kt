@@ -49,7 +49,12 @@ data class PlayerStatus(
     val lengthMs: Long = 0,
     val volume: Int = 100,
     val muted: Boolean = false,
+    val rate: Float = 1f,
+    val subtitleDelayMs: Long = 0,
 )
+
+/** Format d'image : ajusté (bandes noires), rempli (rognée), ou rapport forcé. */
+enum class VideoAspect(val label: String, val ratio: Float?) { FIT("Ajusté", null), FILL("Remplir", null), WIDE("16:9", 16f / 9f), CLASSIC("4:3", 4f / 3f) }
 
 /**
  * Image vidéo courante, dessinée par Compose : libVLC écrit chaque image (RV32 = BGRA) directement dans la mémoire
@@ -67,6 +72,8 @@ class VideoFrame {
     val size = MutableStateFlow(0 to 0)
     /** Rapport des pixels (SAR) : 16/15 pour une chaîne SD 720×576 en 16:9, 1 sinon. */
     @Volatile var pixelAspect = 1f
+    /** Format d'image choisi dans le menu « … » (dessin seulement : le décodage ne change pas). */
+    val aspect = MutableStateFlow(VideoAspect.FIT)
 
     private fun buffer(w: Int, h: Int): Buf {
         val b = Bitmap().apply { allocPixels(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.OPAQUE)) }
@@ -178,6 +185,8 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
         audioChosenByUser = false
         subtitleChosen = false
         _status.update { PlayerStatus(title = req.title, buffering = true, volume = it.volume, muted = it.muted) }
+        // chaque titre repart à vitesse normale
+        player.controls().setRate(1f)
         open(req)
     }
 
@@ -247,6 +256,12 @@ class DesktopPlayer private constructor(private val factory: MediaPlayerFactory)
 
     fun setAudio(id: Int) { audioChosenByUser = true; player.audio().setTrack(id); refreshTracks() }
     fun setSubtitles(id: Int) { subtitleChosen = true; player.subpictures().setTrack(id); refreshTracks() }
+
+    /** Vitesse de lecture (menu « … ») : 0,75× à 2×. */
+    fun setRate(rate: Float) { player.controls().setRate(rate); _status.update { it.copy(rate = rate) } }
+
+    /** Décalage des sous-titres en millisecondes (positif = plus tard). */
+    fun setSubtitleDelay(ms: Long) { player.subpictures().setDelay(ms * 1000); _status.update { it.copy(subtitleDelayMs = ms) } }
 
     fun volume(delta: Int) = setVolume(_status.value.volume + delta)
 

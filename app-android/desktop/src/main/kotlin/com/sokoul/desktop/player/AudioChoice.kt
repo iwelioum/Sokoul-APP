@@ -22,6 +22,9 @@ object AudioChoice {
 
     private fun matches(lang: String, label: String) = words[lang]?.containsMatchIn(label) == true
 
+    /** Langue des Réglages reconnue dans le nom d'une piste (« [French] » → « fr »), ou null. */
+    fun languageOf(label: String): String? = words.entries.firstOrNull { it.value.containsMatchIn(label) }?.key
+
     /** Une piste française parmi [tracks] (id, description). */
     fun hasFrench(tracks: List<Pair<Int, String>>): Boolean = hasLanguage(tracks, "fr")
 

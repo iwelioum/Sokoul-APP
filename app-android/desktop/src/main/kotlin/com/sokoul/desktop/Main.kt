@@ -68,8 +68,23 @@ private fun start() {
             icon = androidx.compose.ui.res.painterResource("sokoul.png"),
             onPreviewKeyEvent = { e -> handleKey(app, e) },
             focusable = trial == null,
+            alwaysOnTop = app.mini,
         ) {
             LaunchedEffect(app.fullscreen) { state.placement = if (app.fullscreen) WindowPlacement.Fullscreen else WindowPlacement.Floating }
+            // fenêtre réduite : 480×270 dans le coin, puis retour à la taille et à la place d'avant
+            val before = remember { arrayOfNulls<Any>(2) }
+            LaunchedEffect(app.mini) {
+                if (app.mini) {
+                    before[0] = state.size; before[1] = state.position
+                    state.placement = WindowPlacement.Floating
+                    state.size = DpSize(480.dp, 270.dp)
+                    val screen = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
+                    state.position = WindowPosition((screen.x + screen.width - 500).dp, (screen.y + screen.height - 300).dp)
+                } else if (before[0] != null) {
+                    state.size = before[0] as DpSize; state.position = before[1] as WindowPosition
+                    before[0] = null
+                }
+            }
             LaunchedEffect(Unit) {
                 if (trial != null) { TrialRoute.apply(app, trial); return@LaunchedEffect }
                 db.setting(Settings.LAST_SCREEN)?.let { s -> runCatching { Screen.valueOf(s) }.getOrNull() }
@@ -90,6 +105,8 @@ private fun start() {
 @Composable
 fun AppContent(app: AppState) {
     val data = androidx.compose.runtime.remember(app) { com.sokoul.desktop.tablet.TabletData(app) }
+    // fenêtre réduite : la vidéo seule
+    if (app.mini && app.playing != null) { PlayerScreen(app); return }
     Box(Modifier.fillMaxSize().background(com.sokoul.iptv.ui.theme.SokoulColors.Background)) {
         androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
             com.sokoul.desktop.tablet.TabletRail(app.screen, app::go)

@@ -102,6 +102,22 @@ class DesktopDebrid(private val db: DesktopDb, private val catalog: Catalog) {
         if (onRealDebrid(current)) Result.success(current) else Result.failure(NotReady())
     }
 
+    /** Essai (journal) : chaque étape de la résolution, sans l'adresse (elle porte le jeton) : hôte, code, type. */
+    suspend fun trace(s: DebridStream): List<String> = withContext(Dispatchers.IO) {
+        val out = mutableListOf<String>()
+        val noRedirect = catalog.http.newBuilder().followRedirects(false).followSslRedirects(false).readTimeout(45, java.util.concurrent.TimeUnit.SECONDS).build()
+        var current = s.url ?: return@withContext listOf("sans lien")
+        repeat(6) {
+            val r = runCatching { noRedirect.newCall(Request.Builder().url(current).header("User-Agent", "SokoulTV/2.0").build()).await() }.getOrElse { out += "erreur ${it.javaClass.simpleName}"; return@withContext out }
+            r.use {
+                out += "${it.request.url.host} → HTTP ${it.code} ${it.header("Content-Type").orEmpty()} ${it.header("Content-Length").orEmpty()}"
+                if (!it.isRedirect) return@withContext out
+                current = it.request.url.resolve(it.header("Location") ?: return@withContext out)?.toString() ?: return@withContext out
+            }
+        }
+        out
+    }
+
     /** Fichier servi par Real-Debrid (`*.download.real-debrid.com`, `real-debrid.com/d/`), et non une vidéo d'attente. */
     private fun onRealDebrid(u: String): Boolean {
         val host = u.toHttpUrlOrNull()?.host ?: return false

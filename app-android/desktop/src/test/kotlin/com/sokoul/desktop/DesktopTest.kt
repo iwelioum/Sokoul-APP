@@ -211,6 +211,41 @@ class DesktopTest {
         assertTrue(db.resumeList().none { it.key == "vu-hier" })
     }
 
+    @Test fun `lecteur - format d'image, episode suivant, vitesses`() {
+        val fit = com.sokoul.desktop.player.VideoFit
+        // 2,39:1 dans 16:9 : ajusté = bandes en haut et en bas, rempli = rogné sur les côtés
+        val f = fit.rect(1600f, 900f, 2.39f, com.sokoul.desktop.player.VideoAspect.FIT)
+        assertEquals(1600f, f.w, 0.5f); assertTrue(f.y > 0)
+        val r = fit.rect(1600f, 900f, 2.39f, com.sokoul.desktop.player.VideoAspect.FILL)
+        assertEquals(900f, r.h, 0.5f); assertTrue(r.x < 0)
+        assertEquals(1200f, fit.rect(1600f, 900f, 2.39f, com.sokoul.desktop.player.VideoAspect.CLASSIC).w, 0.5f)
+        val n = com.sokoul.desktop.player.NextEpisodeRule
+        assertEquals(1 to 4, n.next(1, 3, 10, 2))
+        assertEquals(2 to 1, n.next(1, 10, 10, 2))
+        assertEquals(null, n.next(2, 8, 8, 2))
+        assertTrue(n.offer(2_580_000, 2_600_000, ended = false))
+        assertTrue(!n.offer(2_000_000, 2_600_000, ended = false))
+        assertTrue(n.offer(0, 0, ended = true))
+        assertEquals("Normale", com.sokoul.desktop.ui.rateLabel(1f))
+        assertEquals("1,25×", com.sokoul.desktop.ui.rateLabel(1.25f))
+        assertEquals("2×", com.sokoul.desktop.ui.rateLabel(2f))
+    }
+
+    @Test fun `essais de lecture - une autre extension apres un echec`() {
+        fun s(host: String, n: Int, cached: Boolean?) = com.sokoul.iptv.data.debrid.DebridStream(
+            "k$host$n", "Breaking.Bad.S02E03.$n.mkv", "https://$host/resolve/x/$n", null, null, null,
+            com.sokoul.iptv.data.debrid.Release(cached = cached),
+        )
+        val list = listOf(s("comet.elfhosted.com", 1, true), s("comet.elfhosted.com", 2, true), s("torrentio.strem.fun", 3, true), s("torrentio.strem.fun", 4, null))
+        val a = com.sokoul.desktop.data.PlayAttempts
+        assertEquals("kcomet.elfhosted.com1", a.next(list, emptySet(), false)?.key)
+        // Comet a échoué : Torrentio passe devant le deuxième lien Comet
+        assertEquals("ktorrentio.strem.fun3", a.next(list.drop(1), setOf("comet.elfhosted.com"), true)?.key)
+        // seulement des versions prêtes après un « pas prête » ; toutes les extensions en échec : la mieux classée
+        assertEquals("kcomet.elfhosted.com2", a.next(list.drop(1), setOf("comet.elfhosted.com", "torrentio.strem.fun"), true)?.key)
+        assertEquals(null, a.next(listOf(list[3]), emptySet(), readyOnly = true))
+    }
+
     @Test fun `reprendre - libelles de la tablette`() {
         val d = com.sokoul.desktop.tablet.TabletData
         assertEquals("Reste 1 h 05", d.remaining(65 * 60_000L))

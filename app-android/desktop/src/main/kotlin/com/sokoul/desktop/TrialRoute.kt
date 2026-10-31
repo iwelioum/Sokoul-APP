@@ -18,6 +18,11 @@ object TrialRoute {
     @Volatile var openVersionSources = false
     /** Page de saga ouverte en ordre du récit (`saga:10:recit`). */
     @Volatile var sagaNarrative = false
+    /** Panneau du lecteur à ouvrir (`play:…:lang`, `subs`, `more`). */
+    val playerMenuFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    var playerMenu: String?
+        get() = playerMenuFlow.value
+        set(v) { playerMenuFlow.value = v }
 
     suspend fun apply(app: AppState, route: String) {
         val p = route.split(':')
@@ -72,15 +77,30 @@ object TrialRoute {
                 delay(1500)
                 val info = app.catalog.details(p[1], p[2].toInt())
                 app.sources = NowPlaying.Title(p[1], p[2].toInt(), info?.title ?: "", info?.year?.toString(), info?.backdrop,
-                    p.getOrNull(3)?.toInt(), p.getOrNull(4)?.toInt())
+                    p.getOrNull(3)?.toIntOrNull(), p.getOrNull(4)?.toIntOrNull())
             }
             "play" -> {
                 val info = app.catalog.details(p[1], p[2].toInt())
                 app.playTitle(NowPlaying.Title(p[1], p[2].toInt(), info?.title ?: "", info?.year?.toString(), info?.backdrop,
-                    p.getOrNull(3)?.toInt(), p.getOrNull(4)?.toInt()))
+                    p.getOrNull(3)?.toIntOrNull(), p.getOrNull(4)?.toIntOrNull()))
+                // essai : premières versions proposées (état annoncé par l'extension)
+                runCatching {
+                    val t = app.playing as? NowPlaying.Title
+                    if (t != null) app.debrid.find(t.query, info).streams.take(8).forEachIndexed { i, s ->
+                        System.err.println("Version : cached=${s.release.cached} compte=${s.inAccount} ${s.release.language} ${s.release.quality} · ${s.title.take(90)}")
+                        if (i < 2) app.debrid.trace(s).forEach { System.err.println("   $it") }
+                    }
+                }
                 // essai : pistes vues par libVLC (choix de la langue)
                 delay(30_000)
                 app.player?.status?.value?.let { s -> System.err.println("Pistes audio : ${s.audio} · choisie ${s.audioId}") }
+                // option d'essai (dernier segment) : panneau ouvert, fin d'épisode, fenêtre réduite
+                when (val opt = p.lastOrNull()?.takeIf { it in setOf("lang", "subs", "more", "end", "mini") }) {
+                    "end" -> app.player?.let { pl -> pl.status.value.lengthMs.takeIf { it > 0 }?.let { len -> pl.seekTo((len - 25_000f) / len) } }
+                    "mini" -> app.mini = true
+                    null -> Unit
+                    else -> playerMenu = opt
+                }
             }
         }
     }

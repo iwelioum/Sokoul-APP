@@ -76,6 +76,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.ui.draw.clipToBounds
 import com.sokoul.iptv.ui.components.ButtonKind
 import com.sokoul.iptv.ui.components.MenuOption
 import com.sokoul.iptv.ui.components.OptionsDialog
@@ -90,6 +94,9 @@ import com.sokoul.iptv.ui.screens.player.PlayerAction
 import com.sokoul.iptv.ui.screens.player.PlayerButton
 import com.sokoul.iptv.ui.screens.player.VodControls
 import com.sokoul.iptv.ui.screens.player.VodTopBar
+import com.sokoul.iptv.ui.screens.player.NEXT_COUNTDOWN_S
+import com.sokoul.iptv.ui.screens.player.NextUpCard
+import androidx.compose.foundation.layout.BoxScope
 
 private val hiddenCursor: PointerIcon by lazy {
     PointerIcon(java.awt.Toolkit.getDefaultToolkit().createCustomCursor(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB), java.awt.Point(0, 0), "sans"))
@@ -99,20 +106,18 @@ private val hiddenCursor: PointerIcon by lazy {
 @Composable
 fun VideoSurface(frame: VideoFrame, modifier: Modifier = Modifier) {
     val tick by frame.frameTick.collectAsState()
-    Canvas(modifier.background(SokoulColors.VideoBlack)) {
+    val aspect by frame.aspect.collectAsState()
+    Canvas(modifier.background(SokoulColors.VideoBlack).clipToBounds()) {
         @Suppress("UNUSED_EXPRESSION") tick
         frame.read { bmp ->
             val w = bmp.width.toFloat(); val h = bmp.height.toFloat()
             if (w <= 0f || h <= 0f) return@read
             // largeur affichée corrigée des pixels non carrés (SD anamorphosée)
-            val shownW = w * frame.pixelAspect
-            val s = minOf(size.width / shownW, size.height / h)
-            val dw = shownW * s; val dh = h * s
+            val (x, y, dw, dh) = com.sokoul.desktop.player.VideoFit.rect(size.width, size.height, w * frame.pixelAspect / h, aspect)
             val img = org.jetbrains.skia.Image.makeFromBitmap(bmp)
             drawIntoCanvas { c ->
                 c.nativeCanvas.drawImageRect(
-                    img, org.jetbrains.skia.Rect.makeWH(w, h),
-                    org.jetbrains.skia.Rect.makeXYWH((size.width - dw) / 2, (size.height - dh) / 2, dw, dh),
+                    img, org.jetbrains.skia.Rect.makeWH(w, h), org.jetbrains.skia.Rect.makeXYWH(x, y, dw, dh),
                     org.jetbrains.skia.SamplingMode.LINEAR, null, true,
                 )
             }
@@ -143,8 +148,10 @@ fun PlayerScreen(app: AppState) {
     var lastMove by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var visible by remember { mutableStateOf(true) }
     var menu by remember { mutableStateOf<String?>(null) }
-    // essais : SOKOUL_CONTROLS=1 garde la barre affichée (capture sans souris)
+    // essais : SOKOUL_CONTROLS=1 garde la barre affichée (capture sans souris) ; route play:…:lang ouvre un panneau
     val keep = remember { System.getenv("SOKOUL_CONTROLS") == "1" }
+    val trialMenu by com.sokoul.desktop.TrialRoute.playerMenuFlow.collectAsState()
+    LaunchedEffect(trialMenu) { trialMenu?.let { menu = it; com.sokoul.desktop.TrialRoute.playerMenu = null } }
     LaunchedEffect(lastMove, st.paused, menu, st.playing) {
         visible = true
         if (!keep && !st.paused && menu == null && st.playing) { delay(3_000); visible = false }
@@ -161,14 +168,19 @@ fun PlayerScreen(app: AppState) {
         VideoSurface(
             player.frame,
             Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = { app.fullscreen = !app.fullscreen }, onTap = { player.togglePause() })
+                // panneau ouvert : un clic sur la vidéo le ferme (comme Retour sur la tablette)
+                detectTapGestures(onDoubleTap = { app.fullscreen = !app.fullscreen }, onTap = { if (menu != null) menu = null else player.togglePause() })
             },
         )
+        if (app.mini) { MiniOverlay(app, player, st); return@Box }
         Center(app, now, st)
+        val panel = menu == "lang" || menu == "subs"
         AnimatedVisibility(visible, enter = fadeIn(tween(160)), exit = fadeOut(tween(400)), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
                 val back = PlayerAction("Retour", Icons.AutoMirrored.Filled.ArrowBack, onClick = app::closePlayer)
-                val tracks = trackActions(st) { menu = it }
+                val reduce = PlayerAction("Fenêtre réduite", Icons.Filled.PictureInPictureAlt) { app.fullscreen = false; app.mini = true }
+                val tracks = trackActions(now, st) { menu = it }
+                val more = PlayerAction("Plus", Icons.Filled.MoreHoriz, iconOnly = true) { menu = "more" }
                 val screen = PlayerAction(if (app.fullscreen) "Quitter le plein écran" else "Plein écran", if (app.fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, iconOnly = true) { app.fullscreen = !app.fullscreen }
                 val mute = PlayerAction(if (st.muted) "Rétablir le son" else "Couper le son", if (st.muted || st.volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, iconOnly = true, onClick = player::toggleMute)
                 when (now) {
@@ -186,15 +198,13 @@ fun PlayerScreen(app: AppState) {
                         val title = t?.title ?: (now as NowPlaying.Iptv).movie.name
                         val badge = listOfNotNull(t?.stream?.release?.let { r -> listOfNotNull(r.language?.name, r.source?.label).joinToString(" · ").ifBlank { null } }, st.video)
                             .joinToString(" · ").ifBlank { null }
-                        Box(Modifier.align(Alignment.TopStart)) { VodTopBar(title, t?.subtitle, badge, listOf(back)) }
-                        Box(Modifier.align(Alignment.BottomStart)) {
+                        Box(Modifier.align(Alignment.TopStart)) { VodTopBar(title, t?.subtitle, badge, listOf(back, reduce)) }
+                        // panneau latéral ouvert : les commandes s'effacent, la vidéo reste à gauche (tablette)
+                        if (!panel) Box(Modifier.align(Alignment.BottomStart)) {
                             VodControls(
                                 position = st.timeMs, duration = st.lengthMs, playing = st.playing && !st.paused,
                                 onBack10 = { player.seekBy(-10_000) }, onPlayPause = player::togglePause, onFwd30 = { player.seekBy(30_000) },
-                                pills = tracks + listOfNotNull(
-                                    t?.let { PlayerAction("Versions", Icons.Outlined.Layers) { app.sources = it } },
-                                    mute, screen,
-                                ),
+                                pills = tracks + listOf(more, mute, screen),
                                 onSeekTo = { ms -> if (st.lengthMs > 0) player.seekTo(ms.toFloat() / st.lengthMs) },
                                 onInteract = touch,
                             )
@@ -203,19 +213,97 @@ fun PlayerScreen(app: AppState) {
                 }
             }
         }
+        (now as? NowPlaying.Title)?.takeIf { it.kind == "tv" && it.season != null && it.episode != null }?.let { t -> NextUp(app, t, st) }
+        when (menu) {
+            "lang" -> (now as? NowPlaying.Title)?.let { t -> LanguageQualityPanel(app, t, st, player, Modifier.align(Alignment.CenterEnd)) { menu = null } }
+                ?: TrackDialog("audio", st, player) { menu = null }
+            "subs" -> SubtitlePanel(st, player, Modifier.align(Alignment.CenterEnd))
+            else -> Unit
+        }
     }
-    menu?.let { m -> TrackDialog(m, st, player) { menu = null } }
+    when (menu) {
+        "audio" -> TrackDialog("audio", st, player) { menu = null }
+        "more" -> MoreMenu(player, st) { menu = null }
+        else -> Unit
+    }
 }
 
-/** Pastilles « Audio » et « Sous-titres » (seulement s'il y a un choix), avec la piste en cours en texte. */
-private fun trackActions(st: PlayerStatus, open: (String) -> Unit): List<PlayerAction> = listOfNotNull(
-    if (st.audio.size > 1) PlayerAction("Audio", Icons.Outlined.Audiotrack, text = st.audio.firstOrNull { it.first == st.audioId }?.second?.let(::shortTrack)) { open("audio") } else null,
-    if (st.subtitles.size > 1) PlayerAction("Sous-titres", Icons.Outlined.Subtitles, text = st.subtitles.firstOrNull { it.first == st.subtitleId }?.second?.let(::shortTrack) ?: "Désactivés") { open("subs") } else null,
-)
+/**
+ * Pastilles de la tablette : « Français · 4K · RD » (langue et qualité, panneau latéral) et sous-titres (« Désactivés »
+ * ou la piste en cours). Film de l'abonnement : la langue seule (pas d'autres versions à proposer).
+ */
+private fun trackActions(now: NowPlaying, st: PlayerStatus, open: (String) -> Unit): List<PlayerAction> {
+    val audio = st.audio.firstOrNull { it.first == st.audioId }?.second?.let(::shortTrack)
+    val t = now as? NowPlaying.Title
+    return listOfNotNull(
+        if (t != null) PlayerAction(
+            "Langue et qualité", Icons.Outlined.Audiotrack,
+            text = listOfNotNull(audio, t.stream?.release?.quality?.let(com.sokoul.iptv.ui.components.SourceLabels::quality), "RD").joinToString(" · "),
+        ) { open("lang") }
+        else if (st.audio.size > 1) PlayerAction("Audio", Icons.Outlined.Audiotrack, text = audio) { open("audio") } else null,
+        PlayerAction("Sous-titres", Icons.Outlined.Subtitles, text = st.subtitles.firstOrNull { it.first == st.subtitleId && it.first >= 0 }?.second?.let(::shortTrack) ?: "Désactivés") { open("subs") },
+    )
+}
 
-/** « Piste 1 - [Français] » → « Français » : le nom lisible d'une piste libVLC. */
-private fun shortTrack(label: String): String =
-    Regex("""\[([^\]]+)]""").find(label)?.groupValues?.get(1) ?: label.substringAfter(" - ").ifBlank { label }
+/**
+ * « Épisode suivant » (tablette) : pendant le générique ou à la fin du fichier, carte en bas à droite ; compte à
+ * rebours de 20 s puis lancement si le réglage « Épisode suivant automatique » est actif.
+ */
+@Composable
+private fun BoxScope.NextUp(app: AppState, t: NowPlaying.Title, st: PlayerStatus) {
+    val s = t.season ?: return
+    val e = t.episode ?: return
+    val next by produceState<Triple<Int, Int, com.sokoul.iptv.data.net.TmdbEpisode?>?>(null, t.tmdbId, s, e) {
+        val info = app.catalog.details("tv", t.tmdbId)
+        val eps = app.catalog.season(t.tmdbId, s)
+        val n = com.sokoul.desktop.player.NextEpisodeRule.next(s, e, eps.size.takeIf { it > 0 } ?: e, info?.seasons ?: s) ?: return@produceState
+        val ep = if (n.first == s) eps.firstOrNull { it.episode == n.second } else app.catalog.season(t.tmdbId, n.first).firstOrNull { it.episode == n.second }
+        value = Triple(n.first, n.second, ep)
+    }
+    val n = next ?: return
+    val ended = !st.playing && !st.buffering && st.lengthMs > 0 && st.timeMs >= st.lengthMs - 1_000
+    var dismissed by remember(t.tmdbId, s, e) { mutableStateOf(false) }
+    if (dismissed || !com.sokoul.desktop.player.NextEpisodeRule.offer(st.timeMs, st.lengthMs, ended)) return
+    val auto = remember { app.prefs.autoNext }
+    var seconds by remember(t.tmdbId, s, e) { mutableStateOf(if (auto) NEXT_COUNTDOWN_S else null) }
+    fun playNext() = app.playTitle(t.copy(subtitle = "S${n.first} · É${n.second}" + (n.third?.name?.let { " · $it" } ?: ""), image = n.third?.still ?: t.image, season = n.first, episode = n.second, stream = null, step = null, error = null))
+    LaunchedEffect(t.tmdbId, s, e, auto) {
+        if (!auto) return@LaunchedEffect
+        while ((seconds ?: 0) > 0) { delay(1_000); seconds = (seconds ?: 1) - 1 }
+        playNext()
+    }
+    NextUpCard(n.first, n.second, n.third?.name, n.third?.still ?: t.image, seconds, Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = 150.dp), ::playNext) { dismissed = true }
+}
+
+/** Menu « … » : vitesse de lecture et format d'image. */
+@Composable
+private fun MoreMenu(player: DesktopPlayer, st: PlayerStatus, onClose: () -> Unit) {
+    val aspect by player.frame.aspect.collectAsState()
+    OptionsDialog(
+        "Lecture",
+        PLAYBACK_RATES.map { r -> MenuOption("Vitesse : ${rateLabel(r)}", selected = r == st.rate) { player.setRate(r) } } +
+            com.sokoul.desktop.player.VideoAspect.entries.map { a -> MenuOption("Image : ${a.label}", selected = a == aspect) { player.frame.aspect.value = a } },
+        onClose,
+    )
+}
+
+/** Fenêtre réduite : la vidéo seule ; au survol, lecture/pause et « Agrandir ». */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun MiniOverlay(app: AppState, player: DesktopPlayer, st: PlayerStatus) {
+    var hover by remember { mutableStateOf(false) }
+    Box(
+        Modifier.fillMaxSize().onPointerEvent(PointerEventType.Enter) { hover = true }.onPointerEvent(PointerEventType.Exit) { hover = false },
+    ) {
+        if (hover) {
+            Box(Modifier.fillMaxSize().background(SokoulColors.Scrim))
+            Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                PlayerButton(PlayerAction(if (st.paused) "Lecture" else "Pause", if (st.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, onClick = player::togglePause), compact = true)
+                PlayerButton(PlayerAction("Agrandir", Icons.Filled.OpenInFull, primary = true) { app.mini = false }, compact = false)
+            }
+        }
+    }
+}
 
 @Composable
 private fun LiveBar(app: AppState, live: NowPlaying.Live, st: PlayerStatus, actions: List<PlayerAction>) {
